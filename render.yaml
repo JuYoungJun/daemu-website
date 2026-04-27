@@ -2,8 +2,11 @@
 # https://render.com/docs/blueprint-spec
 
 services:
+  # Renamed from daemu-api so Render Blueprint creates a fresh Python service
+  # instead of requiring manual approval to flip the existing Node service's
+  # runtime. Old daemu-api can be deleted from the dashboard once this is live.
   - type: web
-    name: daemu-api
+    name: daemu-py
     runtime: python
     rootDir: backend-py
     plan: free
