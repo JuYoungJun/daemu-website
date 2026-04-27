@@ -49,7 +49,7 @@ async function onImage(files) {
 function renderThumb() {
   const wrap = document.getElementById("f-thumb");
   if (pendingImage) {
-    wrap.innerHTML = `<div class="adm-thumb"><img src="${pendingImage}" alt=""><button type="button" class="x" onclick="removeImage()">×</button></div>`;
+    wrap.innerHTML = `<div class="adm-thumb"><img src="${escUrl(pendingImage)}" alt=""><button type="button" class="x" onclick="removeImage()">×</button></div>`;
   } else {
     wrap.innerHTML = "";
   }

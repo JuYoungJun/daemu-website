@@ -598,3 +598,96 @@ The default Resend `onboarding@resend.dev` sender is also acceptable for demo, b
 - **required actions before approval (production):** Top 3 actions above (F-01/F-03/F-04 close, admin SPA XSS + cookie session, default creds + PIPA consent). Plus rollback plan for the auth change (token-rotation will log everyone out — schedule + comms).
 - **decision:** `block` for production launch on real domain with real users until Top 3 are addressed; `allow with conditions` for current demo-stage internal use.
 - **residual risk after fixes:** Medium-Low. After Top 3 + the PIPA page, the system would be approximately at parity with typical Korean SMB lead-gen sites. Remaining items (F-09 mass-assignment hardening, F-12 login throttling, F-13 template scope, F-14 outbox retention, F-18 headers) are best-practice hardening and can ship in the second sprint without blocking launch.
+
+---
+
+## Re-Audit (2026-04-27, v2)
+
+**Scope of this pass:** verify whether the v2 fixes close the v1 findings, and surface any new issues introduced by the changes. No code was modified during this audit. Verification was source-only (re-read of every file the user listed); runtime behavior on Render was not exercised.
+
+### Findings closed
+
+| ID | Original severity | Fix evidence (file:line) | Verdict |
+|----|------------------|--------------------------|---------|
+| F-01 | Critical | `backend-py/main.py:418-423` (`/api/email/send` → `Depends(require_perm("outbox","write"))`), `:480-485` (`/api/email/campaign` → `Depends(require_perm("campaigns","write"))`); auto-reply moved to server inline at `routes_crud.py:120-193` | **closed** |
+| F-02 | Critical | `auth.py:257-287` (`ensure_default_users`) sets `must_change_password=True` whenever the seeded password matches `weak_defaults={daemu1234,tester1234,dev1234}`; `auth.py:294-315` exposes the flag through `/api/auth/login`; `:326-345` `/api/auth/change-password` enforces re-auth + `validate_password_strength`; React forces the flow at `src/admin/AdminGate.jsx:20-87` and `src/admin/ChangePasswordForm.jsx`; `models.py:44` adds `must_change_password` column | **partial** (see notes) |
+| F-04 | High | `routes_crud.py:74` (`_inquiry_limiter = RateLimiter(max_calls=8, window_seconds=600)`), `:243-245` enforces per-IP throttle on `/api/inquiries`; `_client_ip` honors `X-Forwarded-For` at `:77-81` | **closed** |
+| F-05 | High | `src/lib/globals.js:9-32` exposes `escHtml` / `escAttr` / `escUrl`; admin pages now wrap untrusted columns: `admin-inquiries-page.js:28-40`, `admin-partners-page.js:23-32`, `admin-orders-page.js:44-60`, `admin-crm-page.js:54-82`, `admin-campaign-page.js:78-87,228-234`, `admin-promotion-page.js:54-63,144-152`, `admin-works-page.js:87-100`, `admin-media-page.js:9-12`; popup overlay (public site) at `src/hooks/useSitePopups.js:54-61` uses `safeUrl` + `escapeHtml` | **partial** (see "Newly introduced") |
+| F-06 | High | `backend-py/main.py:81-87` (`EXT_TO_MIME` dropped `.svg`/`.pdf`), `:92-109` (`UPLOAD_MAGIC` dict + `magic_byte_ok()` enforcing JPEG/PNG/GIF/WEBP byte signatures, including the `RIFF…WEBP` 12-byte head), `:298-326` (admin-perm gate + magic check applied before `write_bytes`) | **closed** |
+| F-08 | High | `routes_crud.py:225` (Pydantic `privacy_consent: bool`), `:246-247` (server rejects 400 when missing), `:250` persists `privacy_consent_at`; `models.py:69` adds the column; React `Contact.jsx:8-17,144,174` renders the `ConsentRow` checkbox + Privacy Policy link; legacy `consultForms.js:61-69` emits a `confirm()` prompt; `Privacy.jsx` page exists; Footer `Footer.jsx:59` links to `/privacy`; routed in `App.jsx:31,143` | **closed** for collection-time consent; **partial** on retention/deletion (cron not implemented yet — outbox/inquiry rows are still kept indefinitely server-side) |
+| F-10 | Medium | `backend-py/main.py:128` (`PROD = os.environ.get("ENV","").lower() in {"prod","production"}`), `:132-139` (`docs_url=None if PROD else "/docs"`, redoc + openapi gated similarly) | **closed** (provided ENV=prod is actually set on Render) |
+| F-12 | Medium | `auth.py:46-68` (`_LoginThrottle` 5/15min sliding-window), `:294-306` (login enforces lock + records failure; reset on success). IP keying is shared across all accounts so a single IP cannot enumerate multiple emails. | **closed** |
+| F-13 | Medium | `routes_crud.py:437-445` (public `GET /api/mail-template/auto-reply` only); `:448-459` (admin-perm `GET /api/mail-template/{kind}` with `Depends(require_perm("mail-template","read"))`). FastAPI's literal-path-first resolution order means `/auto-reply` cannot fall through to the wildcard. | **closed** |
+| F-18 | Medium | `backend-py/main.py:155-180` (`SECURITY_HEADERS` dict + `add_security_headers` middleware via `setdefault`). Sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, HSTS `max-age=63072000; includeSubDomains`, and a CSP. | **partial** (see notes — backend headers are now set, but the GitHub Pages frontend still has no CSP) |
+
+**F-02 notes:** the fix is correct and live, but four lower-tier sub-issues remain: (a) the `ADMIN_PASSWORD=daemu1234` literal default still lives in `auth.py:82` (so a Render misconfiguration that drops the env var would still seed `daemu1234`, just with `must_change_password=True`); (b) `render.yaml:24-25` is `sync: false` rather than `generateValue: true` — a fresh deploy with no operator action will fall through to the `daemu1234` literal; (c) `tester1234` / `dev1234` defaults exist on lines 84/86 (new users); (d) the JWT issued during the must-change window is a fully-privileged token, so an attacker who steals it (XSS, MITM) can call any admin endpoint *without* completing the rotation. Acceptable for demo, plan to harden on production cutover.
+
+**F-05 notes:** the high-impact public-facing data sinks (inquiry name/phone/type, popup ctaUrl/image on the live site, CRM, partners, orders, campaign, promotion, works, media) are all now escaped. Two admin-only sinks were missed — see "Newly introduced" below.
+
+**F-08 notes:** consent + privacy notice + Resend 국외이전 disclosure are all in place; the only piece still missing for full PIPA compliance is the **scheduled retention/deletion job**. The Privacy page promises "3년 보유 후 파기" and Outbox "1년 보유 후 파기" but no cron currently enforces it. This is a written-vs-actual mismatch that, after launch, becomes a §17 retention violation if a regulator audits.
+
+**F-10 notes:** the gate is correct in code, but I cannot verify from source alone whether `ENV=prod` is actually set in the Render dashboard. If the env var is unset, `PROD` becomes `False` and `/docs` ships open. Recommend asserting `assert os.environ["ENV"]` on startup once you cut over.
+
+**F-18 notes:** API responses now carry the headers — good. The static frontend (built by Vite, served from GitHub Pages and `dist/`) still has no `<meta http-equiv="Content-Security-Policy">` in `index.html`. Since GitHub Pages can't set custom HTTP headers and the SPA loads `gsap`/`ScrollTrigger` from `cdnjs.cloudflare.com` plus uses inline event handlers, a `<meta>` CSP on the SPA itself is the only path. Closed for the API surface; still open for the static SPA.
+
+### Newly introduced
+
+| ID | Severity | Title | Where | Notes |
+|----|----------|-------|-------|-------|
+| N-01 | Medium | `pendingImage` / `pendingHero` interpolated raw into `<img src="…">` in admin pages | `public/admin-popup-page.js:52`, `public/admin-works-page.js:116` | Both come from `window.uploadImage()` → server response `r.url`. Today `/api/upload` is admin-only (good), so the URL is admin-trusted. But these are the only two `${…}` sites in admin pages that *don't* go through `escUrl()`, while every neighbour does — easy to forget on the next refactor and an obvious target if a future bug allows the upload host to return attacker-controlled JSON. Use `escUrl(pendingImage)` / `escUrl(pendingHero)`. |
+| N-02 | Low | `admin-popup-page.js` table action handlers interpolate `d.id` raw into `onclick="…(${d.id})"` | `public/admin-popup-page.js:99,109-112` | `d` comes from `DB.get('popups')` → localStorage → admin-controlled today. If the admin SPA ever syncs popups from the backend, a malicious `id` like `1);alert(document.cookie)//` would break out of the JS context. Wrap with `escAttr(d.id)` to match the pattern used in `admin-inquiries-page.js:34-40`. |
+| N-03 | Low | `admin-mail-page.js` HTML preview interpolates `img.previewUrl` raw into `src="…"` | `public/admin-mail-page.js:160` | `previewUrl` is a `data:` URL produced from local `<input type="file">` in the same admin session — admin-trusted. Defense-in-depth: route through `escUrl` (or a dedicated `escDataUrl` allowlist). Low because `data:` is the only scheme that legitimately appears here and the rendering target is a sandboxed iframe preview. |
+| N-04 | Low | In-memory rate limiter / login throttle is per-process; resets on Render cold start | `routes_crud.py:56-71`, `auth.py:46-68` | Render free tier sleeps after 15 minutes of idle. A determined attacker can spray inquiries or login attempts, wait for the dyno to recycle, and the counters reset to zero. Acceptable for demo (the fix still raises the bar materially), but for production replace with Redis/Upstash or move the rate limit to Cloudflare/Caddy. |
+| N-05 | Low | Auto-reply HTTP call (up to 30 s `httpx` timeout for Resend) runs **inside** the request transaction on `/api/inquiries` | `routes_crud.py:120-193,253-262` | Comment acknowledges the latency cost. Two consequences worth flagging: (1) the user-visible POST blocks on Resend, so a Resend outage degrades the public Contact form's tail latency; (2) if the Resend call hangs, the inquiry row still gets committed via `await session.flush()` *before* the auto-reply returns — the `Outbox` insert at `:184-192` is part of the same transaction and will roll back together if `_send_auto_reply_inline` raises. That's actually safer than a background task, but it means a transient Resend 5xx + connection error could lose the inquiry persist. Wrap the auto-reply HTTP call in its own `try/except` so the inquiry insert never depends on Resend success (today the function already swallows exceptions inside the `if RESEND_API_KEY:` block — but the surrounding `_send_auto_reply_inline` is `await`-ed without an outer `try`, so a coding mistake in template parsing will surface as a 500 to the visitor). |
+| N-06 | Low | `_LoginThrottle` is keyed only by source IP, not by `(IP, email)` pair | `auth.py:46-68,294-306` | Locks the IP after 5 wrong attempts to *any* account. Pro: stops attacker enumeration. Con: a shared NAT (corporate office, school) can lock out legitimate users when one person mistypes. For demo this is fine; for production add a per-account counter alongside, or whitelist the office IP. |
+| N-07 | Info | Mass-assignment surface unchanged: generic CRUD still accepts `dict[str, Any]` | `routes_crud.py:357-383` | F-09 from v1 is not addressed in v2. The allowlists in `_crud()` factories still gate writes correctly, but a future maintainer adding `password_hash` or `role` to the allowlist creates a bypass. Same risk class as v1 — flagging here so it doesn't get lost across iterations. |
+| N-08 | Info | Backend CSP allows `'unsafe-inline'` for both `script-src` and `style-src` | `backend-py/main.py:161-171` | Justified for `/docs` (Swagger UI uses inline JS) and acceptable as long as ENV=prod hides `/docs`. Once `/docs` is hidden in prod, tighten `script-src` to `'self'` + a nonce. Tracked as info; not blocking. |
+
+### Still outstanding (v1 findings not addressed in v2)
+
+| ID | Severity | Why still open | Suggested action |
+|----|----------|----------------|------------------|
+| F-03 | High | `/api/upload` is now admin-only via `require_perm("works","write")` (good) but **no rate limiter** is applied. `_inquiry_limiter` is wired only to `/api/inquiries`. | Add a second `RateLimiter(max_calls=10, window_seconds=60)` on `/api/upload`, or share a global-per-IP cap. Currently a logged-in admin (or a leaked admin token) can disk-fill 8 MB at a time without throttle. |
+| F-07 | High | JWT still in `localStorage` (`src/lib/auth.js:8,18`); no token-version / revocation; role still read from claims at decode time. The new `must_change_password` flag is checked from `Auth.user()` (localStorage) rather than enforced server-side on every privileged endpoint. | Move to `HttpOnly` cookie + add `token_version` claim + bump on password change. Also: add a server-side guard `if user.must_change_password: only allow /api/auth/change-password` so a rotated user can't bypass the React gate by calling the API directly. |
+| F-09 | Medium | Same as v1 — `_crud()` accepts `dict[str, Any]` payloads. | Replace with explicit Pydantic models per entity. |
+| F-11 | Medium | `auth.py:125-131` still falls back to an ephemeral `secrets.token_hex(32)` with a `print()` (not a hard fail) when `JWT_SECRET` is unset. | In the lifespan startup, hard-fail when `PROD` and not `JWT_SECRET`. |
+| F-14 | Medium | Outbox keeps full `body[:8000]` indefinitely. Privacy.jsx promises "1년 보유 후 파기" but no cron exists. | Add a daily APScheduler job (or cron-via-Render) that deletes `outbox` rows older than 365 days and `inquiries` older than 1095 days. |
+| F-15 | Medium | No proxy-level body cap; same as v1. | Add `LimitRequestSize` middleware (`Content-Length > 12_000_000` → 413) early in the middleware stack. |
+| F-16 | Medium | `src/lib/partnerAuth.js` plaintext + 4-digit default unchanged. Demo-scoped. | Defer until partner endpoints actually go to backend. |
+| F-17 | Medium | Render free tier disk + SQLite still ephemeral. | Move to persistent disk + Postgres / MySQL before real traffic. |
+| F-19 | Low | CORS still `allow_credentials=False` with `Authorization` allowed. Safe by accident. | Keep as-is until the JWT moves to cookies; then flip to `allow_credentials=True`. |
+| F-20 | Low | Catch-all exception handler unchanged. | Wire structured logging via `logging` module. |
+| F-21 | Low | Admin Outbox GET still returns full bodies. | Add a `redact_body` query flag for non-admin roles. |
+| F-22 | Low | Workflow var unchanged. | No-op. |
+| F-23 | Low | `gsap`/`ScrollTrigger` cdnjs without SRI unchanged. | Add `integrity="sha384-…" crossorigin="anonymous"` on production cutover. |
+| F-24 | Low | `replyTo` still user-controllable, but the endpoint is now admin-gated (F-01 closure indirectly mitigates). | Add allowlist (or strip) on the server-side auto-reply path; `_send_auto_reply_inline` already hardcodes `DEFAULT_REPLY_TO` (`routes_crud.py:89,165`) — good. |
+| F-25 | Info | SQLite on Render unchanged. | Migrate before launch. |
+| F-26 | Info | Admin HTML in mail templates unchanged. | Document trust boundary in admin docs. |
+
+### Summary of the v2 delta
+
+The v2 pass cleanly closes the **two Critical findings** (F-01, F-02) and the most-exploitable **High findings** (F-04 contact spam, F-05 stored-XSS in the largest sinks, F-06 SVG/PDF + magic-byte sniff, F-08 PIPA consent + Privacy page). Three Mediums also closed (F-10 docs gating, F-12 login throttle, F-13 template scoping). Backend-side F-18 closed. Two new Lows (N-01 / N-02 raw `pendingImage`, `d.id` interpolation in popup admin) are very mild and admin-only — recommend a 5-minute fix-forward, but they don't block.
+
+The largest remaining production-blocker is **F-07** (JWT in `localStorage`). With F-05 mostly closed, the realistic XSS attack surface has shrunk considerably, but two unescaped sinks (N-01, N-02, N-03) plus the absence of a frontend CSP keep the residual XSS path viable. Once F-07 + frontend CSP land, the system clears the bar for real-customer launch on a verified Resend domain.
+
+**Required actions before production approval:**
+1. Close F-07 (move JWT to `HttpOnly; Secure; SameSite=Strict` cookie; add token-version revocation).
+2. Add `<meta>` CSP to `index.html` (frontend half of F-18).
+3. Wire scheduled retention deletion for `inquiries` (1095 d) and `outbox` (365 d) so Privacy.jsx promises match runtime behavior (F-14, F-08 retention).
+4. Apply rate-limit to `/api/upload` (F-03 leftover).
+5. Verify `ENV=prod` and `JWT_SECRET` are actually populated in Render dashboard before cutover (F-10, F-11).
+6. Fix N-01 / N-02 (`escUrl(pendingImage)`, `escAttr(d.id)`) for defense-in-depth.
+
+### Output (control-tower contract, v2)
+
+- **risk tier:** `elevated` (was `critical` in v1; downgraded because F-01 / F-02 / F-04 / F-05 / F-06 / F-08 / F-12 / F-13 are closed)
+- **triggered skills:** `security-control-tower`, `secure-code-review`, `authn-authz-review`, `input-output-boundary-review`, `data-lifecycle-and-privacy-review`, `release-security-gate`
+- **confirmed findings:** 10 v1 findings closed (or partial-closed), 8 new findings introduced (1 Medium, 4 Low, 3 Info), 14 v1 findings still open (2 High, 5 Medium, 6 Low, 4 Info)
+- **open questions / missing evidence:**
+  - Is `ENV=prod` set in the Render dashboard so `/docs` is actually hidden?
+  - Is `JWT_SECRET` populated at runtime, or is the ephemeral fallback firing on every cold start (logging users out silently)?
+  - Will the retention cron be a Render cron job or APScheduler in-process? In-process won't survive sleep cycles on free tier.
+  - Once `daemu.kr` is verified in Resend, is anyone monitoring the Resend reputation / bounce rate?
+- **required actions before approval (production):** the six items in "Required actions before production approval" above. Specifically F-07 (cookie session) and frontend CSP are the gating items for opening to real-customer traffic.
+- **decision:** `allow with conditions` for **continued demo / internal stakeholder use** on the current Render URL (significant improvement over v1; the unauthenticated mail relay and default admin password are gone). `needs verification` for **production cutover on a real domain**: the six required actions above must be checked off, plus a smoke test of `ENV=prod` + `JWT_SECRET` on Render and a live test that `/api/auth/login` rate-limit lockout actually triggers from the customer-facing IP.
+- **residual risk after v2:** Medium-Low for demo; Medium for an early-traffic production cutover (F-07 and the missing retention cron are the two real gaps). After the six required actions, residual drops to Low — appropriate for a Korean SMB lead-gen site.

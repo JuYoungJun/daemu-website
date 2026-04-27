@@ -157,7 +157,16 @@
         const img = findImage(m[1]);
         if (img) {
           // Use data URL for preview (cid:xx wouldn't load in iframe)
-          inner += `<div style="margin:14px 0"><img src="${img.previewUrl}" alt="${escapeHtml(img.filename || '')}" style="max-width:100%;height:auto;display:block"></div>`;
+          // previewUrl is the data:image/...;base64,... we generated from
+          // the admin's local file pick. Allow data:image/ specifically;
+          // attribute-escape so a malformed URL can't break out of src="".
+          const raw = String(img.previewUrl || '');
+          const safeSrc = /^data:image\//i.test(raw) || /^https?:\/\//i.test(raw)
+            ? raw.replace(/"/g, '&quot;').replace(/</g, '&lt;')
+            : '';
+          if (safeSrc) {
+            inner += `<div style="margin:14px 0"><img src="${safeSrc}" alt="${escapeHtml(img.filename || '')}" style="max-width:100%;height:auto;display:block"></div>`;
+          }
         }
       } else {
         inner += escapeHtml(part).replace(/\r?\n/g, '<br>');

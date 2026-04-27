@@ -113,7 +113,7 @@
     const wrap = document.getElementById("f-hero-thumb");
     if (!wrap) return;
     if (pendingHero) {
-      wrap.innerHTML = `<div class="adm-thumb"><img src="${pendingHero}" alt=""><button type="button" class="x" onclick="removeHero()">×</button></div>`;
+      wrap.innerHTML = `<div class="adm-thumb"><img src="${escUrl(pendingHero)}" alt=""><button type="button" class="x" onclick="removeHero()">×</button></div>`;
     } else {
       wrap.innerHTML = '';
     }
