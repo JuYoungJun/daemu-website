@@ -2,7 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './lib/globals.js';
+import { installConsultFormHandler } from './lib/consultForms.js';
 import App from './App.jsx';
+
+installConsultFormHandler();
 
 // Pre-React: if landing directly on an admin route, swap body classes
 // synchronously so the splash-pending visibility:hidden rule never gets a
