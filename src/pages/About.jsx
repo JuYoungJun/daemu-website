@@ -133,8 +133,8 @@ export default function About() {
                 '메뉴를 연구하는 사람, 고객을 관리하는 사람 — 각 분야의 전문가가 필요해졌습니다. 메뉴 개발팀과 CS 전담팀을 꾸렸습니다.',
                 '메뉴 개발팀 · CS 전담팀 신설', false],
               ['지금 대무는 어떤 단계인가요?','2024','NOW','이제는 같이 만듭니다',
-                '350평짜리 울왕리점을 오픈하며 확인했습니다 — 우리가 쌓아온 방식은 다른 브랜드에도 통한다는 것을. 컨설팅 전담팀을 만들고, 파트너와 함께 만드는 일을 시작했습니다.',
-                '비클래시 울왕리점 350평 · 컨설팅팀 신설', true]
+                '350평짜리 을왕리점을 오픈하며 확인했습니다 — 우리가 쌓아온 방식은 다른 브랜드에도 통한다는 것을. 컨설팅 전담팀을 만들고, 파트너와 함께 만드는 일을 시작했습니다.',
+                '비클래시 을왕리점 350평 · 컨설팅팀 신설', true]
             ].map(([q, year, label, h, body, fact, isNow], i) => (
               <div key={i} className="dmabout-convo-block" data-convo-block="">
                 <div className="dmabout-convo-q">
@@ -207,7 +207,7 @@ export default function About() {
             <div className="dmabout-beclassy-branch">
               <span className="dmabout-beclassy-branch-num serif">2nd</span>
               <div className="dmabout-beclassy-branch-body">
-                <h4>비클래시 울왕리점 <span>인천광역시 중구 용유서로 402-11</span></h4>
+                <h4>비클래시 을왕리점 <span>인천광역시 중구 용유서로 402-11</span></h4>
                 <p>2024년 5월 31일 오픈<br />350평 4층 규모 대형 커피 &amp; 베이커리 카페<br />시그니처 메뉴 ㅣ 바닐라몽블랑, 더티초코, 소보로라떼, 웨스트라이트</p>
               </div>
             </div>

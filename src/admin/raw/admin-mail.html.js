@@ -20,19 +20,28 @@ export default `<main class="page fade-up">
             </div>
           </div>
           <div class="adm-mail-vars-grid">
-            <div class="adm-mail-var-item"><code>{{name}}</code><span>수신자 이름</span></div>
-            <div class="adm-mail-var-item"><code>{{category}}</code><span>문의 카테고리</span></div>
-            <div class="adm-mail-var-item"><code>{{message}}</code><span>원본 문의 내용</span></div>
-            <div class="adm-mail-var-item"><code>{{phone}}</code><span>연락처</span></div>
-            <div class="adm-mail-var-item"><code>{{email}}</code><span>이메일</span></div>
+            <button type="button" class="adm-mail-var-item" onclick="insertVar('name')"><code>{{name}}</code><span>수신자 이름</span></button>
+            <button type="button" class="adm-mail-var-item" onclick="insertVar('category')"><code>{{category}}</code><span>문의 카테고리</span></button>
+            <button type="button" class="adm-mail-var-item" onclick="insertVar('message')"><code>{{message}}</code><span>원본 문의 내용</span></button>
+            <button type="button" class="adm-mail-var-item" onclick="insertVar('phone')"><code>{{phone}}</code><span>연락처</span></button>
+            <button type="button" class="adm-mail-var-item" onclick="insertVar('email')"><code>{{email}}</code><span>이메일</span></button>
           </div>
+          <p style="margin:14px 0 0;font-size:11px;color:#8c867d;line-height:1.6">↑ 변수를 클릭하면 본문 커서 위치에 삽입됩니다. 본문에 들어간 변수는 잠긴 토큰으로 표시되며 직접 수정·삭제할 수 없습니다.</p>
         </div>
 
         <div class="adm-form">
           <div class="full"><label>제목</label><input id="m-subject" type="text" placeholder="[대무] 문의가 접수되었습니다"></div>
-          <div class="full"><label>본문</label><textarea id="m-body" rows="12" placeholder="{{name}} 님,&#10;&#10;대무에 문의해 주셔서 감사합니다..."></textarea></div>
+          <div class="full">
+            <label>본문 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">변수 토큰은 잠겨있습니다 (×로 제거)</span></label>
+            <div id="m-body" class="adm-body-editor" contenteditable="true" spellcheck="false"></div>
+          </div>
           <div><label>자동회신</label><select id="m-active"><option value="on">활성 (ON)</option><option value="off">비활성 (OFF)</option></select></div>
           <div><label>회신 정책</label><select id="m-category"><option value="all">전체 동일 적용</option><option value="each">카테고리별 적용</option></select></div>
+          <div class="full">
+            <label>이미지 첨부 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">테스트 발송에 함께 전송 (자동 최적화 적용)</span></label>
+            <input type="file" id="m-files" accept="image/*" multiple onchange="addAttachments(this.files)">
+            <div class="adm-thumb-row" id="m-attach-thumbs"></div>
+          </div>
           <div class="full"><label>미리보기 (변수 미치환 원본)</label>
             <div id="m-preview" style="white-space:pre-wrap;background:#f6f4f0;border:1px solid #d7d4cf;padding:18px;font-family:'Noto Sans KR',sans-serif;font-size:13px;color:#4a4744;line-height:1.7;min-height:120px"></div>
           </div>

@@ -1,5 +1,48 @@
 /* DAEMU Admin sub-pages — magazine minimal, aligned with style.css */
 
+/* Mail body editor — contenteditable with locked variable tokens */
+.adm-body-editor{
+  width:100%;
+  min-height:240px;
+  border:2px solid #b9b5ae;
+  background:#fff;
+  padding:14px 16px;
+  font-family:'Noto Sans KR',sans-serif;
+  font-size:14px;
+  color:#222;
+  line-height:1.7;
+  outline:none;
+  white-space:pre-wrap;
+  word-break:break-word;
+  box-sizing:border-box;
+  cursor:text;
+}
+.adm-body-editor:focus{border-color:#111}
+.adm-body-editor:empty::before{content:attr(data-placeholder);color:#b9b5ae;pointer-events:none}
+.adm-var-token{
+  display:inline-flex;align-items:center;gap:4px;
+  background:#111;color:#f6f4f0;
+  padding:2px 10px 2px 8px;
+  font-size:12px;
+  font-family:'SF Mono','Menlo',monospace;
+  border-radius:3px;
+  margin:0 2px;
+  user-select:none;
+  white-space:nowrap;
+  vertical-align:baseline;
+  cursor:default;
+}
+.adm-var-token .x{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:14px;height:14px;
+  background:rgba(255,255,255,.18);
+  border:none;color:#f6f4f0;
+  border-radius:50%;
+  font-size:10px;line-height:1;cursor:pointer;
+  padding:0;font-family:inherit;
+}
+.adm-var-token .x:hover{background:rgba(255,255,255,.32)}
+
 /* Mail variable reference — locked / read-only */
 .adm-mail-vars{
   background:#f6f4f0;
@@ -32,8 +75,15 @@
 }
 .adm-mail-var-item{
   display:flex;align-items:center;gap:10px;
-  padding:6px 0;
+  padding:8px 12px;
   font-size:12px;color:#4a4744;
+  background:transparent;border:1px solid transparent;
+  cursor:pointer;font-family:inherit;
+  text-align:left;
+  transition:all .15s ease;
+}
+.adm-mail-var-item:hover{
+  background:#fff;border-color:#d7d4cf;
 }
 .adm-mail-var-item code{
   background:#fff;padding:4px 10px;

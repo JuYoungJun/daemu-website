@@ -39,24 +39,27 @@ function applyVars(text, vars) {
   return String(text).replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''));
 }
 
-// Single email send
+// Single email send (optional attachments: [{ filename, content (base64) }])
 app.post('/api/email/send', async (req, res) => {
-  const { to, toName, subject, body, replyTo } = req.body || {};
+  const { to, toName, subject, body, replyTo, attachments } = req.body || {};
   if (!to || !subject) return res.status(400).json({ ok: false, error: 'to and subject are required' });
 
+  const safeAttachments = Array.isArray(attachments)
+    ? attachments
+        .filter((a) => a && a.filename && a.content)
+        .slice(0, 10) // safety cap
+        .map((a) => ({ filename: String(a.filename), content: String(a.content) }))
+    : undefined;
+
   if (!resend) {
-    console.log('[email/send simulated]', { to, subject });
+    console.log('[email/send simulated]', { to, subject, attachments: safeAttachments?.length || 0 });
     return res.json({ ok: true, simulated: true, id: 'sim-' + Date.now() });
   }
 
   try {
-    const result = await resend.emails.send({
-      from: FROM,
-      to: [to],
-      subject,
-      text: body || '',
-      replyTo
-    });
+    const payload = { from: FROM, to: [to], subject, text: body || '', replyTo };
+    if (safeAttachments?.length) payload.attachments = safeAttachments;
+    const result = await resend.emails.send(payload);
     if (result.error) {
       console.error('[email/send] Resend error:', result.error);
       return res.status(502).json({ ok: false, error: result.error.message });

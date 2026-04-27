@@ -55,14 +55,28 @@ export async function sendAutoReply({ to_email, to_name, category, message, phon
   });
 }
 
-// 어드민 답변완료 처리 시 회신 메모를 직접 발송
-export async function sendAdminReply({ to_email, to_name, subject, body }) {
+// 어드민 답변완료 처리 시 회신 메모를 직접 발송 (첨부 파일 옵션)
+export async function sendAdminReply({ to_email, to_name, subject, body, attachments }) {
   return postEmail({
     type: 'admin-reply',
     to: to_email,
     toName: to_name || '',
     subject: subject || '[대무] 문의 회신',
     body: body || '',
+    attachments: Array.isArray(attachments) ? attachments : undefined,
+    replyTo: 'daemu_office@naver.com'
+  });
+}
+
+// 발주서 / 계약서 같이 첨부 파일 포함 가능
+export async function sendDocument({ to_email, to_name, subject, body, attachments }) {
+  return postEmail({
+    type: 'document',
+    to: to_email,
+    toName: to_name || '',
+    subject: subject || '[대무] 문서',
+    body: body || '',
+    attachments: Array.isArray(attachments) ? attachments : undefined,
     replyTo: 'daemu_office@naver.com'
   });
 }

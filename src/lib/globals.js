@@ -1,7 +1,7 @@
 // Side-effect: expose admin helpers on window so inlined admin page scripts work.
 import { DB, badgeStr, confirmDel } from './db.js';
 import { Auth } from './auth.js';
-import { sendAutoReply, sendAdminReply, sendCampaign, isEmailEnabled } from './email.js';
+import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabled } from './email.js';
 import { uploadImage } from './upload.js';
 import { downloadCSV } from './csv.js';
 
@@ -14,6 +14,9 @@ if (typeof window !== 'undefined') {
   // Email API
   window.sendAutoReply = sendAutoReply;
   window.sendAdminReply = sendAdminReply;
+  window.sendDocument = sendDocument;
+  // sendAdminReplyWithAttachments alias for legacy admin-mail page
+  window.sendAdminReplyWithAttachments = sendAdminReply;
   window.sendCampaign = sendCampaign;
   window.isEmailEnabled = isEmailEnabled;
 
