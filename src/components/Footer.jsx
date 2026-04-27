@@ -21,13 +21,13 @@ export default function Footer() {
             <div className="footer-group">
               <h3>Menu</h3>
               <ul>
-                <li><a href="service.html">SERVICE</a></li>
-                <li><a href="about.html">ABOUT US</a></li>
-                <li><a href="team.html">TEAM</a></li>
-                <li><a href="process.html">PROCESS</a></li>
-                <li><a href="work.html">WORK</a></li>
-                <li><a href="partners.html">PARTNERS</a></li>
-                <li><a href="contact.html">CONTACT</a></li>
+                <li><Link to="/service">SERVICE</Link></li>
+                <li><Link to="/about">ABOUT US</Link></li>
+                <li><Link to="/team">TEAM</Link></li>
+                <li><Link to="/process">PROCESS</Link></li>
+                <li><Link to="/work">WORK</Link></li>
+                <li><Link to="/partners">PARTNERS</Link></li>
+                <li><Link to="/contact">CONTACT</Link></li>
               </ul>
             </div>
 
@@ -48,7 +48,7 @@ export default function Footer() {
                 공간 기획이 필요하시면<br />
                 편하게 문의해주세요.
               </p>
-              <a href="contact.html" className="footer-link-btn">문의하기</a>
+              <Link to="/contact" className="footer-link-btn">문의하기</Link>
             </div>
           </div>
         </div>

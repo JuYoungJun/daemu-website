@@ -28,7 +28,11 @@ services:
         # On Cafe24 / production, override to mysql+asyncmy://user:pass@host:3306/daemu
         value: sqlite+aiosqlite:///./daemu.db
       - key: ALLOWED_ORIGINS
-        value: https://juyoungjun.github.io,http://localhost:8765,http://localhost:5173,http://localhost:8766
+        # N2-02 fix: production CORS only. Local dev origins live in
+        # backend-py/.env.example for local runs.
+        value: https://juyoungjun.github.io
+      - key: TRUST_FORWARDED_FOR
+        value: "1"   # Render proxies set X-Forwarded-For; we now read it correctly
       - key: FROM_EMAIL
         value: DAEMU <onboarding@resend.dev>
       - key: PYTHON_VERSION

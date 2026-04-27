@@ -7,12 +7,24 @@
 //  - SVG / GIF passthrough (vector / animation)
 //  - Already-small images (< 200KB and < 1024px) pass through unchanged
 
-import imageCompression from 'browser-image-compression';
+// CTO review F-05: lazy-load `browser-image-compression` (~140 KB) so it
+// stays out of the public visitor bundle. Only admin upload paths actually
+// trigger optimizeImage(), so the cost is paid once when the admin opens
+// an upload form.
 
 const MAX_MB = 0.5;
 const MAX_DIM = 1920;
 const SKIP_BYTES = 200 * 1024;
 const SKIP_DIM = 1024;
+
+let _compressionLib = null;
+async function loadCompressionLib() {
+  if (!_compressionLib) {
+    const mod = await import('browser-image-compression');
+    _compressionLib = mod.default;
+  }
+  return _compressionLib;
+}
 
 export async function optimizeImage(file) {
   if (!file || !file.type) return file;
@@ -27,6 +39,7 @@ export async function optimizeImage(file) {
   }
 
   try {
+    const imageCompression = await loadCompressionLib();
     const compressed = await imageCompression(file, {
       maxSizeMB: MAX_MB,
       maxWidthOrHeight: MAX_DIM,

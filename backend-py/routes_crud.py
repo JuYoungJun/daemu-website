@@ -54,20 +54,33 @@ router = APIRouter(prefix="/api", tags=["crud"])
 # Good enough for a single Render dyno; replace with Redis/Cloudflare if scaling.
 
 class RateLimiter:
-    def __init__(self, max_calls: int, window_seconds: float):
+    def __init__(self, max_calls: int, window_seconds: float, max_keys: int = 5000):
         self.max_calls = max_calls
         self.window = window_seconds
+        self.max_keys = max_keys
         self._hits: dict[str, list[float]] = defaultdict(list)
+
+    def _gc(self) -> None:
+        """N2-26: bound dict size by dropping entries with the oldest
+        last-hit timestamp."""
+        if len(self._hits) <= self.max_keys:
+            return
+        scored = sorted(self._hits.items(), key=lambda kv: kv[1][-1] if kv[1] else 0)
+        for k, _ in scored[: len(self._hits) - self.max_keys]:
+            self._hits.pop(k, None)
 
     def check(self, key: str) -> bool:
         now = time.time()
         bucket = self._hits[key]
-        # drop entries older than window
         cutoff = now - self.window
         bucket[:] = [t for t in bucket if t >= cutoff]
+        if not bucket:
+            self._hits.pop(key, None)
+            bucket = self._hits[key]
         if len(bucket) >= self.max_calls:
             return False
         bucket.append(now)
+        self._gc()
         return True
 
 
@@ -75,10 +88,11 @@ _inquiry_limiter = RateLimiter(max_calls=8, window_seconds=600)  # 8 req / 10 mi
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Re-uses the auth module's X-Forwarded-For policy so the rate-limit
+    key matches the login-throttle key (so neither can be bypassed by
+    rotating the header)."""
+    from auth import _client_ip as auth_client_ip  # noqa: WPS433
+    return auth_client_ip(request)
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +131,32 @@ def _wrap_html(inner_text: str) -> str:
 </td></tr></table></body></html>"""
 
 
+async def _send_auto_reply_async(
+    *,
+    to_email: str,
+    to_name: str,
+    category: str,
+    message: str,
+) -> None:
+    """N2-03 fix: auto-reply runs as a fire-and-forget asyncio task with
+    its OWN DB session, AFTER the inquiry POST has already returned. This
+    keeps the public Contact endpoint's response fast (~5 ms) and the
+    DB writer lock short.
+    The function MUST be defensive — it may run after the FastAPI request
+    context is gone, so any exception must be caught and logged, never
+    bubbled."""
+    try:
+        async with SessionLocal() as session:
+            await _send_auto_reply_inline(
+                session,
+                to_email=to_email, to_name=to_name,
+                category=category, message=message,
+            )
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[auto-reply] background failure for {to_email}: {exc!r}")
+
+
 async def _send_auto_reply_inline(
     session: AsyncSession,
     *,
@@ -125,10 +165,8 @@ async def _send_auto_reply_inline(
     category: str,
     message: str,
 ) -> None:
-    """Server-side auto-reply, run inline within the request's DB session.
-    Avoids SQLite WAL writer contention from spawning a separate background
-    transaction. Latency cost: ~50ms (DB) + up to 30s (Resend HTTP) — accept-
-    able since the Contact form submission is a single user action."""
+    """Internal: shared logic. Used by both the async fire-and-forget and
+    by the unit-test path that wants deterministic ordering."""
     from models import MailTemplate, Outbox  # local import to avoid cycle
 
     res = await session.execute(select(MailTemplate).where(MailTemplate.kind == "auto-reply"))
@@ -251,15 +289,19 @@ async def create_inquiry(
     session.add(inq)
     await session.flush()
     inquiry_dict = model_to_dict(inq)
-
-    # Auto-reply runs inline so it shares the request's transaction.
-    await _send_auto_reply_inline(
-        session,
+    # Capture values BEFORE returning — the inq instance becomes detached.
+    auto_args = dict(
         to_email=inq.email,
         to_name=inq.name,
         category=inq.category or "상담 문의",
         message=inq.message or "",
     )
+
+    # N2-03: fire-and-forget so the public Contact endpoint isn't held by
+    # the (up to 15 s) Resend HTTP call. The background task uses its own
+    # DB session, so the request's WAL writer lock is released immediately.
+    asyncio.create_task(_send_auto_reply_async(**auto_args))
+
     return {"ok": True, "id": inq.id, "inquiry": inquiry_dict}
 
 

@@ -34,10 +34,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import logging
 import os
 import re
 import secrets
 import time
+import traceback
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -115,6 +118,48 @@ if not RESEND_API_KEY:
 # ---------------------------------------------------------------------------
 # Lifespan: create tables + seed default admin
 
+async def _retention_cron(stop_event: asyncio.Event) -> None:
+    """N2-06 / N2-17 / PIPA §21 fix: periodically delete personal data past
+    the retention window declared in /privacy.
+
+    - inquiries older than INQUIRY_RETENTION_DAYS (default 1095 = 3y)
+    - outbox older than OUTBOX_RETENTION_DAYS (default 365 = 1y)
+
+    Runs every 6h. First sweep happens 5 minutes after boot so cold-starts
+    don't fire it instantly under load."""
+    from datetime import timedelta
+    from sqlalchemy import delete
+    from models import Inquiry, Outbox
+
+    inquiry_days = int(os.environ.get("INQUIRY_RETENTION_DAYS", "1095"))
+    outbox_days = int(os.environ.get("OUTBOX_RETENTION_DAYS", "365"))
+    period_seconds = int(os.environ.get("RETENTION_PERIOD_SECONDS", str(6 * 3600)))
+
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=300)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    while not stop_event.is_set():
+        try:
+            cutoff_inq = datetime.now(timezone.utc) - timedelta(days=inquiry_days)
+            cutoff_obx = datetime.now(timezone.utc) - timedelta(days=outbox_days)
+            async with SessionLocal() as session:
+                r1 = await session.execute(delete(Inquiry).where(Inquiry.created_at < cutoff_inq))
+                r2 = await session.execute(delete(Outbox).where(Outbox.created_at < cutoff_obx))
+                await session.commit()
+                if (r1.rowcount or 0) or (r2.rowcount or 0):
+                    print(f"[retention] purged {r1.rowcount or 0} inquiries / {r2.rowcount or 0} outbox rows")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[retention] sweep failed: {exc!r}")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=period_seconds)
+        except asyncio.TimeoutError:
+            continue
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     async with engine.begin() as conn:
@@ -122,7 +167,16 @@ async def lifespan(_app: FastAPI):
     async with SessionLocal() as session:
         await ensure_default_users(session)
     print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
+
+    # Background retention task — PIPA §21 compliance.
+    stop_event = asyncio.Event()
+    cron_task = asyncio.create_task(_retention_cron(stop_event))
     yield
+    stop_event.set()
+    try:
+        await asyncio.wait_for(cron_task, timeout=2.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        cron_task.cancel()
 
 
 PROD = os.environ.get("ENV", "").lower() in {"prod", "production"}
@@ -180,10 +234,39 @@ async def add_security_headers(request, call_next):
     return response
 
 
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
+)
+log = logging.getLogger("daemu")
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    """F-13: every request gets a UUID surfaced in logs + the X-Request-ID
+    response header so a customer report ('it failed at 14:03 with id ...')
+    is traceable to a single log line."""
+    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    request.state.request_id = rid
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(_req: Request, exc: Exception):
-    print(f"[daemu-backend-py] unhandled: {exc!r}")
-    return JSONResponse({"ok": False, "error": "internal"}, status_code=500)
+async def unhandled_exception_handler(req: Request, exc: Exception):
+    """F-07: log the full traceback with a request ID, return a generic
+    error to the client (no stack leakage)."""
+    rid = getattr(req.state, "request_id", "no-id")
+    log.error(
+        "unhandled exception rid=%s path=%s method=%s\n%s",
+        rid, req.url.path, req.method,
+        "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+    )
+    return JSONResponse(
+        {"ok": False, "error": "internal", "request_id": rid},
+        status_code=500,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +386,11 @@ async def upload(
 ):
     """Image upload — restricted to admin/developer roles. Public Contact form
     no longer needs uploads; auto-reply attachments are server-managed."""
+    # N2-05 DoS fix: reject pre-decode if the base64 string itself is
+    # already larger than the post-decode cap by a comfortable margin.
+    # base64 expands by ~4/3, so cap the input at ~12 MB (8 MB output max).
+    if len(payload.content) > MAX_UPLOAD_BYTES * 4 // 3 + 256:
+        raise HTTPException(413, detail="file too large (8MB cap)")
     if not payload.filename or not payload.content:
         raise HTTPException(400, detail="filename + content required")
 

@@ -44,22 +44,37 @@ from models import AdminUser
 # F-12: per-IP login throttle. 5 wrong attempts in 15 minutes locks that IP
 # from /api/auth/login (any account) for the rest of the window.
 class _LoginThrottle:
-    def __init__(self, max_failures: int = 5, window_seconds: int = 900):
+    def __init__(self, max_failures: int = 5, window_seconds: int = 900, max_keys: int = 5000):
         self.max = max_failures
         self.win = window_seconds
+        self.max_keys = max_keys
         self._fails: dict[str, list[float]] = defaultdict(list)
 
     def _prune(self, key: str, now: float) -> None:
         cutoff = now - self.win
         self._fails[key][:] = [t for t in self._fails[key] if t >= cutoff]
+        if not self._fails[key]:
+            self._fails.pop(key, None)
+
+    def _gc(self, now: float) -> None:
+        """N2-26: bound dict size — drop the entries whose newest hit is
+        the oldest. Triggered when the dict grows past max_keys."""
+        if len(self._fails) <= self.max_keys:
+            return
+        scored = [(k, v[-1] if v else 0) for k, v in self._fails.items()]
+        scored.sort(key=lambda kv: kv[1])
+        for k, _ in scored[: len(self._fails) - self.max_keys]:
+            self._fails.pop(k, None)
 
     def is_locked(self, key: str) -> bool:
         now = time.time()
         self._prune(key, now)
-        return len(self._fails[key]) >= self.max
+        return len(self._fails.get(key, [])) >= self.max
 
     def record_failure(self, key: str) -> None:
-        self._fails[key].append(time.time())
+        now = time.time()
+        self._fails[key].append(now)
+        self._gc(now)
 
     def reset(self, key: str) -> None:
         self._fails.pop(key, None)
@@ -68,10 +83,24 @@ class _LoginThrottle:
 _login_throttle = _LoginThrottle()
 
 
+_TRUST_FORWARDED = os.environ.get("TRUST_FORWARDED_FOR", "1").lower() not in {"0", "false", "no"}
+
+
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    """N2-01 fix: only trust X-Forwarded-For when we know we're behind a
+    proxy that sets it (Render, Cloudflare). The header is a comma-
+    separated chain; the LAST entry is the trusted proxy's view of the
+    client. Take the rightmost-non-trusted entry, not the leftmost."""
+    if _TRUST_FORWARDED:
+        fwd = request.headers.get("x-forwarded-for", "")
+        if fwd:
+            # Strip whitespace, drop empty entries.
+            chain = [p.strip() for p in fwd.split(",") if p.strip()]
+            if chain:
+                # The rightmost entry is what the immediate trusted proxy
+                # observed as the connecting peer — closer to the truth than
+                # the leftmost (which the client controls).
+                return chain[-1]
     return request.client.host if request.client else "unknown"
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
