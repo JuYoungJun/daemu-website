@@ -58,7 +58,14 @@ export default {
       const safeAtt = Array.isArray(attachments)
         ? attachments.filter(a => a && a.filename && a.content).slice(0, 12).map(a => {
             const out = { filename: a.filename, content: a.content };
-            if (a.contentId) { out.content_id = a.contentId; if (a.inline !== false) out.content_disposition = 'inline'; }
+            const fn = String(a.filename).toLowerCase();
+            if (fn.endsWith('.jpg') || fn.endsWith('.jpeg')) out.content_type = 'image/jpeg';
+            else if (fn.endsWith('.png')) out.content_type = 'image/png';
+            else if (fn.endsWith('.gif')) out.content_type = 'image/gif';
+            else if (fn.endsWith('.webp')) out.content_type = 'image/webp';
+            else if (fn.endsWith('.pdf')) out.content_type = 'application/pdf';
+            // Resend REST API: content_id triggers inline embedding
+            if (a.contentId) out.content_id = a.contentId;
             return out;
           })
         : null;

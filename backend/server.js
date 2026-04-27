@@ -54,11 +54,17 @@ app.post('/api/email/send', async (req, res) => {
         .slice(0, 12)
         .map((a) => {
           const out = { filename: String(a.filename), content: String(a.content) };
-          if (a.contentId) {
-            // Resend SDK expects camelCase for inline embedding
-            out.contentId = String(a.contentId);
-            if (a.inline !== false) out.contentDisposition = 'inline';
-          }
+          // Detect MIME for inline embedding (Gmail strict)
+          const filename = String(a.filename).toLowerCase();
+          if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) out.contentType = 'image/jpeg';
+          else if (filename.endsWith('.png')) out.contentType = 'image/png';
+          else if (filename.endsWith('.gif')) out.contentType = 'image/gif';
+          else if (filename.endsWith('.webp')) out.contentType = 'image/webp';
+          else if (filename.endsWith('.svg')) out.contentType = 'image/svg+xml';
+          else if (filename.endsWith('.pdf')) out.contentType = 'application/pdf';
+          // Resend SDK uses `inlineContentId` for cid: HTML references.
+          // Setting it makes Resend send the attachment as inline (no paperclip).
+          if (a.contentId) out.inlineContentId = String(a.contentId);
           return out;
         })
     : undefined;
@@ -104,7 +110,13 @@ app.post('/api/email/campaign', async (req, res) => {
   const safeAtt = Array.isArray(attachments)
     ? attachments.filter(a => a && a.filename && a.content).slice(0, 12).map(a => {
         const out = { filename: String(a.filename), content: String(a.content) };
-        if (a.contentId) { out.contentId = String(a.contentId); if (a.inline !== false) out.contentDisposition = 'inline'; }
+        const filename = String(a.filename).toLowerCase();
+        if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) out.contentType = 'image/jpeg';
+        else if (filename.endsWith('.png')) out.contentType = 'image/png';
+        else if (filename.endsWith('.gif')) out.contentType = 'image/gif';
+        else if (filename.endsWith('.webp')) out.contentType = 'image/webp';
+        else if (filename.endsWith('.pdf')) out.contentType = 'application/pdf';
+        if (a.contentId) out.inlineContentId = String(a.contentId);
         return out;
       })
     : null;
