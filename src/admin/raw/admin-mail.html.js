@@ -2,7 +2,7 @@ export default `<main class="page fade-up">
     <section class="wide">
       <a href="admin.html" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Auto-Reply</h1>
-      <p class="adm-section-desc">Contact 폼 / 상담 등록 시 자동으로 발송되는 회신 메일을 관리합니다.<br>여기 저장된 템플릿이 EmailJS를 통해 그대로 발송됩니다.</p>
+      <p class="adm-section-desc">Contact 폼 / 상담 신규 등록 시 자동으로 발송되는 회신 메일을 관리합니다.<br>여기 저장된 제목·본문이 백엔드(Resend)를 통해 그대로 발송됩니다.</p>
 
       <div class="adm-section">
         <div class="adm-section-head">
@@ -11,14 +11,20 @@ export default `<main class="page fade-up">
           </div>
         </div>
 
-        <div style="background:#f6f4f0;border:1px solid #d7d4cf;padding:18px 22px;margin-bottom:24px">
-          <div style="font-size:11px;letter-spacing:.14em;color:#8c867d;text-transform:uppercase;margin-bottom:10px">사용 가능한 변수 — 본문/제목에 그대로 입력하면 발송 시 치환됩니다</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:12px;color:#4a4744">
-            <code style="background:#fff;padding:4px 8px;border:1px solid #e6e3dd">{{name}}</code><span style="color:#8c867d">— 수신자 이름</span>
-            <code style="background:#fff;padding:4px 8px;border:1px solid #e6e3dd">{{category}}</code><span style="color:#8c867d">— 문의 카테고리</span>
-            <code style="background:#fff;padding:4px 8px;border:1px solid #e6e3dd">{{message}}</code><span style="color:#8c867d">— 원본 문의 내용</span>
-            <code style="background:#fff;padding:4px 8px;border:1px solid #e6e3dd">{{phone}}</code><span style="color:#8c867d">— 연락처</span>
-            <code style="background:#fff;padding:4px 8px;border:1px solid #e6e3dd">{{email}}</code><span style="color:#8c867d">— 이메일</span>
+        <div class="adm-mail-vars" aria-label="시스템 정의 변수">
+          <div class="adm-mail-vars-head">
+            <span class="adm-mail-vars-lock" aria-hidden="true">🔒</span>
+            <div>
+              <div class="adm-mail-vars-title">사용 가능한 변수</div>
+              <div class="adm-mail-vars-sub">본문/제목에 그대로 입력하면 발송 시 자동 치환됩니다 · 시스템 정의 (편집 불가)</div>
+            </div>
+          </div>
+          <div class="adm-mail-vars-grid">
+            <div class="adm-mail-var-item"><code>{{name}}</code><span>수신자 이름</span></div>
+            <div class="adm-mail-var-item"><code>{{category}}</code><span>문의 카테고리</span></div>
+            <div class="adm-mail-var-item"><code>{{message}}</code><span>원본 문의 내용</span></div>
+            <div class="adm-mail-var-item"><code>{{phone}}</code><span>연락처</span></div>
+            <div class="adm-mail-var-item"><code>{{email}}</code><span>이메일</span></div>
           </div>
         </div>
 

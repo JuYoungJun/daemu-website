@@ -1,0 +1,21 @@
+# Render.com one-click deploy config
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: daemu-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: RESEND_API_KEY
+        sync: false   # Render dashboard에서 직접 입력 (시크릿 보호)
+      - key: ALLOWED_ORIGINS
+        value: https://juyoungjun.github.io,http://localhost:8765,http://localhost:5173
+      - key: FROM_EMAIL
+        value: DAEMU <onboarding@resend.dev>
+      - key: PORT
+        value: 3000
