@@ -51,11 +51,11 @@ function renderPipeline() {
   document.getElementById("pipeline").innerHTML = STAGES.map(s => {
     const items = all.filter(d => d.status === s.key);
     return `<div class="adm-pipe-col">
-      <h4>${s.label} <b>${items.length}</b></h4>
+      <h4>${escHtml(s.label)} <b>${items.length}</b></h4>
       ${items.length ? items.map(d => `
-        <div class="adm-pipe-card" onclick="openDrawer(${d.id})">
-          <div class="nm">${d.name}</div>
-          <div class="meta">${d.company||"개인"} · ${fmtMoney(d.value)}</div>
+        <div class="adm-pipe-card" onclick="openDrawer(${escAttr(d.id)})">
+          <div class="nm">${escHtml(d.name)}</div>
+          <div class="meta">${escHtml(d.company||"개인")} · ${fmtMoney(d.value)}</div>
         </div>
       `).join("") : '<div style="font-size:11px;color:#b9b5ae;letter-spacing:.04em">비어있음</div>'}
     </div>`;
@@ -68,18 +68,18 @@ function render() {
   const data = filtered();
   document.getElementById("count").textContent = data.length + "건";
   document.getElementById("list").innerHTML = data.length ? data.map(d => {
-    const tags = (d.tags||[]).slice(0,3).map(t => `<span class="adm-chip">${t}</span>`).join("");
+    const tags = (d.tags||[]).slice(0,3).map(t => `<span class="adm-chip">${escHtml(t)}</span>`).join("");
     return `<tr>
-      <td data-label="이름"><a href="javascript:void(0)" onclick="openDrawer(${d.id})" style="color:#111;font-weight:500">${d.name}</a></td>
-      <td data-label="회사">${d.company||"-"}</td>
-      <td data-label="연락처">${d.phone||"-"}</td>
+      <td data-label="이름"><a href="javascript:void(0)" onclick="openDrawer(${escAttr(d.id)})" style="color:#111;font-weight:500">${escHtml(d.name)}</a></td>
+      <td data-label="회사">${escHtml(d.company||"-")}</td>
+      <td data-label="연락처">${escHtml(d.phone||"-")}</td>
       <td data-label="태그">${tags||"-"}</td>
       <td data-label="금액">${fmtMoney(d.value)}</td>
       <td data-label="단계">${badge(stageMeta(d.status).label)}</td>
-      <td data-label="등록일">${d.date}</td>
+      <td data-label="등록일">${escHtml(d.date)}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`;
   }).join("") : '<tr><td colspan="8" class="adm-empty">조건에 맞는 항목이 없습니다.</td></tr>';
@@ -156,11 +156,11 @@ function openDrawer(id) {
   document.getElementById("d-source").textContent = d.source || "-";
   document.getElementById("d-value").textContent = fmtMoney(d.value);
   document.getElementById("d-date").textContent = d.date;
-  document.getElementById("d-tags").innerHTML = (d.tags||[]).map(t => `<span class="adm-chip">${t}</span>`).join("") || '<span style="font-size:11px;color:#b9b5ae">태그 없음</span>';
+  document.getElementById("d-tags").innerHTML = (d.tags||[]).map(t => `<span class="adm-chip">${escHtml(t)}</span>`).join("") || '<span style="font-size:11px;color:#b9b5ae">태그 없음</span>';
   document.getElementById("d-summary").textContent = d.summary || "—";
   document.getElementById("d-stage-pick").value = d.status;
   document.getElementById("d-timeline").innerHTML = (d.notes && d.notes.length)
-    ? d.notes.slice().reverse().map(n => `<div class="adm-timeline-item"><div class="ts">${n.ts}</div><div class="body">${n.text}</div></div>`).join("")
+    ? d.notes.slice().reverse().map(n => `<div class="adm-timeline-item"><div class="ts">${escHtml(n.ts)}</div><div class="body">${escHtml(n.text)}</div></div>`).join("")
     : '<div style="font-size:12px;color:#b9b5ae">아직 기록된 메모가 없습니다.</div>';
   document.getElementById("note-form").style.display = "none";
   document.getElementById("drawer-mask").classList.add("show");

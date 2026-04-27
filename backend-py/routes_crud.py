@@ -219,6 +219,10 @@ class InquiryIn(BaseModel):
     expected_open: str = ""
     category: str = ""
     message: str = ""
+    # PIPA (개인정보보호법) — explicit consent required before storing any
+    # personal data. Frontend must surface a checkbox; this server flag is
+    # the durable record of consent.
+    privacy_consent: bool = False
 
 
 class InquiryUpdate(BaseModel):
@@ -239,8 +243,11 @@ async def create_inquiry(
     ip = _client_ip(request)
     if not _inquiry_limiter.check(ip):
         raise HTTPException(429, detail="문의가 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.")
+    if not payload.privacy_consent:
+        raise HTTPException(400, detail="개인정보 수집·이용에 동의해 주세요.")
 
-    inq = Inquiry(**payload.model_dump())
+    data = payload.model_dump(exclude={"privacy_consent"})
+    inq = Inquiry(**data, privacy_consent_at=datetime.now(timezone.utc))
     session.add(inq)
     await session.flush()
     inquiry_dict = model_to_dict(inq)

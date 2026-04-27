@@ -28,6 +28,7 @@ import Work from './pages/Work.jsx';
 import WorkDetail from './pages/WorkDetail.jsx';
 import Contact from './pages/Contact.jsx';
 import Partners from './pages/Partners.jsx';
+import Privacy from './pages/Privacy.jsx';
 
 // Admin pages
 import AdminGate from './admin/AdminGate.jsx';
@@ -49,7 +50,7 @@ import AdminUsers from './admin/AdminUsers.jsx';
 const PUBLIC_PAGE_KEYS = {
   '/': 'home', '/about': 'about', '/service': 'service',
   '/team': 'team', '/process': 'process', '/work': 'work',
-  '/contact': 'contact', '/partners': 'partners'
+  '/contact': 'contact', '/partners': 'partners', '/privacy': 'privacy'
 };
 
 function isAdminPath(pathname) {
@@ -139,6 +140,7 @@ export default function App() {
         <Route path="/work/:slug" element={<PublicRoute pageKey="work"><WorkDetail /></PublicRoute>} />
         <Route path="/contact" element={<PublicRoute pageKey="contact"><Contact /></PublicRoute>} />
         <Route path="/partners" element={<PublicRoute pageKey="partners"><Partners /></PublicRoute>} />
+        <Route path="/privacy" element={<PublicRoute pageKey="privacy"><Privacy /></PublicRoute>} />
 
         <Route path="/admin" element={<AdminGate />} />
         <Route path="/admin/works" element={<RequireAuth><AdminWorks /></RequireAuth>} />

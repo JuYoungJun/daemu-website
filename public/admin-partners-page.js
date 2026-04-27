@@ -20,16 +20,16 @@ function render() {
   document.getElementById("list").innerHTML = data.length ? data.map(d => {
     const isActive = (d.active || "active") === "active";
     return `<tr>
-      <td data-label="회사명">${d.name}</td>
-      <td data-label="담당자">${d.person||"-"}</td>
-      <td data-label="연락처">${d.phone||"-"}</td>
-      <td data-label="업종">${d.type||"-"}</td>
-      <td data-label="권한">${d.role||"-"}</td>
+      <td data-label="회사명">${escHtml(d.name)}</td>
+      <td data-label="담당자">${escHtml(d.person||"-")}</td>
+      <td data-label="연락처">${escHtml(d.phone||"-")}</td>
+      <td data-label="업종">${escHtml(d.type||"-")}</td>
+      <td data-label="권한">${escHtml(d.role||"-")}</td>
       <td data-label="상태">${badge(isActive ? "활성" : "비활성")}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="toggleActive(${d.id})">${isActive ? "비활성" : "활성"}</button>
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="toggleActive(${escAttr(d.id)})">${isActive ? "비활성" : "활성"}</button>
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`;
   }).join("") : '<tr><td colspan="7" class="adm-empty">조건에 맞는 파트너가 없습니다.</td></tr>';

@@ -25,11 +25,13 @@ your own values before opening to anyone outside your team.
 from __future__ import annotations
 
 import os
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -37,6 +39,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_session
 from models import AdminUser
+
+
+# F-12: per-IP login throttle. 5 wrong attempts in 15 minutes locks that IP
+# from /api/auth/login (any account) for the rest of the window.
+class _LoginThrottle:
+    def __init__(self, max_failures: int = 5, window_seconds: int = 900):
+        self.max = max_failures
+        self.win = window_seconds
+        self._fails: dict[str, list[float]] = defaultdict(list)
+
+    def _prune(self, key: str, now: float) -> None:
+        cutoff = now - self.win
+        self._fails[key][:] = [t for t in self._fails[key] if t >= cutoff]
+
+    def is_locked(self, key: str) -> bool:
+        now = time.time()
+        self._prune(key, now)
+        return len(self._fails[key]) >= self.max
+
+    def record_failure(self, key: str) -> None:
+        self._fails[key].append(time.time())
+
+    def reset(self, key: str) -> None:
+        self._fails.pop(key, None)
+
+
+_login_throttle = _LoginThrottle()
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALG = "HS256"
@@ -108,11 +144,37 @@ class UserOut(BaseModel):
     email: str
     name: str
     role: str
+    must_change_password: bool = False
 
 
 class LoginOut(BaseModel):
     token: str
     user: UserOut
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+PASSWORD_MIN_LENGTH = 8
+
+
+def validate_password_strength(password: str) -> str | None:
+    """Returns an error message if the password is too weak, else None."""
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return f"비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 합니다."
+    classes = sum([
+        any(c.isdigit() for c in password),
+        any(c.isalpha() for c in password),
+        any(not c.isalnum() for c in password),
+    ])
+    if classes < 2:
+        return "비밀번호는 영문/숫자/특수문자 중 2종류 이상을 포함해야 합니다."
+    weak = {"daemu1234", "tester1234", "dev1234", "password", "12345678", "admin1234"}
+    if password.lower() in weak:
+        return "너무 자주 사용되는 비밀번호입니다. 더 강한 비밀번호로 설정해 주세요."
+    return None
 
 
 def hash_password(plain: str) -> str:
@@ -209,15 +271,17 @@ async def ensure_default_users(session: AsyncSession) -> None:
     for email, password, name, role in seeds:
         if not email or not password:
             continue
-        if password in weak_defaults:
-            print(f"[auth] WARNING: '{role}' is being seeded with the default demo password. "
-                  "Set {ROLE}_PASSWORD env var (admin/tester/developer) before opening the demo to anyone.")
+        is_weak = password in weak_defaults
+        if is_weak:
+            print(f"[auth] WARNING: '{role}' seeded with default demo password — "
+                  "user will be forced to change it on first login.")
         session.add(AdminUser(
             email=email,
             password_hash=hash_password(password),
             name=name,
             role=role,
             active=True,
+            must_change_password=is_weak,
         ))
     await session.commit()
     print(f"[auth] seeded default users: {ADMIN_EMAIL}, {TESTER_EMAIL}, {DEVELOPER_EMAIL}")
@@ -228,20 +292,57 @@ ensure_default_admin = ensure_default_users
 
 
 @router.post("/login", response_model=LoginOut)
-async def login(payload: LoginIn, session: AsyncSession = Depends(get_session)):
+async def login(payload: LoginIn, request: Request, session: AsyncSession = Depends(get_session)):
+    ip = _client_ip(request)
+    if _login_throttle.is_locked(ip):
+        raise HTTPException(429, detail="로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.")
+
     res = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
     user = res.scalar_one_or_none()
     if not user or not user.active or not verify_password(payload.password, user.password_hash):
+        _login_throttle.record_failure(ip)
         raise HTTPException(401, detail="invalid credentials")
+
+    _login_throttle.reset(ip)
+    user.last_login_at = datetime.now(timezone.utc)
+    await session.flush()
     return LoginOut(
         token=issue_token(user),
-        user=UserOut(id=user.id, email=user.email, name=user.name, role=user.role),
+        user=UserOut(
+            id=user.id, email=user.email, name=user.name, role=user.role,
+            must_change_password=user.must_change_password,
+        ),
     )
 
 
 @router.get("/me", response_model=UserOut)
 async def me(user: AdminUser = Depends(require_user)):
-    return UserOut(id=user.id, email=user.email, name=user.name, role=user.role)
+    return UserOut(
+        id=user.id, email=user.email, name=user.name, role=user.role,
+        must_change_password=user.must_change_password,
+    )
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordIn,
+    session: AsyncSession = Depends(get_session),
+    user: AdminUser = Depends(require_user),
+):
+    """Any logged-in user can change their own password. Requires current
+    password (re-auth). Clears must_change_password after a successful change."""
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(401, detail="현재 비밀번호가 일치하지 않습니다.")
+    err = validate_password_strength(payload.new_password)
+    if err:
+        raise HTTPException(400, detail=err)
+    if verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(400, detail="새 비밀번호가 기존 비밀번호와 동일합니다.")
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
+    await session.flush()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -282,8 +383,9 @@ async def list_users(session: AsyncSession = Depends(get_session), _u: AdminUser
 async def create_user(payload: UserCreateIn, session: AsyncSession = Depends(get_session), _u: AdminUser = Depends(require_admin)):
     if payload.role not in ALL_ROLES:
         raise HTTPException(400, detail=f"role must be one of {ALL_ROLES}")
-    if len(payload.password) < 8:
-        raise HTTPException(400, detail="password must be at least 8 characters")
+    err = validate_password_strength(payload.password)
+    if err:
+        raise HTTPException(400, detail=err)
     exists = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
     if exists.scalar_one_or_none():
         raise HTTPException(409, detail="email already in use")
@@ -293,6 +395,8 @@ async def create_user(payload: UserCreateIn, session: AsyncSession = Depends(get
         name=payload.name or "",
         role=payload.role,
         active=True,
+        # Admin issued the password — force the new user to change it on first login.
+        must_change_password=True,
     )
     session.add(user)
     await session.flush()
@@ -322,9 +426,16 @@ async def update_user(user_id: int, payload: UserUpdateIn, session: AsyncSession
             raise HTTPException(400, detail="cannot deactivate yourself")
         target.active = payload.active
     if payload.password is not None:
-        if len(payload.password) < 8:
-            raise HTTPException(400, detail="password must be at least 8 characters")
+        err = validate_password_strength(payload.password)
+        if err:
+            raise HTTPException(400, detail=err)
         target.password_hash = hash_password(payload.password)
+        target.password_changed_at = datetime.now(timezone.utc)
+        # Admin reset → force the target user to change at next login.
+        if target.id != me_user.id:
+            target.must_change_password = True
+        else:
+            target.must_change_password = False
     await session.flush()
     return {"ok": True, "user": {"id": target.id, "email": target.email, "name": target.name, "role": target.role, "active": target.active}}
 

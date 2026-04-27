@@ -75,16 +75,16 @@ function render() {
   document.getElementById("list").innerHTML = data.length ? data.map(d => {
     const openTxt = d.status === "sent" ? `${d.opens||0}/${d.clicks||0}` : "-";
     return `<tr>
-      <td data-label="제목" style="max-width:280px"><a href="javascript:void(0)" onclick="openEdit(${d.id})" style="color:#111">${d.title}</a></td>
-      <td data-label="채널">${d.channel}</td>
+      <td data-label="제목" style="max-width:280px"><a href="javascript:void(0)" onclick="openEdit(${escAttr(d.id)})" style="color:#111">${escHtml(d.title)}</a></td>
+      <td data-label="채널">${escHtml(d.channel)}</td>
       <td data-label="수신자">${(d.recipients||0).toLocaleString('ko')}명</td>
       <td data-label="오픈/클릭">${openTxt}</td>
-      <td data-label="발송일">${d.sentDate || "-"}</td>
+      <td data-label="발송일">${escHtml(d.sentDate || "-")}</td>
       <td data-label="상태">${badge(statusLabel(d.status))}</td>
       <td data-label="관리" class="col-actions">
-        ${d.status !== "sent" ? `<button class="adm-btn-sm" onclick="sendNow(${d.id})">즉시 발송</button>` : ""}
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">${d.status==="sent"?"보기":"수정"}</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        ${d.status !== "sent" ? `<button class="adm-btn-sm" onclick="sendNow(${escAttr(d.id)})">즉시 발송</button>` : ""}
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">${d.status==="sent"?"보기":"수정"}</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`;
   }).join("") : '<tr><td colspan="7" class="adm-empty">조건에 맞는 캠페인이 없습니다.</td></tr>';
@@ -225,13 +225,13 @@ function renderSubs() {
   document.getElementById("sub-count").textContent = data.length + "명";
   document.getElementById("sub-list").innerHTML = data.length ? data.map(d =>
     `<tr>
-      <td data-label="이메일">${d.email}</td>
-      <td data-label="이름">${d.name||"-"}</td>
-      <td data-label="구독일">${d.date}</td>
+      <td data-label="이메일">${escHtml(d.email)}</td>
+      <td data-label="이름">${escHtml(d.name||"-")}</td>
+      <td data-label="구독일">${escHtml(d.date)}</td>
       <td data-label="상태">${badge(d.status)}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="toggleSub(${d.id})">${d.status==="활성"?"해지":"활성화"}</button>
-        <button class="adm-btn-sm danger" onclick="delSub(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="toggleSub(${escAttr(d.id)})">${d.status==="활성"?"해지":"활성화"}</button>
+        <button class="adm-btn-sm danger" onclick="delSub(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`
   ).join("") : '<tr><td colspan="5" class="adm-empty">구독자가 없습니다.</td></tr>';

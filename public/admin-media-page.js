@@ -6,10 +6,10 @@ function render() {
   const grid = document.getElementById("media-grid");
   grid.innerHTML = data.length ? data.map(d =>
     `<div class="adm-media-item">
-      <img src="${d.src}" alt="${d.name}">
+      <img src="${escUrl(d.src)}" alt="${escAttr(d.name)}">
       <div class="adm-media-meta">
-        <span>${d.name.length > 18 ? d.name.substring(0,18)+"…" : d.name}</span>
-        <button onclick="del(${d.id})">삭제</button>
+        <span>${escHtml(d.name.length > 18 ? d.name.substring(0,18)+"…" : d.name)}</span>
+        <button onclick="del(${escAttr(d.id)})">삭제</button>
       </div>
     </div>`
   ).join("") : '<p class="adm-empty" style="grid-column:1/-1">업로드된 미디어가 없습니다.</p>';

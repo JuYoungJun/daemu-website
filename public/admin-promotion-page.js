@@ -51,16 +51,16 @@ function render() {
     const value = d.type === "percent" ? (d.value+"%") : (d.type === "amount" ? fmtMoney(d.value)+"원" : "1+1");
     const usage = (d.uses||0) + "/" + (d.max||"∞");
     return `<tr>
-      <td data-label="코드"><b style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px">${d.code}</b><div style="font-size:11px;color:#8c867d">${d.desc||""}</div></td>
+      <td data-label="코드"><b style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px">${escHtml(d.code)}</b><div style="font-size:11px;color:#8c867d">${escHtml(d.desc||"")}</div></td>
       <td data-label="유형">${typeLabel(d.type)}</td>
       <td data-label="값">${value}</td>
-      <td data-label="유효기간" style="font-size:11px;color:#6f6b68">${period}</td>
+      <td data-label="유효기간" style="font-size:11px;color:#6f6b68">${escHtml(period)}</td>
       <td data-label="사용">${usage}</td>
       <td data-label="상태">${badge(statusLabel(eff))}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="bumpUse(${d.id})">+1 사용</button>
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="bumpUse(${escAttr(d.id)})">+1 사용</button>
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`;
   }).join("") : '<tr><td colspan="7" class="adm-empty">조건에 맞는 쿠폰이 없습니다.</td></tr>';
@@ -141,15 +141,15 @@ function renderEvents() {
   const data = DB.get(EV_KEY);
   document.getElementById("ev-list").innerHTML = data.length ? data.map(d =>
     `<tr>
-      <td data-label="제목" style="max-width:280px">${d.title}</td>
-      <td data-label="구분">${d.type}</td>
-      <td data-label="기간" style="font-size:11px;color:#6f6b68">${d.period||"-"}</td>
-      <td data-label="등록일">${d.date}</td>
+      <td data-label="제목" style="max-width:280px">${escHtml(d.title)}</td>
+      <td data-label="구분">${escHtml(d.type)}</td>
+      <td data-label="기간" style="font-size:11px;color:#6f6b68">${escHtml(d.period||"-")}</td>
+      <td data-label="등록일">${escHtml(d.date)}</td>
       <td data-label="상태">${badge(d.status === "active" ? "게시" : "숨김")}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="evToggle(${d.id})">${d.status==="active"?"숨김":"게시"}</button>
-        <button class="adm-btn-sm" onclick="evEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="evDel(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="evToggle(${escAttr(d.id)})">${d.status==="active"?"숨김":"게시"}</button>
+        <button class="adm-btn-sm" onclick="evEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="evDel(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`
   ).join("") : '<tr><td colspan="6" class="adm-empty">등록된 이벤트가 없습니다.</td></tr>';

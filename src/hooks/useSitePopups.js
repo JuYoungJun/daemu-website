@@ -2,6 +2,20 @@ import { useEffect } from 'react';
 import { DB } from '../lib/db.js';
 import { escapeHtml } from '../lib/db.js';
 
+// Allow only safe URL schemes in popup CTA links to prevent XSS via
+// javascript: / data: URLs that the admin (or a compromised admin row)
+// could store in localStorage.
+function safeUrl(s) {
+  const v = String(s == null ? '' : s).trim();
+  if (!v) return '#';
+  if (v.startsWith('/') || v.startsWith('#') || v.startsWith('?')) return escapeHtml(v);
+  const m = /^([a-z][a-z0-9+.-]*):/i.exec(v);
+  if (!m) return escapeHtml(v);
+  const scheme = m[1].toLowerCase();
+  return (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel')
+    ? escapeHtml(v) : '#';
+}
+
 // Drives the site-popup overlay on public pages.
 // Mirrors the script.js init_site_popups behavior so admin-managed popups still work.
 export function useSitePopups(pageKey) {
@@ -40,11 +54,11 @@ export function useSitePopups(pageKey) {
 function showPopup(popup) {
   const overlay = document.createElement('div');
   overlay.className = 'site-popup-overlay site-popup-pos-' + (popup.position || 'center');
-  const imgHtml = popup.image ? `<img class="site-popup-image" src="${popup.image}" alt="">` : '';
+  const imgHtml = popup.image ? `<img class="site-popup-image" src="${safeUrl(popup.image)}" alt="">` : '';
   const titleHtml = popup.title ? `<h3>${escapeHtml(popup.title)}</h3>` : '';
   const bodyHtml = popup.body ? `<p>${escapeHtml(popup.body)}</p>` : '';
   const ctaHtml = (popup.ctaText && popup.ctaUrl)
-    ? `<a class="site-popup-cta" href="${popup.ctaUrl}">${escapeHtml(popup.ctaText)}</a>` : '';
+    ? `<a class="site-popup-cta" href="${safeUrl(popup.ctaUrl)}">${escapeHtml(popup.ctaText)}</a>` : '';
   const skipHtml = popup.frequency !== 'always'
     ? `<label class="site-popup-skip"><input type="checkbox"> 오늘 하루 보지 않기</label>` : '';
   overlay.innerHTML = `<div class="site-popup-box">

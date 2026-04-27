@@ -4,13 +4,27 @@ import AdminShell from '../components/AdminShell.jsx';
 import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { api } from '../lib/api.js';
+import ChangePasswordForm from './ChangePasswordForm.jsx';
 
 export default function AdminGate() {
   const [loggedIn, setLoggedIn] = useState(() => Auth.isLoggedIn());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mustChange, setMustChange] = useState(() => !!Auth.user()?.must_change_password);
+  const [showChange, setShowChange] = useState(false);
 
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
+
+  // Refresh /api/auth/me on mount so the forced-change flag stays accurate
+  // even if it changed on another device or via admin reset.
+  useEffect(() => {
+    if (loggedIn && api.isConfigured()) {
+      Auth.refreshMe().then((u) => {
+        if (u) setMustChange(!!u.must_change_password);
+        else { Auth.logout(); setLoggedIn(false); }
+      });
+    }
+  }, [loggedIn]);
 
   const onLogin = async (e) => {
     e.preventDefault();
@@ -25,12 +39,53 @@ export default function AdminGate() {
       setError(res.error || '로그인 실패');
       return;
     }
+    setMustChange(!!res.mustChangePassword);
     setLoggedIn(true);
   };
   const onLogout = () => {
     Auth.logout();
     setLoggedIn(false);
+    setMustChange(false);
+    setShowChange(false);
   };
+
+  if (loggedIn && (mustChange || showChange)) {
+    return (
+      <AdminShell>
+        <main className="page">
+          <section className="wide admin-page">
+            <h1 className="page-title">Admin</h1>
+            <ChangePasswordForm
+              forced={mustChange}
+              onDone={() => {
+                setMustChange(false);
+                setShowChange(false);
+                alert('비밀번호가 변경되었습니다.');
+              }}
+            />
+            {!mustChange && (
+              <div style={{ textAlign: 'center', marginTop: 18 }}>
+                <button type="button" className="btn" onClick={() => setShowChange(false)}>
+                  취소
+                </button>
+              </div>
+            )}
+            {mustChange && (
+              <div style={{ textAlign: 'center', marginTop: 18, fontSize: 12, color: '#8c867d' }}>
+                비밀번호를 변경한 후 대시보드로 이동합니다.
+                <div style={{ marginTop: 12 }}>
+                  <button type="button" onClick={onLogout}
+                    style={{ background: 'transparent', border: 'none', color: '#b04a3b', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>
+                    다른 계정으로 로그인
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </main>
+      </AdminShell>
+    );
+  }
 
   if (!loggedIn) {
     return (
@@ -103,7 +158,11 @@ export default function AdminGate() {
                   </span>
                 </div>
               </div>
-              <button className="btn admin-logout-btn" type="button" onClick={onLogout}>로그아웃</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn" type="button" onClick={() => setShowChange(true)}
+                  style={{ minWidth: 120 }}>비밀번호 변경</button>
+                <button className="btn admin-logout-btn" type="button" onClick={onLogout}>로그아웃</button>
+              </div>
             </div>
 
             <div className="admin-stats-grid">

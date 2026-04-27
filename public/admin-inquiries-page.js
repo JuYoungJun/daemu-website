@@ -25,19 +25,19 @@ function render() {
   document.getElementById("count").textContent = data.length + "건";
   document.getElementById("list").innerHTML = data.length ? data.map(d =>
     `<tr>
-      <td data-label="이름">${d.name}</td>
-      <td data-label="연락처">${d.phone||"-"}</td>
-      <td data-label="업종">${d.type||"-"}</td>
-      <td data-label="접수일">${d.date}</td>
+      <td data-label="이름">${escHtml(d.name)}</td>
+      <td data-label="연락처">${escHtml(d.phone||"-")}</td>
+      <td data-label="업종">${escHtml(d.type||"-")}</td>
+      <td data-label="접수일">${escHtml(d.date)}</td>
       <td data-label="상태">${badge(d.status)}</td>
       <td data-label="관리" class="col-actions">
-        <select class="adm-status-select" onchange="updateStatus(${d.id},this.value)">
+        <select class="adm-status-select" onchange="updateStatus(${escAttr(d.id)},this.value)">
           <option ${d.status==="신규"?"selected":""}>신규</option>
           <option ${d.status==="처리중"?"selected":""}>처리중</option>
           <option ${d.status==="답변완료"?"selected":""}>답변완료</option>
         </select>
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`
   ).join("") : '<tr><td colspan="6" class="adm-empty">조건에 맞는 문의가 없습니다.</td></tr>';

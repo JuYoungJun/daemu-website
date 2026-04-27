@@ -41,23 +41,23 @@ function render() {
     const hasContract = !!(d.contract && d.contract.trim());
     const hasPO = !!(d.purchaseOrder && d.purchaseOrder.trim());
     return `<tr>
-      <td data-label="주문번호">#${String(d.id).slice(-6)}</td>
-      <td data-label="파트너">${d.partner}</td>
-      <td data-label="상품">${d.product}</td>
-      <td data-label="수량">${d.qty||"-"}</td>
+      <td data-label="주문번호">#${escHtml(String(d.id).slice(-6))}</td>
+      <td data-label="파트너">${escHtml(d.partner)}</td>
+      <td data-label="상품">${escHtml(d.product)}</td>
+      <td data-label="수량">${escHtml(d.qty||"-")}</td>
       <td data-label="금액">${amt ? fmtMoney(amt)+'원' : '-'}</td>
-      <td data-label="접수일">${d.date}</td>
+      <td data-label="접수일">${escHtml(d.date)}</td>
       <td data-label="상태">${badge(d.status)}</td>
       <td data-label="관리" class="col-actions">
-        <select class="adm-status-select" onchange="updateStatus(${d.id},this.value)">
+        <select class="adm-status-select" onchange="updateStatus(${escAttr(d.id)},this.value)">
           <option ${d.status==="접수"?"selected":""}>접수</option>
           <option ${d.status==="처리중"?"selected":""}>처리중</option>
           <option ${d.status==="출고완료"?"selected":""}>출고완료</option>
         </select>
-        ${hasPO ? `<button class="adm-btn-sm" onclick="sendDoc(${d.id},'po')">발주서 발송</button>` : ''}
-        ${hasContract ? `<button class="adm-btn-sm" onclick="sendDoc(${d.id},'contract')">계약서 발송</button>` : ''}
-        <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-        <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+        ${hasPO ? `<button class="adm-btn-sm" onclick="sendDoc(${escAttr(d.id)},'po')">발주서 발송</button>` : ''}
+        ${hasContract ? `<button class="adm-btn-sm" onclick="sendDoc(${escAttr(d.id)},'contract')">계약서 발송</button>` : ''}
+        <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+        <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>
     </tr>`;
   }).join("") : '<tr><td colspan="8" class="adm-empty">조건에 맞는 발주가 없습니다.</td></tr>';
@@ -178,9 +178,9 @@ function renderAttachments() {
   if (!wrap) return;
   wrap.innerHTML = pendingAttachments.map((a, i) => {
     if (a.isImage && a.previewUrl) {
-      return `<div class="adm-thumb"><img src="${a.previewUrl}" alt=""><button type="button" class="x" onclick="removeOrderAttachment(${i})">×</button></div>`;
+      return `<div class="adm-thumb"><img src="${escUrl(a.previewUrl)}" alt=""><button type="button" class="x" onclick="removeOrderAttachment(${i})">×</button></div>`;
     }
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f6f4f0;border:1px solid #d7d4cf;font-size:12px">📎 ${a.filename} <button type="button" onclick="removeOrderAttachment(${i})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:13px">×</button></div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f6f4f0;border:1px solid #d7d4cf;font-size:12px">📎 ${escHtml(a.filename)} <button type="button" onclick="removeOrderAttachment(${i})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:13px">×</button></div>`;
   }).join('');
 }
 

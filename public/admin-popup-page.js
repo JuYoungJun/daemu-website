@@ -206,10 +206,10 @@ function showPreview(popup) {
   document.querySelectorAll('.site-popup-overlay').forEach(el => el.remove());
   const overlay = document.createElement('div');
   overlay.className = 'site-popup-overlay site-popup-pos-' + (popup.position || 'center');
-  const imgHtml = popup.image ? `<img class="site-popup-image" src="${popup.image}" alt="">` : "";
+  const imgHtml = popup.image ? `<img class="site-popup-image" src="${escUrl(popup.image)}" alt="">` : "";
   const titleHtml = popup.title ? `<h3>${escapeHtml(popup.title)}</h3>` : "";
   const bodyHtml = popup.body ? `<p>${escapeHtml(popup.body)}</p>` : "";
-  const ctaHtml = (popup.ctaText && popup.ctaUrl) ? `<a class="site-popup-cta" href="${popup.ctaUrl}" onclick="event.preventDefault();alert('미리보기: 실제 사이트에서는 ${escapeHtml(popup.ctaUrl)} 로 이동합니다.')">${escapeHtml(popup.ctaText)}</a>` : "";
+  const ctaHtml = (popup.ctaText && popup.ctaUrl) ? `<a class="site-popup-cta" href="${escUrl(popup.ctaUrl)}" onclick="event.preventDefault();alert('미리보기: 실제 사이트에서는 ${escapeHtml(popup.ctaUrl)} 로 이동합니다.')">${escapeHtml(popup.ctaText)}</a>` : "";
   const skipHtml = popup.frequency !== "always" ? `<label class="site-popup-skip"><input type="checkbox"> 오늘 하루 보지 않기</label>` : "";
   overlay.innerHTML = `<div class="site-popup-box">
     <button class="site-popup-close" type="button" aria-label="닫기">×</button>

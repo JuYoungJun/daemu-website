@@ -55,6 +55,19 @@ export function installConsultFormHandler() {
       return;
     }
 
+    // PIPA consent. Legacy forms (process/contact-bottom) don't render a
+    // dedicated checkbox so we surface the disclosure here. Skip silently
+    // if the user declines — same UX as the React Contact form.
+    const consentMsg =
+      '개인정보 수집·이용에 동의하시겠습니까?\n\n' +
+      '· 수집 항목: 이름, 이메일, 연락처(선택), 문의 내용\n' +
+      '· 보유 기간: 3년\n' +
+      '· 자세한 내용은 /privacy 페이지를 참고해 주세요.';
+    if (!window.confirm(consentMsg)) {
+      restore();
+      return;
+    }
+
     // Local mirror — keeps offline demo working + lets admin see new entry
     // immediately. The backend (when configured) is the source of truth.
     DB.add('inquiries', {
@@ -66,6 +79,7 @@ export function installConsultFormHandler() {
       // Backend persists + fires auto-reply server-side. No public mail relay.
       const r = await api.post('/api/inquiries', {
         name, email, phone, category: finalCategory, message,
+        privacy_consent: true,
       });
       if (r.ok) {
         mailNote = '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송됩니다.';

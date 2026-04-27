@@ -84,20 +84,20 @@
     document.getElementById("list").innerHTML = data.length ? data.map(d => {
       const heroSrc = d.hero || (d.images && d.images[0] && d.images[0].src) || '';
       const thumb = heroSrc
-        ? `<span class="adm-thumb-cell"><img src="${heroSrc}" alt=""></span>`
+        ? `<span class="adm-thumb-cell"><img src="${escUrl(heroSrc)}" alt=""></span>`
         : `<span class="adm-thumb-cell"></span>`;
       const galleryCount = d.images ? d.images.length : 0;
       const slug = d.slug || '#'+String(d.id).slice(-6);
       return `<tr>
         <td data-label="이미지">${thumb}<small style="color:#8c867d">${galleryCount}장</small></td>
-        <td data-label="브랜드">${d.brand}</td>
-        <td data-label="지점">${d.name}</td>
-        <td data-label="슬러그"><a href="/work/${d.slug || ''}" target="_blank" style="color:#111;font-size:12px">${slug}</a></td>
-        <td data-label="연도">${d.year || '-'}</td>
+        <td data-label="브랜드">${escHtml(d.brand)}</td>
+        <td data-label="지점">${escHtml(d.name)}</td>
+        <td data-label="슬러그"><a href="/work/${escUrl(d.slug || '')}" target="_blank" style="color:#111;font-size:12px">${escHtml(slug)}</a></td>
+        <td data-label="연도">${escHtml(d.year || '-')}</td>
         <td data-label="상태">${badge(d.status)}</td>
         <td data-label="관리" class="col-actions">
-          <button class="adm-btn-sm" onclick="openEdit(${d.id})">수정</button>
-          <button class="adm-btn-sm danger" onclick="del(${d.id})">삭제</button>
+          <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
+          <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
         </td>
       </tr>`;
     }).join("") : '<tr><td colspan="7" class="adm-empty">조건에 맞는 프로젝트가 없습니다.</td></tr>';
@@ -105,7 +105,7 @@
 
   function renderThumbs() {
     document.getElementById("f-thumbs").innerHTML = pendingImages.map((img, i) =>
-      `<div class="adm-thumb"><img src="${img.src}" alt=""><button type="button" class="x" onclick="removeImage(${i})">×</button></div>`
+      `<div class="adm-thumb"><img src="${escUrl(img.src)}" alt=""><button type="button" class="x" onclick="removeImage(${i})">×</button></div>`
     ).join("");
   }
 

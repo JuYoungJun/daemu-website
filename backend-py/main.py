@@ -84,9 +84,29 @@ EXT_TO_MIME = {
     ".png": "image/png",
     ".gif": "image/gif",
     ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-    ".pdf": "application/pdf",
 }
+
+# F-06: only allow raster image formats. Block SVG (active script container)
+# and PDF (JS-capable). Each whitelisted extension is paired with a magic
+# byte signature so a renamed payload (`evil.exe` → `evil.png`) is rejected.
+UPLOAD_MAGIC: dict[str, list[bytes]] = {
+    ".jpg":  [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".png":  [b"\x89PNG\r\n\x1a\n"],
+    ".gif":  [b"GIF87a", b"GIF89a"],
+    ".webp": [b"RIFF"],  # also requires "WEBP" at offset 8 — checked below
+}
+
+
+def magic_byte_ok(buf: bytes, ext: str) -> bool:
+    sigs = UPLOAD_MAGIC.get(ext.lower())
+    if not sigs:
+        return False
+    if not any(buf.startswith(s) for s in sigs):
+        return False
+    if ext.lower() == ".webp":
+        return len(buf) >= 12 and buf[8:12] == b"WEBP"
+    return True
 
 if not RESEND_API_KEY:
     print("[daemu-backend-py] RESEND_API_KEY not set — emails will be simulated.")
@@ -126,6 +146,38 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
     max_age=600,
 )
+
+
+# F-18: defense-in-depth headers on every API response.
+# Note: API responses are JSON, so the strict CSP here mainly protects /docs
+# (when ENV != prod) and any HTML error pages. The frontend served from
+# GitHub Pages / Cafe24 sets its own CSP separately (see index.html).
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "Content-Security-Policy": (
+        "default-src 'none'; "
+        "img-src 'self' data: https:; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "  # /docs uses jsdelivr
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'"
+    ),
+}
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
 
 
 @app.exception_handler(Exception)
@@ -244,7 +296,13 @@ app.mount("/uploads", CachedStatic(directory=str(UPLOAD_DIR)), name="uploads")
 # Upload
 
 @app.post("/api/upload")
-async def upload(payload: UploadIn, request: Request):
+async def upload(
+    payload: UploadIn,
+    request: Request,
+    _user = Depends(require_perm("works", "write")),
+):
+    """Image upload — restricted to admin/developer roles. Public Contact form
+    no longer needs uploads; auto-reply attachments are server-managed."""
     if not payload.filename or not payload.content:
         raise HTTPException(400, detail="filename + content required")
 
@@ -262,8 +320,13 @@ async def upload(payload: UploadIn, request: Request):
     if not buf:
         raise HTTPException(400, detail="empty file")
 
+    if ext.lower() not in UPLOAD_MAGIC:
+        raise HTTPException(415, detail="이미지 파일(.jpg, .png, .gif, .webp)만 업로드할 수 있습니다.")
+    if not magic_byte_ok(buf, ext):
+        raise HTTPException(415, detail="파일 내용이 이미지 형식과 일치하지 않습니다.")
+
     file_id = format(int(time.time() * 1000), "x") + "-" + secrets.token_hex(4)
-    final_name = f"{file_id}{ext}"
+    final_name = f"{file_id}{ext.lower()}"
     final_path = UPLOAD_DIR / final_name
     if UPLOAD_DIR.resolve() not in final_path.resolve().parents:
         raise HTTPException(400, detail="invalid path")

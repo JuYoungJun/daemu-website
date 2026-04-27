@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useFadeUp } from '../hooks/useFadeUp.js';
 
 export default function Footer() {
@@ -55,7 +56,7 @@ export default function Footer() {
         <div className="footer-bottom">
           <p>© <span>{year}</span> DAEMU. All Rights Reserved.</p>
           <div className="footer-bottom-links">
-            <a href="javascript:void(0)">Privacy Policy</a>
+            <Link to="/privacy">개인정보처리방침</Link>
           </div>
         </div>
       </div>

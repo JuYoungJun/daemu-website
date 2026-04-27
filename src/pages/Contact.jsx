@@ -1,8 +1,21 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useFadeUp } from '../hooks/useFadeUp.js';
 import { DB } from '../lib/db.js';
 import { sendAutoReply, isEmailEnabled } from '../lib/email.js';
 import { api } from '../lib/api.js';
+
+function ConsentRow({ consent, setConsent }) {
+  return (
+    <div className="field full" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 0', borderTop: '1px solid #e6e3dd' }}>
+      <input id="privacy-consent" type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required
+        style={{ marginTop: 4, width: 18, height: 18, accentColor: '#2a2724', flexShrink: 0 }} />
+      <label htmlFor="privacy-consent" style={{ fontSize: 12, color: '#5f5b57', lineHeight: 1.6, cursor: 'pointer' }}>
+        <strong style={{ color: '#222' }}>(필수)</strong> 개인정보 수집·이용에 동의합니다. 수집 항목: 이름, 이메일, 연락처(선택), 문의 내용 / 보유 기간: 3년 / 자세한 내용은 <Link to="/privacy" style={{ textDecoration: 'underline' }}>개인정보처리방침</Link>을 확인해 주세요.
+      </label>
+    </div>
+  );
+}
 
 const TABS = ['창업 컨설팅','메뉴 개발','브랜드 디자인','인테리어/공간 설계','원두/베이커리 납품','기타 문의'];
 
@@ -11,6 +24,7 @@ export default function Contact() {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', brand: '', region: '', open: '', msg: '', topic: ''
   });
+  const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useFadeUp([]);
@@ -21,6 +35,10 @@ export default function Contact() {
   const onSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
+    if (!consent) {
+      alert('개인정보 수집·이용에 동의해 주세요.');
+      return;
+    }
     setSubmitting(true);
 
     const inquiry = isEtc ? {
@@ -58,6 +76,7 @@ export default function Contact() {
         expected_open: form.open || '',
         category: active,
         message: isEtc ? `[${form.topic || '기타'}] ${form.msg}` : form.msg,
+        privacy_consent: true,
       });
       if (r.ok) {
         mailNote = '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송됩니다.';
@@ -86,6 +105,7 @@ export default function Contact() {
 
     alert('상담 신청이 접수되었습니다. (' + active + ')\n\n' + mailNote + '\n\n담당 매니저가 빠른 시일 내에 연락드리겠습니다.');
     setForm({ name:'', phone:'', email:'', brand:'', region:'', open:'', msg:'', topic:'' });
+    setConsent(false);
     setSubmitting(false);
   };
 
@@ -121,8 +141,9 @@ export default function Contact() {
                   <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} required /></div>
                   <div className="field full"><input type="text" placeholder="문의 제목" value={form.topic} onChange={update('topic')} required /></div>
                   <div className="field full"><textarea placeholder="자유롭게 문의 내용을 적어주세요" value={form.msg} onChange={update('msg')} required></textarea></div>
+                  <ConsentRow consent={consent} setConsent={setConsent} />
                   <div className="field full center">
-                    <button className="btn" type="submit" disabled={submitting}>{submitting ? '전송 중…' : '문의 보내기'}</button>
+                    <button className="btn" type="submit" disabled={submitting || !consent}>{submitting ? '전송 중…' : '문의 보내기'}</button>
                   </div>
                   <div className="field full center">
                     <p className="contact-auto-reply-note">입력하신 이메일로 접수 확인 메일이 발송됩니다.</p>
@@ -150,8 +171,9 @@ export default function Contact() {
                     </select>
                   </div>
                   <div className="field full"><textarea placeholder="문의내용" value={form.msg} onChange={update('msg')}></textarea></div>
+                  <ConsentRow consent={consent} setConsent={setConsent} />
                   <div className="field full center">
-                    <button className="btn" type="submit" disabled={submitting}>{submitting ? '전송 중…' : '상담 신청하기'}</button>
+                    <button className="btn" type="submit" disabled={submitting || !consent}>{submitting ? '전송 중…' : '상담 신청하기'}</button>
                   </div>
                   <div className="field full center">
                     <p className="contact-auto-reply-note">
