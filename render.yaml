@@ -1,21 +1,22 @@
-# Render.com one-click deploy config
+# Render.com one-click deploy config (Python / FastAPI)
 # https://render.com/docs/blueprint-spec
 
 services:
   - type: web
     name: daemu-api
-    runtime: node
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: node server.js
+    runtime: python
+    rootDir: backend-py
     plan: free
     autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     envVars:
       - key: RESEND_API_KEY
-        sync: false   # Render dashboard에서 직접 입력 (시크릿 보호)
+        sync: false   # set in Render dashboard (secret)
       - key: ALLOWED_ORIGINS
         value: https://juyoungjun.github.io,http://localhost:8765,http://localhost:5173
       - key: FROM_EMAIL
         value: DAEMU <onboarding@resend.dev>
-      - key: PORT
-        value: 3000
+      - key: PYTHON_VERSION
+        value: 3.12.7

@@ -1,0 +1,212 @@
+/* DAEMU error pages — bakery-themed animations */
+.err-page{
+  min-height:100vh;
+  width:100%;
+  max-width:100vw;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:80px 24px 64px;
+  background:var(--bg,#f2f0ec);
+  color:#202020;
+  font-family:'Noto Sans KR','Apple SD Gothic Neo',sans-serif;
+  text-align:center;
+  position:relative;
+  overflow-x:hidden;
+  box-sizing:border-box;
+}
+.err-page *{ box-sizing:border-box; }
+.err-page::before,.err-page::after{
+  content:'';
+  position:absolute;
+  border-radius:50%;
+  filter:blur(60px);
+  pointer-events:none;
+  opacity:.55;
+}
+.err-page::before{
+  top:-120px;left:-100px;
+  width:340px;height:340px;
+  background:#e9e2d3;
+}
+.err-page::after{
+  bottom:-140px;right:-110px;
+  width:380px;height:380px;
+  background:#dad3c2;
+}
+.err-stage{
+  position:relative;
+  width:240px;
+  height:200px;
+  margin:0 auto 40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.err-code{
+  font-family:'Cormorant Garamond','Playfair Display',serif;
+  font-weight:300;
+  font-size:clamp(96px,14vw,168px);
+  line-height:.86;
+  letter-spacing:-.04em;
+  color:#111;
+  margin:0 0 18px;
+  position:relative;
+  z-index:2;
+}
+.err-title{
+  font-size:clamp(20px,2.4vw,26px);
+  font-weight:500;
+  letter-spacing:-.02em;
+  margin:0 0 14px;
+  color:#202020;
+  position:relative;
+  z-index:2;
+}
+.err-message{
+  max-width:480px;
+  margin:0 auto 36px;
+  font-size:14px;
+  line-height:1.95;
+  color:#5f5b57;
+  word-break:keep-all;
+  position:relative;
+  z-index:2;
+}
+.err-actions{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  justify-content:center;
+  position:relative;
+  z-index:2;
+  width:100%;
+  max-width:360px;
+  margin:0 auto;
+}
+.err-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:148px;
+  padding:13px 26px;
+  font-size:13px;
+  letter-spacing:.04em;
+  border:1px solid #2a2724;
+  background:#2a2724;
+  color:#f6f4f0;
+  cursor:pointer;
+  transition:transform .18s ease, background .18s ease, color .18s ease;
+  font-family:inherit;
+  white-space:nowrap;
+}
+.err-btn:hover{ background:#0c0a08; transform:translateY(-1px); }
+.err-btn.ghost{
+  background:transparent;
+  color:#2a2724;
+}
+.err-btn.ghost:hover{ background:#2a2724; color:#f6f4f0; }
+.err-meta{
+  margin-top:48px;
+  font-size:11px;
+  letter-spacing:.18em;
+  color:#a09a92;
+  text-transform:uppercase;
+  position:relative;
+  z-index:2;
+}
+
+/* ----- 404: rolling croissant ----- */
+.err-stage svg{
+  width:100%;
+  height:100%;
+  overflow:visible;
+}
+@keyframes roll-x{
+  0%   { transform:translateX(-110px) rotate(-30deg); }
+  50%  { transform:translateX(0)        rotate(180deg); }
+  100% { transform:translateX(110px)  rotate(360deg); }
+}
+@keyframes float-bob{
+  0%,100%{ transform:translateY(0); }
+  50%    { transform:translateY(-8px); }
+}
+@keyframes wobble{
+  0%,100%{ transform:rotate(-6deg); }
+  50%    { transform:rotate(6deg); }
+}
+@keyframes steam-rise{
+  0%   { transform:translateY(0) scale(1);    opacity:0; }
+  20%  { opacity:.7; }
+  100% { transform:translateY(-44px) scale(1.6); opacity:0; }
+}
+@keyframes oven-glow{
+  0%,100%{ filter:drop-shadow(0 0 0 rgba(220,90,40,0)); }
+  50%    { filter:drop-shadow(0 0 14px rgba(220,90,40,.55)); }
+}
+@keyframes bread-rise{
+  0%,100%{ transform:translateY(4px) scaleY(.94); }
+  50%    { transform:translateY(-2px) scaleY(1.04); }
+}
+@keyframes door-shake{
+  0%,100%{ transform:rotate(0); }
+  20%    { transform:rotate(-2deg); }
+  40%    { transform:rotate(2deg); }
+  60%    { transform:rotate(-1.4deg); }
+  80%    { transform:rotate(1deg); }
+}
+@keyframes blink-soft{
+  0%,100%{ opacity:1; }
+  50%    { opacity:.35; }
+}
+
+.croissant-roll{
+  animation:roll-x 3.6s cubic-bezier(.45,.05,.5,.95) infinite;
+  transform-origin:center center;
+}
+.bob{ animation:float-bob 2.4s ease-in-out infinite; }
+.wobble{ animation:wobble 2.6s ease-in-out infinite; transform-origin:50% 90%; }
+.steam-puff{ animation:steam-rise 2.2s ease-in infinite; transform-origin:center bottom; }
+.steam-puff.delay1{ animation-delay:.5s; }
+.steam-puff.delay2{ animation-delay:1.1s; }
+.oven-glow{ animation:oven-glow 2.8s ease-in-out infinite; }
+.bread-rise{ animation:bread-rise 2.2s ease-in-out infinite; transform-origin:50% 100%; }
+.door-shake{ animation:door-shake 1.8s ease-in-out infinite; transform-origin:80% 50%; }
+.blink-soft{ animation:blink-soft 1.4s ease-in-out infinite; }
+
+/* dotted ground line for the rolling croissant */
+.err-ground{
+  position:absolute;
+  left:0;right:0;
+  bottom:14px;
+  height:1px;
+  background:repeating-linear-gradient(90deg,#bdb6ad 0 6px,transparent 6px 12px);
+  z-index:1;
+}
+
+/* small motion lines behind rolling element */
+.err-stage .motion{ stroke:#bdb6ad; stroke-linecap:round; opacity:.55; }
+
+@media (max-width:520px){
+  .err-page{ padding:60px 18px 44px; }
+  .err-stage{ width:200px; height:170px; margin-bottom:28px; }
+  .err-code{ font-size:96px; }
+  .err-message{ font-size:13px; padding:0 4px; }
+  .err-btn{ min-width:0; flex:1 1 calc(50% - 12px); padding:12px 16px; font-size:12px; }
+  .err-meta{ margin-top:36px; }
+}
+@media (max-width:360px){
+  .err-page{ padding:48px 14px 36px; }
+  .err-stage{ width:170px; height:150px; margin-bottom:20px; }
+  .err-code{ font-size:80px; }
+  .err-title{ font-size:18px; }
+  .err-actions{ flex-direction:column; gap:10px; max-width:100%; }
+  .err-btn{ flex:0 0 auto; width:100%; padding:13px 14px; }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .croissant-roll,.bob,.wobble,.steam-puff,.oven-glow,.bread-rise,.door-shake,.blink-soft{
+    animation:none !important;
+  }
+}

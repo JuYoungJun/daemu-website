@@ -7,8 +7,16 @@ import RequireAuth from './components/RequireAuth.jsx';
 import LinkInterceptor from './components/LinkInterceptor.jsx';
 import Splash from './components/Splash.jsx';
 import DialogHost from './components/DialogHost.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { useSplash } from './hooks/useSplash.js';
 import { useSitePopups } from './hooks/useSitePopups.js';
+
+// Error pages
+import NotFound from './pages/errors/NotFound.jsx';
+import Forbidden from './pages/errors/Forbidden.jsx';
+import Maintenance from './pages/errors/Maintenance.jsx';
+import BadRequest from './pages/errors/BadRequest.jsx';
+import ServerError from './pages/errors/ServerError.jsx';
 
 // Public pages
 import Home from './pages/Home.jsx';
@@ -47,6 +55,17 @@ function isAdminPath(pathname) {
   return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
+function isKnownPath(pathname) {
+  if (PUBLIC_PAGE_KEYS[pathname]) return true;
+  if (pathname.startsWith('/work/')) return true;
+  if (isAdminPath(pathname)) return true;
+  return false;
+}
+
+function isErrorPath(pathname) {
+  return pathname.startsWith('/error/') || !isKnownPath(pathname);
+}
+
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
@@ -67,14 +86,15 @@ function PublicRoute({ children, pageKey }) {
 export default function App() {
   const location = useLocation();
   const isAdmin = isAdminPath(location.pathname);
-  const showSplash = useSplash(location.pathname, isAdmin);
+  const isError = isErrorPath(location.pathname);
+  const showSplash = useSplash(location.pathname, isAdmin || isError);
 
   // Body class management — useLayoutEffect runs synchronously before paint
-  // so admin pages never flash with splash-pending visibility:hidden hiding
+  // so admin/error pages never flash with splash-pending visibility:hidden hiding
   // their content.
   useLayoutEffect(() => {
-    if (isAdmin) {
-      document.body.dataset.page = 'admin';
+    if (isAdmin || isError) {
+      document.body.dataset.page = isAdmin ? 'admin' : 'error';
       document.documentElement.classList.remove('splash-lock');
       document.body.classList.remove('splash-pending');
       document.body.classList.add('splash-ready');
@@ -96,18 +116,18 @@ export default function App() {
   }, [showSplash, isAdmin, location.pathname]);
 
   // Popups — only run on public pages, after splash
-  const popupKey = (!isAdmin && !showSplash)
+  const popupKey = (!isAdmin && !isError && !showSplash)
     ? (PUBLIC_PAGE_KEYS[location.pathname] || (location.pathname.startsWith('/work/') ? 'work' : 'home'))
     : null;
   useSitePopups(popupKey);
 
   return (
-    <>
+    <ErrorBoundary>
       <ScrollToTop />
       <AnalyticsBoot />
       <LinkInterceptor />
       <DialogHost />
-      <Splash key={isAdmin ? 'admin-zone' : 'public-zone'} show={showSplash && !isAdmin} />
+      <Splash key={(isAdmin || isError) ? 'no-splash-zone' : 'public-zone'} show={showSplash && !isAdmin && !isError} />
       <Routes>
         <Route path="/" element={<PublicRoute pageKey="home"><Home /></PublicRoute>} />
         <Route path="/about" element={<PublicRoute pageKey="about"><About /></PublicRoute>} />
@@ -133,7 +153,16 @@ export default function App() {
         <Route path="/admin/promotion" element={<RequireAuth><AdminPromotion /></RequireAuth>} />
         <Route path="/admin/popup" element={<RequireAuth><AdminPopup /></RequireAuth>} />
         <Route path="/admin/outbox" element={<RequireAuth><AdminOutbox /></RequireAuth>} />
+
+        {/* Error showcase routes — accessible directly for QA + linkable from CTA */}
+        <Route path="/error/400" element={<BadRequest />} />
+        <Route path="/error/403" element={<Forbidden />} />
+        <Route path="/error/500" element={<ServerError />} />
+        <Route path="/error/503" element={<Maintenance />} />
+
+        {/* Catch-all 404 */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
-    </>
+    </ErrorBoundary>
   );
 }

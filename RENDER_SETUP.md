@@ -1,68 +1,74 @@
-# Render 무료 백엔드 배포 — 5분 가이드
+# Render 무료 백엔드 배포 — Python / FastAPI
 
-영구 URL을 받기 위해 Render.com 무료 플랜에 백엔드를 올립니다. 도메인 불필요.
+`backend-py/`(FastAPI) 를 Render 무료 플랜에 배포합니다. 도메인 불필요.
+구 `backend/`(Express)는 보관용으로만 두고 더 이상 사용하지 않습니다.
 
 ## 1. Render 가입
-1. https://render.com → **Get Started for Free** (GitHub OAuth 로그인 권장 — 한 번만 클릭하면 끝)
+1. https://render.com → **Get Started for Free** (GitHub OAuth 로그인 권장)
 2. 무료 플랜 선택 (신용카드 입력 안 받음)
 
 ## 2. Blueprint으로 한 번에 배포
 
-저장소에 `render.yaml`이 이미 있으니 Blueprint 모드로 자동 셋업됩니다.
+저장소에 `render.yaml`(Python runtime)이 들어있어 Blueprint 모드로 자동 셋업됩니다.
 
 1. 우상단 **+ New** → **Blueprint** 클릭
-2. **Connect a repository**: `daemu-website` 검색·선택 (처음이면 GitHub 권한 승인)
+2. **Connect a repository**: `daemu-website` 검색·선택
 3. **Apply** 클릭 → Render가 `render.yaml` 읽어서 `daemu-api` 서비스 자동 생성
 4. **환경변수 입력** 화면에서:
-   - `RESEND_API_KEY`: 받으신 새 Resend 키 붙여넣기
+   - `RESEND_API_KEY`: Resend 키 붙여넣기 (시크릿 — Blueprint에 평문으로 안 들어감)
    - 나머지 변수들은 자동 설정됨 (수정 불필요)
 5. **Apply / Deploy** 클릭
 
-빌드 → 배포까지 2~3분 걸립니다. 진행 상황은 **Logs** 탭에서 실시간 확인.
+빌드는 `pip install -r requirements.txt`, 실행은 `uvicorn main:app --host 0.0.0.0 --port $PORT` 로 자동 진행됩니다. 2~3분 걸립니다.
 
-## 3. 배포 URL 확인
-완료되면 상단에 URL 표시됨, 예시:
-```
-https://daemu-api.onrender.com
-```
-
-또는 본인 이름 들어간 URL (예: `daemu-api-juyoung.onrender.com`).
-
-## 4. 헬스체크
+## 3. 헬스체크
 ```bash
 curl https://daemu-api.onrender.com/api/health
-# → {"ok":true,"resendConfigured":true,"from":"DAEMU <onboarding@resend.dev>","allowedOrigins":[...]}
+# → {"ok":true,"runtime":"python-fastapi","resendConfigured":true, ...}
 ```
 
-이 응답 확인되면 정상.
+`runtime: python-fastapi` 가 보이면 Python 백엔드가 정상 가동 중입니다.
 
-## 5. 저에게 보내실 것
-배포된 URL 1개:
-```
-https://daemu-api.onrender.com  (실제 받으신 URL)
-```
+## 4. 기존 Render 서비스가 있다면
 
-받으면 제가:
-- GitHub repo Variables에 `VITE_API_BASE_URL` 등록
-- demo 브랜치 자동 재배포 → Pages가 백엔드와 통신
-- 검증 (Contact 폼 → 본인 메일함 도착)
+이전에 Node.js 버전으로 배포되어 있으면:
+- 옵션 A (간편): 기존 서비스 삭제 → Blueprint 다시 적용 (URL 새로 받음)
+- 옵션 B (URL 유지): Render Dashboard → daemu-api → **Settings**:
+  - Runtime: `Python`
+  - Build Command: `pip install -r requirements.txt`
+  - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+  - Root Directory: `backend-py`
+  - Environment에 `PYTHON_VERSION = 3.12.7` 추가
+  - **Save Changes** → 자동 재배포
 
-## 6. 무료 플랜 제약 (참고)
-- 15분 idle 후 sleep 모드 → 첫 호출 30초 콜드스타트 (이후 빠름)
-- 750시간/월 무료 (한 인스턴스 24/7 가동에 충분)
+옵션 B가 GitHub Pages에 등록된 `VITE_API_BASE_URL` 을 그대로 쓸 수 있어 권장.
+
+## 5. 무료 플랜 제약
+- 15분 idle 후 sleep → 첫 호출 30~60초 콜드스타트 (이후 빠름)
+- 750시간/월 무료
 - 데모 시작 30초 전에 헬스체크 한 번 호출하면 깨워둘 수 있음
+- **파일 시스템은 휘발성** — 업로드된 이미지는 재배포 시 삭제됨. 장기 보관 필요하면 S3/R2 연동 필요 (현재는 데모 시연 범위 내에서만 보관).
 
-## 7. 환경 변수 변경 (나중에)
+## 6. 환경 변수 변경 (도메인 발급 후)
 도메인 인증 후 발신자 변경하려면:
-- Render Dashboard → daemu-api → **Environment** 탭
+- Render Dashboard → daemu-api → **Environment**
 - `FROM_EMAIL` 값을 `DAEMU <noreply@yourdomain.com>` 로 수정
+- 별도로 `PUBLIC_BASE_URL` 을 `https://api.yourdomain.com` 으로 설정하면 업로드 URL이 자기 도메인 기준으로 발급됨
 - **Save Changes** → 자동 재배포
 
-## 8. 카페24로 이전 시 (장기 운영)
-프론트+백엔드를 카페24 클라우드 베이직에 올릴 예정이시라 했으니, 그때:
-- backend/server.js를 카페24 Node.js 환경에서 PM2로 실행
-- Nginx 리버스 프록시로 /api → :3000
-- 또는 백엔드 코드를 PHP/기타로 포팅 (카페24 호스팅 종류에 따라)
-- Render 서비스는 그때 삭제
+## 7. 로컬 개발
 
-자세한 셋업 가이드는 클라이언트 확정 후 도와드리겠습니다.
+```bash
+cd backend-py
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # RESEND_API_KEY 채워넣기
+uvicorn main:app --reload --port 3000
+```
+
+## 8. 카페24로 이전 시 (장기 운영)
+- `backend-py/` 를 카페24 Python 호스팅에 그대로 업로드
+- `gunicorn` + `uvicorn.workers.UvicornWorker` 로 실행 (`gunicorn main:app -k uvicorn.workers.UvicornWorker -w 2`)
+- Nginx 리버스 프록시 `/api` → `127.0.0.1:8000`
+- Render 서비스 그때 삭제
