@@ -100,8 +100,15 @@
 }
 
 /* ============================================================
-   ABOUT PAGE (≤768)
+   ABOUT PAGE
    ============================================================ */
+/* Original .about-reference-body forced min-width: 1280px which pushed
+   mobile content offscreen horizontally. Cap at viewport for tablet/mobile. */
+@media (max-width: 1280px) {
+  .about-reference-body { min-width: 0 !important; }
+  .about-ref-header-inner { width: 100% !important; }
+}
+
 @media (max-width: 768px) {
   .dmabout-hero-inner {
     grid-template-columns: 1fr !important;
