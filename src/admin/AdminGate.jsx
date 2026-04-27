@@ -66,6 +66,27 @@ export default function AdminGate() {
   const leads = crm.filter(c => c.status === 'lead' || c.status === 'qualified').length;
   const sentCmp = cmp.filter(c => c.status === 'sent').length;
 
+  const me = Auth.user() || { role: 'admin', email: '데모', name: '관리자' };
+  // Permission map mirrors backend auth.PERMISSIONS — keep in sync.
+  const PERM = {
+    'content':       ['admin', 'developer'],
+    'works':         ['admin', 'developer', 'tester'],
+    'inquiries':     ['admin', 'tester'],
+    'partners':      ['admin'],
+    'orders':        ['admin', 'tester'],
+    'stats':         ['admin', 'tester', 'developer'],
+    'media':         ['admin', 'developer'],
+    'mail':          ['admin', 'developer', 'tester'],
+    'crm':           ['admin'],
+    'campaign':      ['admin'],
+    'promotion':     ['admin'],
+    'popup':         ['admin', 'developer', 'tester'],
+    'outbox':        ['admin', 'developer', 'tester'],
+    'users':         ['admin'],
+  };
+  const can = (k) => PERM[k]?.includes(me.role);
+  const ROLE_BADGE = { admin: '관리자', tester: '테스트', developer: '개발' };
+
   return (
     <AdminShell>
       <main className="page fade-up">
@@ -73,7 +94,15 @@ export default function AdminGate() {
           <h1 className="page-title">Admin</h1>
           <div className="admin-dashboard">
             <div className="admin-header">
-              <h2>관리자 대시보드</h2>
+              <div>
+                <h2>관리자 대시보드</h2>
+                <div style={{ fontSize: 12, color: '#5f5b57', marginTop: 6 }}>
+                  <strong>{me.name || me.email}</strong>
+                  <span style={{ display: 'inline-block', marginLeft: 8, padding: '2px 8px', background: '#2a2724', color: '#f6f4f0', borderRadius: 2, fontSize: 10, letterSpacing: '.06em' }}>
+                    {ROLE_BADGE[me.role] || me.role}
+                  </span>
+                </div>
+              </div>
               <button className="btn admin-logout-btn" type="button" onClick={onLogout}>로그아웃</button>
             </div>
 
@@ -86,24 +115,33 @@ export default function AdminGate() {
 
             <h3 className="admin-section-title">관리 메뉴</h3>
             <div className="admin-menu-grid">
-              <MenuCard to="/admin/content" title="콘텐츠 관리" desc="연혁, 소개, 서비스 등 사이트 콘텐츠를 수정합니다." items={['회사 소개 수정','연혁 관리','서비스 항목 편집','프로세스 내용 수정']} />
-              <MenuCard to="/admin/works" title="작업사례 관리" desc="포트폴리오 및 작업사례를 등록하고 수정합니다." items={['작업사례 등록','기존 사례 수정','이미지 업로드','게시 상태 관리']} />
-              <MenuCard to="/admin/inquiries" title="상담/문의 관리" desc="고객 상담 신청 및 문의 내역을 확인하고 관리합니다." items={['신규 문의 확인','상담 상태 관리','메일 자동회신 설정','문의 이력 검색']} />
-              <MenuCard to="/admin/partners" title="파트너 계정 관리" desc="파트너 계정 발급, 권한 설정, 승인을 관리합니다." items={['신규 계정 발급','계정 승인/거절','역할 및 권한 설정','계정 비활성화']} />
-              <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','상품 등록 및 가격','정산 내역 관리']} />
-              <MenuCard to="/admin/stats" title="통계 및 리포트" desc="방문자, 문의, 발주 등 주요 지표를 확인합니다." items={['방문자 통계','문의 유입 분석','발주 현황 리포트','월별 매출 추이']} />
-              <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />
-              <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />
+              {can('content')   && <MenuCard to="/admin/content" title="콘텐츠 관리" desc="연혁, 소개, 서비스 등 사이트 콘텐츠를 수정합니다." items={['회사 소개 수정','연혁 관리','서비스 항목 편집','프로세스 내용 수정']} />}
+              {can('works')     && <MenuCard to="/admin/works" title="작업사례 관리" desc="포트폴리오 및 작업사례를 등록하고 수정합니다." items={['작업사례 등록','기존 사례 수정','이미지 업로드','게시 상태 관리']} />}
+              {can('inquiries') && <MenuCard to="/admin/inquiries" title="상담/문의 관리" desc="고객 상담 신청 및 문의 내역을 확인하고 관리합니다." items={['신규 문의 확인','상담 상태 관리','메일 자동회신 설정','문의 이력 검색']} />}
+              {can('partners')  && <MenuCard to="/admin/partners" title="파트너 계정 관리" desc="파트너 계정 발급, 권한 설정, 승인을 관리합니다." items={['신규 계정 발급','계정 승인/거절','역할 및 권한 설정','계정 비활성화']} />}
+              {can('orders')    && <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','상품 등록 및 가격','정산 내역 관리']} />}
+              {can('stats')     && <MenuCard to="/admin/stats" title="통계 및 리포트" desc="방문자, 문의, 발주 등 주요 지표를 확인합니다." items={['방문자 통계','문의 유입 분석','발주 현황 리포트','월별 매출 추이']} />}
+              {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
+              {can('mail')      && <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />}
             </div>
 
             <h3 className="admin-section-title" style={{marginTop:'48px'}}>마케팅 / CRM</h3>
             <div className="admin-menu-grid">
-              <MenuCard to="/admin/crm" title="CRM" desc="리드와 고객 관계를 파이프라인 단계로 관리합니다." items={['리드 → 검토중 → 전환 단계 추적','태그·세그먼트 분류','활동 메모 타임라인','예상 거래 금액']} />
-              <MenuCard to="/admin/campaign" title="캠페인" desc="이메일·SMS·Kakao 캠페인 작성, 예약, 발송, 결과 분석." items={['CRM 단계/태그 기반 세그먼트','즉시 / 예약 / 초안 저장','오픈율·클릭률 추적','뉴스레터 구독자 관리']} />
-              <MenuCard to="/admin/promotion" title="프로모션" desc="쿠폰 코드와 이벤트/공지를 관리합니다." items={['정률·정액·1+1 할인','유효기간·최대사용 횟수','실시간 사용량 추적','이벤트/공지 배너']} />
-              <MenuCard to="/admin/popup" title="팝업" desc="사이트 팝업 배너를 등록·수정하고 노출 규칙을 관리합니다." items={['중앙/우하단/상단 위치','이미지 + CTA 버튼','노출 빈도 (매번/일1회/영구1회)','타겟 페이지 + 노출/클릭 추적']} />
-              <MenuCard to="/admin/outbox" title="Outbox" desc="이메일·캠페인·계약서 발송 이력을 확인합니다." items={['백엔드 API 호출 로그','시뮬레이션 / 발송완료 / 실패 구분','수신자·제목·본문 검색','데모 환경에서도 발송 시뮬레이션 확인']} />
+              {can('crm')       && <MenuCard to="/admin/crm" title="CRM" desc="리드와 고객 관계를 파이프라인 단계로 관리합니다." items={['리드 → 검토중 → 전환 단계 추적','태그·세그먼트 분류','활동 메모 타임라인','예상 거래 금액']} />}
+              {can('campaign')  && <MenuCard to="/admin/campaign" title="캠페인" desc="이메일·SMS·Kakao 캠페인 작성, 예약, 발송, 결과 분석." items={['CRM 단계/태그 기반 세그먼트','즉시 / 예약 / 초안 저장','오픈율·클릭률 추적','뉴스레터 구독자 관리']} />}
+              {can('promotion') && <MenuCard to="/admin/promotion" title="프로모션" desc="쿠폰 코드와 이벤트/공지를 관리합니다." items={['정률·정액·1+1 할인','유효기간·최대사용 횟수','실시간 사용량 추적','이벤트/공지 배너']} />}
+              {can('popup')     && <MenuCard to="/admin/popup" title="팝업" desc="사이트 팝업 배너를 등록·수정하고 노출 규칙을 관리합니다." items={['중앙/우하단/상단 위치','이미지 + CTA 버튼','노출 빈도 (매번/일1회/영구1회)','타겟 페이지 + 노출/클릭 추적']} />}
+              {can('outbox')    && <MenuCard to="/admin/outbox" title="Outbox" desc="이메일·캠페인·계약서 발송 이력을 확인합니다." items={['백엔드 API 호출 로그','시뮬레이션 / 발송완료 / 실패 구분','수신자·제목·본문 검색','데모 환경에서도 발송 시뮬레이션 확인']} />}
             </div>
+
+            {can('users') && (
+              <>
+                <h3 className="admin-section-title" style={{marginTop:'48px'}}>시스템</h3>
+                <div className="admin-menu-grid">
+                  <MenuCard to="/admin/users" title="사용자 권한 관리" desc="관리자 / 테스트 / 개발 권한 계정을 발급하고 관리합니다." items={['신규 계정 발급','권한 변경 (admin · tester · developer)','계정 활성화 / 비활성화','자기 계정 보호 (셀프 권한 강등 차단)']} />
+                </div>
+              </>
+            )}
           </div>
         </section>
       </main>

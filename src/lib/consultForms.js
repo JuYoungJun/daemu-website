@@ -61,25 +61,30 @@ export function installConsultFormHandler() {
       name, phone, email, type: finalCategory, msg: message, status: '신규'
     });
 
-    // Persist to backend (silently best-effort — failure here is non-fatal
-    // since the email auto-reply still goes through and admin sees the
-    // localStorage entry).
-    if (api.isConfigured()) {
-      api.post('/api/inquiries', {
-        name, email, phone, category: finalCategory, message,
-      }).catch(() => { /* ignore */ });
-    }
-
     let mailNote = '';
-    try {
-      const r = await sendAutoReply({
-        to_email: email, to_name: name, category: finalCategory, message, phone, email
+    if (api.isConfigured()) {
+      // Backend persists + fires auto-reply server-side. No public mail relay.
+      const r = await api.post('/api/inquiries', {
+        name, email, phone, category: finalCategory, message,
       });
-      if (r.ok) mailNote = '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송되었습니다.';
-      else if (r.simulated) mailNote = '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송될 예정입니다.';
-      else mailNote = '메일 발송에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
-    } catch (err) {
-      mailNote = '메일 발송에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
+      if (r.ok) {
+        mailNote = '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송됩니다.';
+      } else if (r.status === 429) {
+        mailNote = '문의가 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.';
+      } else {
+        mailNote = '접수는 완료되었지만 자동 회신 메일에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
+      }
+    } else {
+      // Demo mode fallback (no backend) — simulate via the email lib so the
+      // localStorage outbox shows the simulated send.
+      try {
+        const r = await sendAutoReply({ to_email: email, to_name: name, category: finalCategory, message, phone, email });
+        mailNote = r.simulated
+          ? '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송될 예정입니다.'
+          : '입력하신 이메일(' + email + ')로 접수 확인 메일이 발송되었습니다.';
+      } catch {
+        mailNote = '메일 발송에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
+      }
     }
 
     alert('상담 신청이 접수되었습니다. (' + finalCategory + ')\n\n' + mailNote + '\n\n담당 매니저가 빠른 시일 내에 연락드리겠습니다.');

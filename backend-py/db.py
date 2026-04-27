@@ -30,7 +30,7 @@ DATABASE_URL = os.environ.get(
 # MySQL doesn't take that arg.
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args = {"check_same_thread": False, "timeout": 30}
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -38,6 +38,22 @@ engine = create_async_engine(
     pool_pre_ping=True,
     connect_args=connect_args,
 )
+
+
+# Enable SQLite WAL mode + a generous busy timeout so concurrent writes from
+# request handlers + background tasks (auto-reply outbox logging) don't trip
+# "database is locked" on the free-tier single dyno.
+if DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy import event
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=10000")  # 10s — wait instead of fail
+        cursor.execute("PRAGMA synchronous=NORMAL")  # acceptable for demo durability
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 

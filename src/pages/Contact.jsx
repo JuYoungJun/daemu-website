@@ -45,9 +45,11 @@ export default function Contact() {
 
     DB.add('inquiries', inquiry);
 
-    // Persist to backend (best-effort, non-blocking).
+    let mailNote = '';
     if (api.isConfigured()) {
-      api.post('/api/inquiries', {
+      // Backend persists the inquiry AND fires the auto-reply server-side
+      // — frontend doesn't touch the email API directly anymore.
+      const r = await api.post('/api/inquiries', {
         name: form.name,
         email: form.email,
         phone: form.phone || '',
@@ -56,22 +58,28 @@ export default function Contact() {
         expected_open: form.open || '',
         category: active,
         message: isEtc ? `[${form.topic || '기타'}] ${form.msg}` : form.msg,
-      }).catch(() => { /* silent */ });
-    }
-
-    let mailNote = '';
-    if (form.email) {
+      });
+      if (r.ok) {
+        mailNote = '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송됩니다.';
+      } else if (r.status === 429) {
+        mailNote = '문의가 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.';
+      } else {
+        mailNote = '접수는 완료되었지만 자동 회신 메일에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
+      }
+    } else if (form.email) {
+      // Demo mode (no backend): simulate via existing email lib so the
+      // outbox in localStorage shows the simulated send.
       try {
         const r = await sendAutoReply({
           to_email: form.email,
           to_name: form.name,
           category: active,
-          message: form.msg
+          message: form.msg,
         });
-        if (r.ok) mailNote = '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송되었습니다.';
-        else if (r.simulated) mailNote = '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송될 예정입니다.';
-        else mailNote = '메일 발송에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
-      } catch (err) {
+        mailNote = r.simulated
+          ? '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송될 예정입니다.'
+          : '입력하신 이메일(' + form.email + ')로 접수 확인 메일이 발송되었습니다.';
+      } catch {
         mailNote = '메일 발송에 일시적 문제가 있어 담당자가 직접 연락드리겠습니다.';
       }
     }
@@ -108,9 +116,9 @@ export default function Contact() {
 
               {isEtc ? (
                 <div className="form-grid">
-                  <div className="field full"><input type="text" placeholder="이름" value={form.name} onChange={update('name')} required /></div>
-                  <div className="field"><input type="text" placeholder="연락처(선택)" value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" placeholder="E-mail" value={form.email} onChange={update('email')} required /></div>
+                  <div className="field full"><input type="text" placeholder="이름" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
+                  <div className="field"><input type="tel" inputMode="tel" placeholder="연락처(선택)" autoComplete="tel" value={form.phone} onChange={update('phone')} /></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} required /></div>
                   <div className="field full"><input type="text" placeholder="문의 제목" value={form.topic} onChange={update('topic')} required /></div>
                   <div className="field full"><textarea placeholder="자유롭게 문의 내용을 적어주세요" value={form.msg} onChange={update('msg')} required></textarea></div>
                   <div className="field full center">
@@ -122,10 +130,10 @@ export default function Contact() {
                 </div>
               ) : (
                 <div className="form-grid">
-                  <div className="field full"><input type="text" placeholder="이름(회사명)" value={form.name} onChange={update('name')} required /></div>
-                  <div className="field"><input type="text" placeholder="연락처" value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" placeholder="E-mail" value={form.email} onChange={update('email')} required /></div>
-                  <div className="field full"><input type="text" placeholder="브랜드명(또는 사업분야)" value={form.brand} onChange={update('brand')} /></div>
+                  <div className="field full"><input type="text" placeholder="이름(회사명)" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
+                  <div className="field"><input type="tel" inputMode="tel" placeholder="연락처" autoComplete="tel" value={form.phone} onChange={update('phone')} /></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} required /></div>
+                  <div className="field full"><input type="text" placeholder="브랜드명(또는 사업분야)" autoComplete="organization" value={form.brand} onChange={update('brand')} /></div>
                   <div className="field">
                     <select required value={form.region} onChange={update('region')}>
                       <option value="" disabled>매장 위치(예정 지역)</option>

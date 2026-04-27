@@ -44,6 +44,7 @@ import AdminCampaign from './admin/AdminCampaign.jsx';
 import AdminPromotion from './admin/AdminPromotion.jsx';
 import AdminPopup from './admin/AdminPopup.jsx';
 import AdminOutbox from './admin/AdminOutbox.jsx';
+import AdminUsers from './admin/AdminUsers.jsx';
 
 const PUBLIC_PAGE_KEYS = {
   '/': 'home', '/about': 'about', '/service': 'service',
@@ -153,6 +154,7 @@ export default function App() {
         <Route path="/admin/promotion" element={<RequireAuth><AdminPromotion /></RequireAuth>} />
         <Route path="/admin/popup" element={<RequireAuth><AdminPopup /></RequireAuth>} />
         <Route path="/admin/outbox" element={<RequireAuth><AdminOutbox /></RequireAuth>} />
+        <Route path="/admin/users" element={<RequireAuth><AdminUsers /></RequireAuth>} />
 
         {/* Error showcase routes — accessible directly for QA + linkable from CTA */}
         <Route path="/error/400" element={<BadRequest />} />

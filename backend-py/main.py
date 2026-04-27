@@ -51,7 +51,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import ensure_default_admin, router as auth_router
+from auth import ensure_default_users, require_perm, router as auth_router, users_router
 from db import Base, SessionLocal, engine, get_session
 from models import Outbox  # noqa: F401 — also makes import side-effect register tables
 from routes_crud import router as crud_router
@@ -100,12 +100,23 @@ async def lifespan(_app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with SessionLocal() as session:
-        await ensure_default_admin(session)
+        await ensure_default_users(session)
     print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
     yield
 
 
-app = FastAPI(title="DAEMU API", version="3.0", lifespan=lifespan)
+PROD = os.environ.get("ENV", "").lower() in {"prod", "production"}
+
+# Disable Swagger UI / OpenAPI in production (F-10 — reduces info leakage).
+# Set ENV=prod in Render once a real domain + customer data are wired up.
+app = FastAPI(
+    title="DAEMU API",
+    version="3.1",
+    lifespan=lifespan,
+    docs_url=None if PROD else "/docs",
+    redoc_url=None if PROD else "/redoc",
+    openapi_url=None if PROD else "/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -127,6 +138,7 @@ async def unhandled_exception_handler(_req: Request, exc: Exception):
 # Routers
 
 app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(crud_router)
 
 
@@ -335,10 +347,17 @@ async def log_outbox(session: AsyncSession, *, type_: str, to: str, subject: str
 
 
 # ---------------------------------------------------------------------------
-# Email send
+# Email send — admin-only (F-01: prevents the API from being abused as an
+# open mail relay against the paid Resend account). The Contact form does
+# NOT call this anymore — auto-reply now happens server-side inside
+# /api/inquiries (see routes_crud.py).
 
 @app.post("/api/email/send")
-async def email_send(payload: EmailSendIn, session: AsyncSession = Depends(get_session)):
+async def email_send(
+    payload: EmailSendIn,
+    session: AsyncSession = Depends(get_session),
+    _user = Depends(require_perm("outbox", "write")),
+):
     if not payload.to or not payload.subject:
         raise HTTPException(400, detail="to and subject are required")
 
@@ -396,7 +415,11 @@ async def email_send(payload: EmailSendIn, session: AsyncSession = Depends(get_s
 # Email campaign
 
 @app.post("/api/email/campaign")
-async def email_campaign(payload: CampaignIn, session: AsyncSession = Depends(get_session)):
+async def email_campaign(
+    payload: CampaignIn,
+    session: AsyncSession = Depends(get_session),
+    _user = Depends(require_perm("campaigns", "write")),
+):
     if not payload.recipients:
         raise HTTPException(400, detail="recipients[] required")
 
