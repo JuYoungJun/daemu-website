@@ -1,0 +1,245 @@
+/* =========================================================
+   ABOUT.CSS — Editorial magazine style (matches team/main/work)
+   All classes namespaced `dmabout-`
+   ========================================================= */
+
+.dmabout-page { padding-bottom: 0; overflow: hidden; }
+.dmabout-page a { color: inherit; }
+
+/* Shared */
+.dmabout-eyebrow { font-size: 11px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; margin-bottom: 24px; }
+.dmabout-section-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(36px, 5vw, 64px); line-height: 1.05; letter-spacing: -.03em; color: #111; margin: 0 0 16px; }
+.dmabout-section-title em { font-style: italic; font-weight: 300; }
+.dmabout-sub { font-size: 11px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; }
+.dmabout-dot { width: 6px; height: 6px; background: #111; border-radius: 50%; display: inline-block; }
+
+/* =========================================================
+   1. HERO — 3-column (matches team hero exactly)
+   ========================================================= */
+.dmabout-hero { position: relative; min-height: 60vh; padding: 80px 0 80px; }
+.dmabout-hero-inner { display: grid; grid-template-columns: 200px 1fr 180px; gap: 40px; align-items: start; }
+
+.dmabout-hero-sidebar { display: flex; flex-direction: column; gap: 24px; padding-top: 50px; }
+.dmabout-hero-index { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; }
+.dmabout-hero-index-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 20px; color: #111; letter-spacing: 0; }
+.dmabout-hero-index-sep { width: 28px; height: 1px; background: rgba(111,107,104,.3); }
+.dmabout-hero-crumbs { display: flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; }
+.dmabout-hero-crumbs i { font-style: normal; opacity: .5; font-size: 8px; }
+
+.dmabout-hero-center { text-align: center; padding: 20px 0 0; }
+.dmabout-hero-title { margin: 0; font-size: clamp(90px, 13vw, 210px); line-height: .88; letter-spacing: -.045em; color: #111; text-align: center; }
+.dmabout-hero-line { display: block; overflow: hidden; padding: 0 0 .05em; }
+.dmabout-hero-word { display: inline-block; transform: translateY(110%); will-change: transform; }
+.dmabout-hero-word--italic { font-style: italic; font-weight: 300; }
+
+.dmabout-hero-caption { display: inline-flex; align-items: center; gap: 14px; margin-top: 36px; font-family: 'Cormorant Garamond', serif; font-size: 18px; color: #3a3734; opacity: 0; }
+.dmabout-hero-caption em { font-style: italic; color: #111; }
+.dmabout-hero-caption svg path { stroke: #6f6b68; }
+
+.dmabout-hero-stats { display: flex; flex-direction: column; gap: 18px; padding-top: 50px; align-items: flex-end; }
+.dmabout-hero-stat { display: flex; flex-direction: column; gap: 6px; text-align: right; }
+.dmabout-hero-stat-label { font-size: 10px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; }
+.dmabout-hero-stat-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 36px; line-height: 1; color: #111; letter-spacing: -.02em; }
+.dmabout-hero-stat-num--sm { font-size: 24px; }
+.dmabout-hero-stat-rule { width: 44px; height: 1px; background: rgba(111,107,104,.3); }
+
+/* =========================================================
+   2. MEANING — 對舞
+   ========================================================= */
+.dmabout-meaning { padding: 130px 0; border-top: 1px solid rgba(111,107,104,.14); text-align: center; }
+.dmabout-meaning-label { display: inline-flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .24em; color: #6f6b68; font-weight: 500; margin-bottom: 56px; }
+.dmabout-meaning-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 700px; margin: 0 auto 64px; text-align: center; }
+.dmabout-meaning-card { padding: 40px 24px; }
+.dmabout-meaning-hanja { font-size: clamp(64px, 10vw, 100px); line-height: .85; color: #111; font-weight: 300; display: block; margin-bottom: 18px; letter-spacing: -.03em; }
+.dmabout-meaning-card h3 { font-family: 'Noto Sans KR', sans-serif; font-size: 18px; font-weight: 400; color: #111; margin: 0 0 10px; }
+.dmabout-meaning-card p { font-size: 13.5px; line-height: 1.8; color: #4a4744; margin: 0; }
+
+.dmabout-meaning-quote { max-width: 520px; margin: 0 auto; }
+.dmabout-meaning-quote h2 { font-size: clamp(36px, 5vw, 56px); color: #111; margin: 0 0 14px; letter-spacing: -.03em; }
+.dmabout-meaning-quote p { font-size: 14px; line-height: 1.9; color: #4a4744; margin: 0; }
+
+/* =========================================================
+   3. PHILOSOPHY
+   ========================================================= */
+.dmabout-philosophy { padding: 130px 0; border-top: 1px solid rgba(111,107,104,.14); }
+.dmabout-philosophy-head { text-align: center; max-width: 720px; margin: 0 auto 48px; }
+.dmabout-philosophy-body { text-align: center; font-size: 15px; line-height: 2; color: #4a4744; max-width: 640px; margin: 0 auto 64px; }
+
+.dmabout-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; max-width: 1000px; margin: 0 auto; }
+.dmabout-value { display: flex; gap: 18px; align-items: flex-start; padding: 16px 18px; position: relative; transition: opacity .35s ease; }
+.dmabout-value-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 30px; line-height: 1; color: #3a3734; flex-shrink: 0; margin-top: -4px; }
+.dmabout-value h4 { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 20px; letter-spacing: -.02em; color: #111; margin: 0 0 10px; font-weight: 400; }
+.dmabout-value p { font-size: 13px; line-height: 1.8; color: #4a4744; margin: 0; }
+
+/* =========================================================
+   4. VISUAL — 3-image grid
+   ========================================================= */
+.dmabout-visual { padding: 0 0 120px; }
+.dmabout-visual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.dmabout-visual-item { overflow: hidden; aspect-ratio: 3 / 4; background: #e8e4dc; }
+.dmabout-visual-item img { width: 100%; height: 100%; object-fit: cover; will-change: transform; }
+
+/* =========================================================
+   5. HISTORY — Q&A conversation
+   ========================================================= */
+.dmabout-history { padding: 130px 0; background: #f2f0ec; }
+.dmabout-history-head { text-align: center; margin-bottom: 72px; }
+
+.dmabout-convo { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 0; }
+
+.dmabout-convo-block { border-top: 1px solid rgba(111,107,104,.12); }
+.dmabout-convo-block:last-child { border-bottom: 1px solid rgba(111,107,104,.12); }
+
+/* Question */
+.dmabout-convo-q {
+  display: flex; align-items: center; gap: 14px;
+  padding: 22px 0;
+  font-size: 15px; color: #6f6b68; font-weight: 400;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .4s ease, transform .4s ease, color .3s ease;
+}
+.dmabout-convo-q.is-shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+.dmabout-convo-q.is-typing {
+  opacity: 1;
+  transform: translateY(0);
+}
+.dmabout-convo-q.is-typing span:last-child {
+  background: linear-gradient(90deg, #6f6b68 30%, transparent 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: typeShimmer 1s ease infinite;
+}
+@keyframes typeShimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.dmabout-convo-q:hover { color: #111; }
+.dmabout-convo-q-who {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic; font-size: 22px; color: #111;
+  flex-shrink: 0; width: 28px;
+}
+
+/* Answer — hidden by default, revealed on scroll or click */
+.dmabout-convo-a {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding: 0 0 0 42px;
+  transition: max-height .6s cubic-bezier(.22,.61,.36,1), opacity .5s ease, padding .6s ease;
+}
+.dmabout-convo-block.is-open .dmabout-convo-a {
+  max-height: 400px;
+  opacity: 1;
+  padding: 0 0 32px 42px;
+}
+
+.dmabout-convo-a-meta {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.dmabout-convo-a-year {
+  font-size: 36px; font-style: italic; color: #111; letter-spacing: -.03em; line-height: 1;
+}
+.dmabout-convo-a-label {
+  font-size: 9px; letter-spacing: .24em; font-weight: 600; color: #6f6b68;
+  padding: 4px 8px; border: 1px solid rgba(111,107,104,.2);
+}
+
+.dmabout-convo-a-title {
+  font-size: clamp(18px, 2.2vw, 24px); font-style: italic; font-weight: 400;
+  letter-spacing: -.02em; color: #111; margin: 0 0 10px; line-height: 1.3;
+}
+.dmabout-convo-a p {
+  font-size: 14px; line-height: 1.9; color: #4a4744; margin: 0;
+}
+.dmabout-convo-a-fact {
+  margin-top: 14px; font-size: 11px; letter-spacing: .1em; color: #6f6b68;
+  font-weight: 500; padding: 6px 12px; background: rgba(255,255,255,.5);
+  border: 1px solid rgba(111,107,104,.12); display: inline-block;
+}
+
+/* NOW highlight */
+.dmabout-convo-a--now {
+  border-left: 3px solid #111;
+  padding-left: 39px !important;
+}
+.dmabout-convo-block.is-open .dmabout-convo-a--now {
+  padding-left: 39px !important;
+}
+
+/* =========================================================
+   6. SUPPLY — split layout
+   ========================================================= */
+.dmabout-supply { padding: 130px 0; border-top: 1px solid rgba(111,107,104,.14); }
+.dmabout-supply-split { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; max-width: 1100px; margin: 0 auto; }
+.dmabout-supply-left { position: sticky; top: 120px; }
+.dmabout-supply-body { font-size: 14px; line-height: 2; color: #4a4744; margin: 24px 0 28px; }
+.dmabout-supply-badge { display: inline-block; font-size: 10px; letter-spacing: .22em; font-weight: 600; color: #111; padding: 10px 18px; border: 1px solid #111; }
+.dmabout-supply-right { display: flex; flex-direction: column; gap: 20px; }
+.dmabout-supply-card { padding: 32px 28px; border: 1px solid rgba(111,107,104,.2); background: #fdfcfa; transition: border-color .3s ease, box-shadow .3s ease; }
+.dmabout-supply-card:hover { border-color: rgba(111,107,104,.45); box-shadow: 0 12px 32px -16px rgba(0,0,0,.12); }
+.dmabout-supply-card-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 28px; color: #6f6b68; display: block; margin-bottom: 14px; }
+.dmabout-supply-card h4 { font-size: 15px; font-weight: 600; color: #111; margin: 0 0 8px; }
+.dmabout-supply-card p { font-size: 13px; line-height: 1.8; color: #4a4744; margin: 0; }
+
+/* =========================================================
+   7. BECLASSY
+   ========================================================= */
+.dmabout-beclassy { padding: 130px 0; border-top: 1px solid rgba(111,107,104,.14); }
+.dmabout-beclassy-head { text-align: center; max-width: 600px; margin: 0 auto 64px; }
+.dmabout-beclassy-desc { font-size: 14px; line-height: 1.9; color: #4a4744; margin: 16px 0 0; }
+.dmabout-beclassy-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1000px; margin: 0 auto; }
+.dmabout-beclassy-branch { padding: 36px 32px; border: 1px solid rgba(111,107,104,.18); background: #fdfcfa; display: flex; gap: 24px; align-items: flex-start; transition: border-color .3s ease, box-shadow .3s ease; }
+.dmabout-beclassy-branch:hover { border-color: rgba(111,107,104,.4); box-shadow: 0 12px 28px -14px rgba(0,0,0,.1); }
+.dmabout-beclassy-branch-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 36px; color: #6f6b68; flex-shrink: 0; line-height: 1; }
+.dmabout-beclassy-branch-body h4 { font-size: 16px; font-weight: 600; color: #111; margin: 0 0 10px; line-height: 1.4; }
+.dmabout-beclassy-branch-body h4 span { display: block; font-size: 11px; font-weight: 400; color: #6f6b68; letter-spacing: .02em; margin-top: 4px; }
+.dmabout-beclassy-branch-body p { font-size: 13px; line-height: 1.85; color: #4a4744; margin: 0; }
+
+/* =========================================================
+   7. CTA (matches team/work CTA)
+   ========================================================= */
+.dmabout-cta { padding: 150px 0 170px; text-align: center; position: relative; }
+.dmabout-cta-divider { width: 1px; height: 54px; background: linear-gradient(to bottom, rgba(111,107,104,0), rgba(111,107,104,.55)); margin: 0 auto 28px; }
+.dmabout-cta-eyebrow { font-size: 11px; letter-spacing: .28em; color: #6f6b68; font-weight: 500; margin-bottom: 26px; }
+.dmabout-cta-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(40px, 6vw, 80px); line-height: 1.05; letter-spacing: -.04em; color: #111; margin: 0 0 32px; }
+.dmabout-cta-title em { font-style: italic; font-weight: 300; }
+.dmabout-cta-body { font-size: 14px; line-height: 2; color: #4a4744; margin: 0 0 44px; }
+.dmabout-cta-actions { display: inline-flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.dmabout-cta-btn { display: inline-flex; align-items: center; gap: 14px; padding: 18px 32px; font-size: 12px; letter-spacing: .2em; font-weight: 500; border: 1px solid #111; cursor: pointer; transition: all .4s cubic-bezier(.22,.61,.36,1); }
+.dmabout-page .dmabout-cta-btn--primary { background: #111; color: #f2f0ec; }
+.dmabout-page .dmabout-cta-btn--primary:hover { background: #f2f0ec; color: #111; gap: 22px; }
+.dmabout-page .dmabout-cta-btn--ghost { background: transparent; color: #111; }
+.dmabout-page .dmabout-cta-btn--ghost:hover { background: #111; color: #f2f0ec; }
+.dmabout-cta-btn svg path { stroke: currentColor; }
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width: 860px) {
+  .dmabout-hero-inner { grid-template-columns: 1fr; gap: 28px; }
+  .dmabout-hero-sidebar, .dmabout-hero-stats { padding-top: 0; }
+  .dmabout-hero-stats { flex-direction: row; gap: 22px; align-items: center; }
+  .dmabout-hero-stat { text-align: left; }
+  .dmabout-hero-stat-rule { width: 1px; height: 30px; }
+  .dmabout-hero-title { font-size: clamp(64px, 16vw, 110px); }
+  .dmabout-meaning-grid { grid-template-columns: 1fr; gap: 24px; }
+  .dmabout-values { grid-template-columns: 1fr; gap: 24px; }
+  .dmabout-visual-grid { grid-template-columns: 1fr; }
+  .dmabout-convo-a, .dmabout-convo-block.is-open .dmabout-convo-a { padding-left: 0; }
+  .dmabout-convo-a--now, .dmabout-convo-block.is-open .dmabout-convo-a--now { padding-left: 12px !important; }
+  .dmabout-supply-split { grid-template-columns: 1fr; gap: 48px; }
+  .dmabout-supply-left { position: static; }
+  .dmabout-beclassy-branches { grid-template-columns: 1fr; }
+  .dmabout-meaning, .dmabout-philosophy, .dmabout-history, .dmabout-supply { padding: 90px 0; }
+  .dmabout-cta { padding: 100px 0 120px; }
+  .dmabout-cta-actions { flex-direction: column; width: 100%; }
+  .dmabout-cta-btn { width: 100%; justify-content: center; }
+}

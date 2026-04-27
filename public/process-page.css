@@ -1,0 +1,97 @@
+
+    .dmprc-page { padding-bottom: 0; overflow: hidden; }
+    .dmprc-page a { color: inherit; }
+
+    /* Hero */
+    .dmprc-hero { padding: 80px 0; }
+    .dmprc-hero-inner { display: grid; grid-template-columns: 200px 1fr 180px; gap: 40px; align-items: start; }
+    .dmprc-hero-sidebar { padding-top: 50px; font-size: 11px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+    .dmprc-hero-sidebar-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 20px; color: #111; }
+    .dmprc-hero-sidebar-sep { width: 28px; height: 1px; background: rgba(111,107,104,.3); }
+    .dmprc-hero-center { text-align: center; padding-top: 20px; }
+    .dmprc-hero-title { margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(80px, 12vw, 180px); line-height: .88; letter-spacing: -.045em; color: #111; }
+    .dmprc-hero-line { display: block; overflow: hidden; padding-bottom: .05em; }
+    .dmprc-hero-word { display: inline-block; transform: translateY(110%); }
+    .dmprc-hero-word--italic { font-style: italic; font-weight: 300; }
+    .dmprc-hero-caption { display: inline-flex; align-items: center; gap: 14px; margin-top: 36px; font-family: 'Cormorant Garamond', serif; font-size: 17px; color: #3a3734; opacity: 0; }
+    .dmprc-hero-caption em { font-style: italic; color: #111; }
+    .dmprc-hero-stats { padding-top: 50px; display: flex; flex-direction: column; gap: 18px; align-items: flex-end; }
+    .dmprc-hero-stat-label { font-size: 10px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; }
+    .dmprc-hero-stat-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 32px; color: #111; display: block; }
+    .dmprc-hero-stat-rule { width: 44px; height: 1px; background: rgba(111,107,104,.3); }
+
+    /* Compare */
+    .dmprc-compare { padding: 100px 0; border-top: 1px solid rgba(111,107,104,.14); text-align: center; }
+    .dmprc-compare-eyebrow { font-size: 11px; letter-spacing: .22em; color: #6f6b68; font-weight: 500; margin-bottom: 24px; }
+    .dmprc-compare-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.03em; color: #111; margin: 0 0 48px; }
+    .dmprc-compare-title em { font-style: italic; font-weight: 300; }
+    .dmprc-compare-grid { display: grid; grid-template-columns: 1fr 60px 1fr; gap: 0; max-width: 900px; margin: 0 auto; align-items: center; }
+    .dmprc-compare-card { padding: 40px 36px; border: 1px solid rgba(111,107,104,.15); background: #fdfcfa; text-align: center; }
+    .dmprc-compare-card--old { opacity: .6; }
+    .dmprc-compare-card h4 { font-size: 14px; font-weight: 600; color: #111; margin: 0 0 18px; }
+    .dmprc-compare-card p { font-size: 13px; line-height: 1.8; color: #4a4744; margin: 0; }
+    .dmprc-compare-steps { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
+    .dmprc-compare-step { width: 48px; height: 48px; border-radius: 50%; border: 1px solid rgba(111,107,104,.25); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 16px; color: #6f6b68; }
+    .dmprc-compare-vs { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 24px; color: #6f6b68; text-align: center; }
+    .dmprc-compare-card--new { border-color: #111; }
+    .dmprc-compare-card--new h4 { color: #111; }
+
+    /* 10-step process */
+    .dmprc-steps { padding: 130px 0; background: #f2f0ec; }
+    .dmprc-steps-head { text-align: center; margin-bottom: 72px; }
+    .dmprc-steps-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(32px, 4.5vw, 52px); letter-spacing: -.03em; color: #111; margin: 0 0 14px; }
+    .dmprc-steps-title em { font-style: italic; font-weight: 300; }
+    .dmprc-steps-sub { font-size: 14px; color: #4a4744; }
+    /* Phases */
+    .dmprc-phases { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+    .dmprc-phase-label { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .dmprc-phase-label-text { font-size: 9px; letter-spacing: .24em; font-weight: 600; color: #6f6b68; padding: 4px 10px; border: 1px solid rgba(111,107,104,.2); }
+    .dmprc-phase-label-name { font-size: 22px; font-style: italic; color: #111; letter-spacing: -.02em; }
+    .dmprc-phase-line { height: 1px; background: rgba(111,107,104,.15); margin-bottom: 24px; }
+    .dmprc-phase-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .dmprc-step { padding: 28px 22px; background: rgba(255,255,255,.6); border: 1px solid rgba(111,107,104,.1); text-align: center; transition: all .3s ease; position: relative; overflow: hidden; }
+    .dmprc-step::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #111; transform: scaleX(0); transform-origin: left; transition: transform .4s cubic-bezier(.22,.61,.36,1); }
+    .dmprc-step:hover::before { transform: scaleX(1); }
+    .dmprc-step:hover { background: #fff; border-color: rgba(111,107,104,.35); box-shadow: 0 12px 28px -14px rgba(0,0,0,.1); }
+    .dmprc-step-num { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 28px; color: rgba(111,107,104,.25); display: block; margin-bottom: 10px; transition: color .3s; }
+    .dmprc-step:hover .dmprc-step-num { color: #111; }
+    .dmprc-step h4 { font-size: 13px; font-weight: 600; color: #111; margin: 0 0 6px; }
+    .dmprc-step p { font-size: 11.5px; line-height: 1.6; color: #6f6b68; margin: 0; }
+
+    /* Summary */
+    .dmprc-summary { padding: 100px 0; text-align: center; border-top: 1px solid rgba(111,107,104,.14); }
+    .dmprc-summary-text { font-family: 'Cormorant Garamond', serif; font-size: clamp(24px, 3.5vw, 40px); color: #111; font-weight: 300; letter-spacing: -.02em; margin: 0; line-height: 1.4; }
+    .dmprc-summary-text strong { font-weight: 600; }
+
+    /* Form */
+    .dmprc-form { padding: 130px 0; background: #f2f0ec; }
+    .dmprc-form-inner { max-width: 760px; margin: 0 auto; background: rgba(255,255,255,.5); border: 1px solid rgba(111,107,104,.1); padding: 64px 56px; }
+    .dmprc-form-head { text-align: center; margin-bottom: 48px; }
+    .dmprc-form-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.03em; color: #111; margin: 0 0 12px; }
+    .dmprc-form-title em { font-style: italic; font-weight: 300; }
+    .dmprc-form-sub { font-size: 14px; color: #6f6b68; }
+    .dmprc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .dmprc-field { display: flex; flex-direction: column; gap: 8px; }
+    .dmprc-field--full { grid-column: span 2; }
+    .dmprc-field label { font-size: 11px; letter-spacing: .15em; font-weight: 500; color: #6f6b68; }
+    .dmprc-field input, .dmprc-field select, .dmprc-field textarea { padding: 16px 18px; border: 1px solid rgba(111,107,104,.15); background: #fff; font-size: 14px; color: #111; font-family: inherit; transition: border-color .3s, box-shadow .3s; border-radius: 0; -webkit-appearance: none; }
+    .dmprc-field input:focus, .dmprc-field select:focus, .dmprc-field textarea:focus { outline: none; border-color: #111; box-shadow: 0 0 0 3px rgba(17,17,17,.06); }
+    .dmprc-field textarea { min-height: 140px; resize: vertical; }
+    .dmprc-form-submit { text-align: center; margin-top: 40px; }
+    .dmprc-form-btn { display: inline-flex; align-items: center; gap: 14px; padding: 20px 40px; font-size: 12px; letter-spacing: .2em; font-weight: 500; background: #111; color: #f2f0ec; border: 1px solid #111; cursor: pointer; transition: all .3s; font-family: inherit; }
+    .dmprc-form-btn:hover { background: transparent; color: #111; }
+    .dmprc-form-note { text-align: center; margin-top: 20px; font-size: 12px; color: #6f6b68; }
+
+    @media (max-width: 860px) {
+      .dmprc-hero-inner { grid-template-columns: 1fr; gap: 24px; }
+      .dmprc-hero-sidebar, .dmprc-hero-stats { padding-top: 0; }
+      .dmprc-hero-stats { flex-direction: row; gap: 20px; }
+      .dmprc-hero-title { font-size: clamp(60px, 16vw, 100px); }
+      .dmprc-compare-grid { grid-template-columns: 1fr; gap: 16px; }
+      .dmprc-compare-vs { transform: rotate(90deg); }
+      .dmprc-phase-steps { grid-template-columns: repeat(2, 1fr); }
+      .dmprc-form-inner { padding: 40px 28px; }
+      .dmprc-form-grid { grid-template-columns: 1fr; }
+      .dmprc-field--full { grid-column: span 1; }
+    }
+  

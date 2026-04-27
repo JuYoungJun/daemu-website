@@ -1,0 +1,11 @@
+name = "daemu-api"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# 본인 Cloudflare 서브도메인이 daemu-api.<your>.workers.dev 형태로 자동 부여됨.
+# 환경 변수는 secret으로 등록:
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put ALLOWED_ORIGINS
+# 또는 Cloudflare 대시보드 → Workers → daemu-api → Settings → Variables
+[vars]
+FROM_EMAIL = "DAEMU <onboarding@resend.dev>"

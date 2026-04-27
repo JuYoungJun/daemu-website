@@ -1,0 +1,55 @@
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    branches: [demo]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build for GitHub Pages
+        run: npm run build:pages
+        env:
+          # Set this in repo Settings → Secrets and variables → Actions → Variables
+          # to a deployed backend URL (e.g. Cloudflare Worker URL).
+          # If empty, the demo runs in simulation mode (Outbox shows simulated sends).
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+      - name: Add SPA fallback (404.html copy of index.html)
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
