@@ -184,13 +184,13 @@
     const prevEl = document.getElementById('wd-prev');
     const nextEl = document.getElementById('wd-next');
     if (idx > 0) {
-      prevEl.href = `/work/${navOrder[idx - 1]}`;
+      prevEl.href = (window.DAEMU_BASE || '/') + 'work/' + navOrder[idx - 1];
       prevEl.textContent = '← ' + slugLabel(navOrder[idx - 1]);
     } else {
       prevEl.style.visibility = 'hidden';
     }
     if (idx >= 0 && idx < navOrder.length - 1) {
-      nextEl.href = `/work/${navOrder[idx + 1]}`;
+      nextEl.href = (window.DAEMU_BASE || '/') + 'work/' + navOrder[idx + 1];
       nextEl.textContent = slugLabel(navOrder[idx + 1]) + ' →';
     } else {
       nextEl.style.visibility = 'hidden';

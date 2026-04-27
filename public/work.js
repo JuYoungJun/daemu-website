@@ -226,7 +226,10 @@
     document.querySelectorAll('.dmwork-branch[data-project-id]').forEach((branch) => {
       branch.addEventListener('click', () => {
         const pid = branch.dataset.projectId;
-        if (pid) window.location.href = '/work/' + pid;
+        if (pid) {
+          const base = (window.DAEMU_BASE || '/');
+          window.location.href = base + 'work/' + pid;
+        }
       });
     });
   }

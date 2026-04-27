@@ -269,7 +269,8 @@
     if (!p.slug) { alert("슬러그를 입력하세요"); return; }
     // Save as draft so /work/<slug> can render it
     sessionStorage.setItem('daemu_work_preview_' + p.slug, JSON.stringify(p));
-    window.open('/work/' + p.slug + '?preview=1', '_blank');
+    const base = (window.DAEMU_BASE || '/');
+    window.open(base + 'work/' + p.slug + '?preview=1', '_blank');
   }
 
   function del(id) {
