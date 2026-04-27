@@ -22,15 +22,18 @@
 .adm-var-token{
   display:inline-flex;align-items:center;gap:4px;
   background:#111;color:#f6f4f0;
-  padding:2px 10px 2px 8px;
+  padding:1px 8px;
   font-size:12px;
+  line-height:1.4;
   font-family:'SF Mono','Menlo',monospace;
   border-radius:3px;
   margin:0 2px;
   user-select:none;
   white-space:nowrap;
-  vertical-align:baseline;
+  vertical-align:middle;
   cursor:default;
+  position:relative;
+  top:-1px;
 }
 .adm-var-token .x{
   display:inline-flex;align-items:center;justify-content:center;
@@ -70,8 +73,11 @@
   font-size:11px;color:#8c867d;margin-top:2px;letter-spacing:.04em;
 }
 .adm-mail-vars-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
   gap:8px;
+}
+@media (min-width:1100px){
+  .adm-mail-vars-grid{grid-template-columns:repeat(5,1fr)}
 }
 .adm-mail-var-item{
   display:flex;align-items:center;gap:10px;
