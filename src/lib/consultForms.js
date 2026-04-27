@@ -5,6 +5,7 @@
 
 import { DB } from './db.js';
 import { sendAutoReply } from './email.js';
+import { api } from './api.js';
 
 export function installConsultFormHandler() {
   if (typeof document === 'undefined') return;
@@ -54,9 +55,20 @@ export function installConsultFormHandler() {
       return;
     }
 
+    // Local mirror — keeps offline demo working + lets admin see new entry
+    // immediately. The backend (when configured) is the source of truth.
     DB.add('inquiries', {
       name, phone, email, type: finalCategory, msg: message, status: '신규'
     });
+
+    // Persist to backend (silently best-effort — failure here is non-fatal
+    // since the email auto-reply still goes through and admin sees the
+    // localStorage entry).
+    if (api.isConfigured()) {
+      api.post('/api/inquiries', {
+        name, email, phone, category: finalCategory, message,
+      }).catch(() => { /* ignore */ });
+    }
 
     let mailNote = '';
     try {

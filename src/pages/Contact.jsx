@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFadeUp } from '../hooks/useFadeUp.js';
 import { DB } from '../lib/db.js';
 import { sendAutoReply, isEmailEnabled } from '../lib/email.js';
+import { api } from '../lib/api.js';
 
 const TABS = ['창업 컨설팅','메뉴 개발','브랜드 디자인','인테리어/공간 설계','원두/베이커리 납품','기타 문의'];
 
@@ -43,6 +44,20 @@ export default function Contact() {
     };
 
     DB.add('inquiries', inquiry);
+
+    // Persist to backend (best-effort, non-blocking).
+    if (api.isConfigured()) {
+      api.post('/api/inquiries', {
+        name: form.name,
+        email: form.email,
+        phone: form.phone || '',
+        brand_name: form.brand || '',
+        location: form.region || '',
+        expected_open: form.open || '',
+        category: active,
+        message: isEtc ? `[${form.topic || '기타'}] ${form.msg}` : form.msg,
+      }).catch(() => { /* silent */ });
+    }
 
     let mailNote = '';
     if (form.email) {

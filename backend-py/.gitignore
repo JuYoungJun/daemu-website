@@ -5,3 +5,7 @@ venv/
 .env
 *.log
 uploads/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

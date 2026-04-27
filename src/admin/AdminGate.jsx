@@ -3,15 +3,28 @@ import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
+import { api } from '../lib/api.js';
 
 export default function AdminGate() {
   const [loggedIn, setLoggedIn] = useState(() => Auth.isLoggedIn());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
 
-  const onLogin = (e) => {
+  const onLogin = async (e) => {
     e.preventDefault();
-    Auth.login();
+    setError('');
+    const fd = new FormData(e.target);
+    const email = String(fd.get('admin_id') || '').trim();
+    const password = String(fd.get('admin_pw') || '');
+    setLoading(true);
+    const res = await Auth.login(email, password);
+    setLoading(false);
+    if (!res.ok) {
+      setError(res.error || '로그인 실패');
+      return;
+    }
     setLoggedIn(true);
   };
   const onLogout = () => {
@@ -29,10 +42,12 @@ export default function AdminGate() {
               <div className="admin-login-box">
                 <h2>관리자 로그인</h2>
                 <p>대무 관리자 전용 페이지입니다.</p>
+                {!api.isConfigured() && <p style={{fontSize:11,color:'#a09a92',marginTop:-12}}>※ 백엔드 미연결 상태 — 데모 모드로 진행됩니다.</p>}
                 <form onSubmit={onLogin}>
-                  <div className="admin-login-field"><input type="text" name="admin_id" placeholder="관리자 아이디" required /></div>
-                  <div className="admin-login-field"><input type="password" name="admin_pw" placeholder="비밀번호" required /></div>
-                  <button className="btn" type="submit">로그인</button>
+                  <div className="admin-login-field"><input type="text" name="admin_id" placeholder="관리자 아이디 (이메일)" autoComplete="username" required /></div>
+                  <div className="admin-login-field"><input type="password" name="admin_pw" placeholder="비밀번호" autoComplete="current-password" required /></div>
+                  {error && <div style={{color:'#b04a3b',fontSize:12,margin:'4px 0 8px'}}>{error}</div>}
+                  <button className="btn" type="submit" disabled={loading}>{loading ? '확인 중…' : '로그인'}</button>
                 </form>
               </div>
             </div>

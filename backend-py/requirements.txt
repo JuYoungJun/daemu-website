@@ -3,3 +3,11 @@ uvicorn[standard]>=0.34.0
 httpx>=0.28.1
 python-dotenv>=1.0.1
 pydantic>=2.11.0
+email-validator>=2.2.0      # required by pydantic.EmailStr
+sqlalchemy[asyncio]>=2.0.36
+aiosqlite>=0.20.0          # SQLite async driver (default for dev / Render demo)
+asyncmy>=0.2.10            # MySQL async driver (used when DATABASE_URL=mysql+asyncmy://...)
+pyjwt>=2.10.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0,<5.0
+python-multipart>=0.0.20   # required by FastAPI for form-data

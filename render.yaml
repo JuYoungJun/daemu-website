@@ -17,8 +17,18 @@ services:
     envVars:
       - key: RESEND_API_KEY
         sync: false   # set in Render dashboard (secret)
+      - key: JWT_SECRET
+        generateValue: true   # Render generates and stores a strong secret
+      - key: ADMIN_EMAIL
+        value: admin@daemu.kr
+      - key: ADMIN_PASSWORD
+        sync: false   # set in Render dashboard (secret) — first-boot seed only
+      - key: DATABASE_URL
+        # Default: SQLite file in the service container.
+        # On Cafe24 / production, override to mysql+asyncmy://user:pass@host:3306/daemu
+        value: sqlite+aiosqlite:///./daemu.db
       - key: ALLOWED_ORIGINS
-        value: https://juyoungjun.github.io,http://localhost:8765,http://localhost:5173
+        value: https://juyoungjun.github.io,http://localhost:8765,http://localhost:5173,http://localhost:8766
       - key: FROM_EMAIL
         value: DAEMU <onboarding@resend.dev>
       - key: PYTHON_VERSION

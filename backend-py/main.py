@@ -1,11 +1,29 @@
-"""DAEMU backend — FastAPI port of the original Express service.
+"""DAEMU backend — FastAPI + async SQLAlchemy.
 
-Endpoints (same contract as backend/server.js so the frontend doesn't change):
+Endpoints
+---------
+Public:
     GET  /api/health
-    POST /api/upload          -> save base64 image, return public URL
-    POST /api/email/send      -> single email via Resend REST
-    POST /api/email/campaign  -> bulk email with throttle
-    GET  /uploads/{name}      -> public static serve
+    POST /api/upload          — base64 image upload, returns public URL
+    POST /api/email/send      — single email via Resend (also logs to outbox)
+    POST /api/email/campaign  — bulk email
+    POST /api/inquiries       — Contact form submission (saves to DB)
+    GET  /api/mail-template/{kind}  — public read of templates
+    GET  /api/content/{key}   — public read of CMS blocks
+    GET  /uploads/{name}      — static serve
+
+Admin (Bearer JWT):
+    POST /api/auth/login
+    GET  /api/auth/me
+    GET/PATCH/DELETE /api/inquiries[/{id}]
+    Same shape for /api/partners, /api/orders, /api/works,
+                   /api/popups, /api/crm, /api/campaigns,
+                   /api/promotions, /api/outbox
+    PUT  /api/mail-template/{kind}
+    PUT  /api/content/{key}
+
+DATABASE_URL env switches between sqlite+aiosqlite (default, demo) and
+mysql+asyncmy://user:pass@host/db (production).
 
 Run locally:
     uvicorn main:app --reload --port 3000
@@ -20,16 +38,23 @@ import os
 import re
 import secrets
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from auth import ensure_default_admin, router as auth_router
+from db import Base, SessionLocal, engine, get_session
+from models import Outbox  # noqa: F401 — also makes import side-effect register tables
+from routes_crud import router as crud_router
 
 load_dotenv()
 
@@ -41,7 +66,7 @@ ALLOWED_ORIGINS = [
     o.strip()
     for o in os.environ.get(
         "ALLOWED_ORIGINS",
-        "http://localhost:8765,http://localhost:5173",
+        "http://localhost:8765,http://localhost:5173,http://localhost:8766",
     ).split(",")
     if o.strip()
 ]
@@ -67,14 +92,26 @@ if not RESEND_API_KEY:
     print("[daemu-backend-py] RESEND_API_KEY not set — emails will be simulated.")
 
 
-app = FastAPI(title="DAEMU API", version="2.0")
+# ---------------------------------------------------------------------------
+# Lifespan: create tables + seed default admin
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with SessionLocal() as session:
+        await ensure_default_admin(session)
+    print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
+    yield
+
+
+app = FastAPI(title="DAEMU API", version="3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=None,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     max_age=600,
 )
@@ -85,6 +122,16 @@ async def unhandled_exception_handler(_req: Request, exc: Exception):
     print(f"[daemu-backend-py] unhandled: {exc!r}")
     return JSONResponse({"ok": False, "error": "internal"}, status_code=500)
 
+
+# ---------------------------------------------------------------------------
+# Routers
+
+app.include_router(auth_router)
+app.include_router(crud_router)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
 
 def apply_vars(text: str | None, vars_: dict[str, Any]) -> str:
     if not text:
@@ -108,17 +155,17 @@ def detect_mime(filename: str, fallback: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Models
+# Models for endpoints not in the CRUD router
 
 class UploadIn(BaseModel):
     filename: str
-    content: str  # base64
+    content: str
     contentType: str | None = None
 
 
 class Attachment(BaseModel):
     filename: str
-    content: str  # base64
+    content: str
     contentId: str | None = None
     contentType: str | None = None
 
@@ -150,14 +197,16 @@ class CampaignIn(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Health
 
 @app.get("/api/health")
 async def health():
     return {
         "ok": True,
         "runtime": "python-fastapi",
+        "version": "3.0",
         "resendConfigured": bool(RESEND_API_KEY),
+        "database": engine.url.render_as_string(hide_password=True),
         "from": FROM_EMAIL,
         "allowedOrigins": ALLOWED_ORIGINS,
         "uploadEndpoint": "/api/upload",
@@ -165,7 +214,9 @@ async def health():
     }
 
 
+# ---------------------------------------------------------------------------
 # Static uploads (cache 7 days, immutable)
+
 class CachedStatic(StaticFiles):
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
@@ -176,6 +227,9 @@ class CachedStatic(StaticFiles):
 
 app.mount("/uploads", CachedStatic(directory=str(UPLOAD_DIR)), name="uploads")
 
+
+# ---------------------------------------------------------------------------
+# Upload
 
 @app.post("/api/upload")
 async def upload(payload: UploadIn, request: Request):
@@ -199,7 +253,6 @@ async def upload(payload: UploadIn, request: Request):
     file_id = format(int(time.time() * 1000), "x") + "-" + secrets.token_hex(4)
     final_name = f"{file_id}{ext}"
     final_path = UPLOAD_DIR / final_name
-    # Final guard against path traversal — resolved path must stay under UPLOAD_DIR
     if UPLOAD_DIR.resolve() not in final_path.resolve().parents:
         raise HTTPException(400, detail="invalid path")
 
@@ -235,7 +288,6 @@ def normalize_attachments(items: list[Attachment] | None) -> list[dict[str, Any]
         }
         if a.contentId:
             cid = str(a.contentId)
-            # Triple-name to maximize Resend compatibility across versions.
             entry["content_id"] = cid
             entry["inline_content_id"] = cid
             entry["cid"] = cid
@@ -265,16 +317,42 @@ async def send_via_resend(client: httpx.AsyncClient, payload: dict[str, Any]) ->
     return {"ok": True, "id": rid}
 
 
+async def log_outbox(session: AsyncSession, *, type_: str, to: str, subject: str, body: str, status: str, error: str = "", payload: dict | None = None) -> None:
+    try:
+        entry = Outbox(
+            type=type_,
+            recipient=to,
+            subject=subject or "",
+            body=(body or "")[:8000],
+            status=status,
+            error=error or "",
+            payload=payload or {},
+        )
+        session.add(entry)
+        await session.flush()
+    except Exception as e:  # noqa: BLE001
+        print(f"[outbox] failed to log: {e!r}")
+
+
+# ---------------------------------------------------------------------------
+# Email send
+
 @app.post("/api/email/send")
-async def email_send(payload: EmailSendIn):
+async def email_send(payload: EmailSendIn, session: AsyncSession = Depends(get_session)):
     if not payload.to or not payload.subject:
         raise HTTPException(400, detail="to and subject are required")
 
     safe_attachments = normalize_attachments(payload.attachments)
+    log_type = payload.type or "email"
 
     if not RESEND_API_KEY:
-        print(f"[email/send simulated] to={payload.to} subject={payload.subject!r} html={bool(payload.html)} att={len(safe_attachments or [])}")
-        return {"ok": True, "simulated": True, "id": f"sim-{int(time.time() * 1000)}"}
+        sim_id = f"sim-{int(time.time() * 1000)}"
+        await log_outbox(
+            session, type_=log_type, to=payload.to, subject=payload.subject,
+            body=payload.body or "", status="simulated",
+            payload={"hasHtml": bool(payload.html), "attachments": len(safe_attachments or [])},
+        )
+        return {"ok": True, "simulated": True, "id": sim_id}
 
     body: dict[str, Any] = {
         "from": FROM_EMAIL,
@@ -296,22 +374,41 @@ async def email_send(payload: EmailSendIn):
         result = await send_via_resend(client, body)
 
     if not result["ok"]:
+        await log_outbox(
+            session, type_=log_type, to=payload.to, subject=payload.subject,
+            body=payload.body or "", status="failed",
+            error=str(result.get("error", "send failed")),
+        )
         return JSONResponse(
             {"ok": False, "error": result.get("error", "send failed")},
             status_code=502,
         )
+
+    await log_outbox(
+        session, type_=log_type, to=payload.to, subject=payload.subject,
+        body=payload.body or "", status="sent",
+        payload={"resendId": result.get("id")},
+    )
     return result
 
 
+# ---------------------------------------------------------------------------
+# Email campaign
+
 @app.post("/api/email/campaign")
-async def email_campaign(payload: CampaignIn):
+async def email_campaign(payload: CampaignIn, session: AsyncSession = Depends(get_session)):
     if not payload.recipients:
         raise HTTPException(400, detail="recipients[] required")
 
     safe_attachments = normalize_attachments(payload.attachments)
 
     if not RESEND_API_KEY:
-        print(f"[email/campaign simulated] count={len(payload.recipients)} subject={payload.subject!r}")
+        for r in payload.recipients:
+            await log_outbox(
+                session, type_="campaign", to=r.email, subject=payload.subject,
+                body=payload.body or "", status="simulated",
+                payload={"campaignId": payload.campaignId},
+            )
         return {
             "ok": True,
             "simulated": True,
@@ -350,9 +447,20 @@ async def email_campaign(payload: CampaignIn):
                 result = await send_via_resend(client, body)
                 if result["ok"]:
                     sent += 1
+                    await log_outbox(
+                        session, type_="campaign", to=recipient.email, subject=payload.subject,
+                        body=payload.body or "", status="sent",
+                        payload={"resendId": result.get("id"), "campaignId": payload.campaignId},
+                    )
                 else:
                     failed += 1
-                    errors.append({"email": recipient.email, "error": result.get("error", "send failed")})
+                    err = str(result.get("error", "send failed"))
+                    errors.append({"email": recipient.email, "error": err})
+                    await log_outbox(
+                        session, type_="campaign", to=recipient.email, subject=payload.subject,
+                        body=payload.body or "", status="failed", error=err,
+                        payload={"campaignId": payload.campaignId},
+                    )
             except Exception as err:  # noqa: BLE001
                 failed += 1
                 errors.append({"email": recipient.email, "error": str(err)})
