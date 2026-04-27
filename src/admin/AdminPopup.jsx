@@ -7,7 +7,7 @@ export default function AdminPopup() {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/admin-popup-page.css';
+    link.href = import.meta.env.BASE_URL + 'admin-popup-page.css';
     link.dataset.pageStyle = 'admin-popup';
     document.head.appendChild(link);
     return () => link.remove();

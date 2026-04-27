@@ -6,7 +6,7 @@ export default function Process() {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/process-page.css';
+    link.href = import.meta.env.BASE_URL + 'process-page.css';
     link.dataset.pageStyle = 'process';
     document.head.appendChild(link);
     return () => link.remove();

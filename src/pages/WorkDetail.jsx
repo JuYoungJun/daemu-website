@@ -8,7 +8,7 @@ export default function WorkDetail() {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/work-detail-page.css';
+    link.href = import.meta.env.BASE_URL + 'work-detail-page.css';
     link.dataset.pageStyle = 'work-detail';
     document.head.appendChild(link);
     return () => link.remove();

@@ -7,7 +7,7 @@ export default function Service() {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/service-page.css';
+    link.href = import.meta.env.BASE_URL + 'service-page.css';
     link.dataset.pageStyle = 'service';
     document.head.appendChild(link);
     return () => link.remove();
