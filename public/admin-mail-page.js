@@ -123,13 +123,12 @@
   function load() {
     const d = JSON.parse(localStorage.getItem("daemu_mail") || "null") || defaults;
     document.getElementById("m-subject").value = d.subject;
-    imagesCache = (d.images || []).slice();
-    // Re-create previewUrls from base64 if missing (after reload)
-    imagesCache.forEach(im => {
-      if (!im.previewUrl && im.content) {
-        im.previewUrl = 'data:image/jpeg;base64,' + im.content;
-      }
-    });
+    imagesCache = (d.images || []).map(im => ({
+      contentId: im.contentId,
+      filename: im.filename,
+      url: im.url || im.previewUrl || '',
+      previewUrl: im.previewUrl || im.url || ''
+    }));
     renderBody(d.body || '');
     document.getElementById("m-active").value = d.active;
     document.getElementById("m-category").value = d.category;
@@ -184,12 +183,11 @@
     const body = readBody();
     const active = document.getElementById('m-active').value;
     const category = document.getElementById('m-category').value;
-    // Only persist images currently referenced in body
     const referenced = new Set();
     body.replace(/\[\[img:([\w-]+)\]\]/g, (_, cid) => { referenced.add(cid); return ''; });
     const images = imagesCache
       .filter((i) => referenced.has(i.contentId))
-      .map((i) => ({ contentId: i.contentId, filename: i.filename, content: i.content, previewUrl: i.previewUrl }));
+      .map((i) => ({ contentId: i.contentId, filename: i.filename, url: i.url, previewUrl: i.previewUrl }));
     localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active, category, images }));
     alert('저장되었습니다.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
   }
@@ -215,19 +213,21 @@
     if (!files || !files[0]) return;
     try {
       const optimized = await window.uploadImage(files[0]);
-      const dataUrl = optimized.url;
-      const base64 = (dataUrl.split(',')[1] || '');
+      // optimized.url is publicUrl when backend uploaded, else data URL
       const img = {
         contentId: newCid(),
         filename: optimized.name || files[0].name,
-        content: base64,
-        previewUrl: dataUrl
+        url: optimized.publicUrl || optimized.url,    // public URL preferred for email
+        previewUrl: optimized.previewUrl || optimized.url
       };
       imagesCache.push(img);
       const ed = document.getElementById('m-body');
       ed.focus();
       insertNodeAtCaret(makeImgToken(img));
       updatePreview();
+      if (!optimized.publicUrl) {
+        if (window.siteToast) window.siteToast('백엔드 미연결 — 이미지가 data URL로 임베드됩니다 (Gmail에선 차단될 수 있음). 백엔드 연결 시 자동으로 공개 URL 사용.', { tone: 'warn', duration: 4500 });
+      }
     } catch (err) {
       alert('이미지 삽입 실패: ' + (err && err.message ? err.message : err));
     }
@@ -279,7 +279,7 @@
     const referenced = new Set();
     body.replace(/\[\[img:([\w-]+)\]\]/g, (_, cid) => { referenced.add(cid); return ''; });
     const images = imagesCache.filter((i) => referenced.has(i.contentId))
-      .map((i) => ({ contentId: i.contentId, filename: i.filename, content: i.content, previewUrl: i.previewUrl }));
+      .map((i) => ({ contentId: i.contentId, filename: i.filename, url: i.url, previewUrl: i.previewUrl }));
     localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active: 'on', category, images }));
   }
 

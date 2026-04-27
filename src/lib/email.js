@@ -43,15 +43,17 @@ function escapeHtml(s) {
 function bodyToHtml(body, images) {
   const parts = String(body || '').split(/(\[\[img:[\w-]+\]\])/g);
   let inner = '';
-  const usedCids = new Set();
   parts.forEach((part) => {
     const m = part.match(/^\[\[img:([\w-]+)\]\]$/);
     if (m) {
       const cid = m[1];
       const img = (images || []).find((x) => x.contentId === cid);
-      if (img) {
-        usedCids.add(cid);
-        inner += `<div style="margin:14px 0"><img src="cid:${cid}" alt="${escapeHtml(img.filename || '')}" style="max-width:100%;height:auto;display:block;border-radius:2px"></div>`;
+      if (img && img.url) {
+        // Reference public URL — works in all email clients incl. Gmail
+        inner += `<div style="margin:14px 0"><img src="${img.url}" alt="${escapeHtml(img.filename || '')}" style="max-width:100%;height:auto;display:block;border-radius:2px"></div>`;
+      } else if (img && img.previewUrl && img.previewUrl.startsWith('data:')) {
+        // Fallback: data URI (works in some clients, not Gmail)
+        inner += `<div style="margin:14px 0"><img src="${img.previewUrl}" alt="${escapeHtml(img.filename || '')}" style="max-width:100%;height:auto;display:block;border-radius:2px"></div>`;
       }
     } else {
       // escape + preserve line breaks
@@ -74,17 +76,9 @@ function bodyToHtml(body, images) {
 </table>
 </body></html>`;
 
-  // Only attach images that were referenced
-  const attachments = (images || [])
-    .filter((img) => usedCids.has(img.contentId))
-    .map((img) => ({
-      filename: img.filename,
-      content: img.content,
-      contentId: img.contentId,
-      inline: true
-    }));
-
-  return { html, attachments };
+  // No CID attachments anymore — images are referenced via public URL.
+  // Return empty attachments array (callers can still add their own paperclip files).
+  return { html, attachments: [] };
 }
 
 async function postEmail(payload) {

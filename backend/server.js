@@ -2,10 +2,20 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Resend } from 'resend';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM = process.env.FROM_EMAIL || 'DAEMU <onboarding@resend.dev>';
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
 const ALLOWED = (process.env.ALLOWED_ORIGINS || 'http://localhost:8765,http://localhost:5173')
   .split(',').map(s => s.trim()).filter(Boolean);
 
@@ -30,8 +40,32 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     resendConfigured: !!resend,
     from: FROM,
-    allowedOrigins: ALLOWED
+    allowedOrigins: ALLOWED,
+    uploadEndpoint: '/api/upload',
+    publicBase: PUBLIC_BASE || '(auto from Host header)'
   });
+});
+
+// Serve uploaded files publicly (cache 7 days)
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d', immutable: true }));
+
+// Upload endpoint — accepts {filename, content (base64), contentType}
+// returns publicly accessible URL.
+app.post('/api/upload', (req, res) => {
+  const { filename, content, contentType } = req.body || {};
+  if (!filename || !content) return res.status(400).json({ ok: false, error: 'filename + content required' });
+  // sanitize filename
+  const safe = String(filename).replace(/[^\w.\-]/g, '_').slice(0, 80);
+  const ext = (safe.match(/\.[a-z0-9]+$/i) || ['.bin'])[0];
+  const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  const finalName = id + ext;
+  const buf = Buffer.from(String(content), 'base64');
+  if (buf.length > 8 * 1024 * 1024) return res.status(413).json({ ok: false, error: 'file too large (8MB cap)' });
+  const filePath = path.join(UPLOAD_DIR, finalName);
+  fs.writeFileSync(filePath, buf);
+  const host = PUBLIC_BASE || (req.protocol + '://' + req.get('host'));
+  const url = host + '/uploads/' + finalName;
+  res.json({ ok: true, url, filename: safe, contentType: contentType || 'application/octet-stream', size: buf.length });
 });
 
 function applyVars(text, vars) {
