@@ -39,11 +39,10 @@ function applyVars(text, vars) {
   return String(text).replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''));
 }
 
-// Single email send.
-// Supports attachments: [{ filename, content(base64), contentId, inline }]
-//   - contentId + inline:true → embedded inline image (referenced as <img src="cid:contentId">)
-//   - otherwise → regular paperclip attachment
-// If `html` is provided, sent as HTML email; otherwise text-only.
+// Single email send. Bypasses Resend SDK when inline attachments are
+// present — calls REST API directly so we can use the documented snake_case
+// `content_id` field exactly, and (for safety) double-tag with `inline_content_id`
+// + `cid` aliases to maximize compatibility across SDK versions.
 app.post('/api/email/send', async (req, res) => {
   const { to, toName, subject, body, html, replyTo, attachments } = req.body || {};
   if (!to || !subject) return res.status(400).json({ ok: false, error: 'to and subject are required' });
@@ -54,41 +53,55 @@ app.post('/api/email/send', async (req, res) => {
         .slice(0, 12)
         .map((a) => {
           const out = { filename: String(a.filename), content: String(a.content) };
-          // Detect MIME for inline embedding (Gmail strict)
           const filename = String(a.filename).toLowerCase();
-          if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) out.contentType = 'image/jpeg';
-          else if (filename.endsWith('.png')) out.contentType = 'image/png';
-          else if (filename.endsWith('.gif')) out.contentType = 'image/gif';
-          else if (filename.endsWith('.webp')) out.contentType = 'image/webp';
-          else if (filename.endsWith('.svg')) out.contentType = 'image/svg+xml';
-          else if (filename.endsWith('.pdf')) out.contentType = 'application/pdf';
-          // Resend SDK uses `inlineContentId` for cid: HTML references.
-          // Setting it makes Resend send the attachment as inline (no paperclip).
-          if (a.contentId) out.inlineContentId = String(a.contentId);
+          if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) out.content_type = 'image/jpeg';
+          else if (filename.endsWith('.png')) out.content_type = 'image/png';
+          else if (filename.endsWith('.gif')) out.content_type = 'image/gif';
+          else if (filename.endsWith('.webp')) out.content_type = 'image/webp';
+          else if (filename.endsWith('.svg')) out.content_type = 'image/svg+xml';
+          else if (filename.endsWith('.pdf')) out.content_type = 'application/pdf';
+          if (a.contentId) {
+            const cid = String(a.contentId);
+            // Triple-name to maximize Resend compatibility across versions
+            out.content_id = cid;
+            out.inline_content_id = cid;
+            out.cid = cid;
+          }
           return out;
         })
     : undefined;
 
-  if (!resend) {
+  if (!RESEND_API_KEY) {
     console.log('[email/send simulated]', { to, subject, hasHtml: !!html, attachments: safeAttachments?.length || 0 });
     return res.json({ ok: true, simulated: true, id: 'sim-' + Date.now() });
   }
 
+  const payload = { from: FROM, to: [to], subject, reply_to: replyTo };
+  if (html) {
+    payload.html = html;
+    if (body) payload.text = body;
+  } else {
+    payload.text = body || '';
+  }
+  if (safeAttachments?.length) payload.attachments = safeAttachments;
+
   try {
-    const payload = { from: FROM, to: [to], subject, replyTo };
-    if (html) {
-      payload.html = html;
-      if (body) payload.text = body; // multipart fallback for plain-text clients
-    } else {
-      payload.text = body || '';
+    const apiRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + RESEND_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const text = await apiRes.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+    if (!apiRes.ok) {
+      console.error('[email/send] Resend HTTP', apiRes.status, text);
+      return res.status(502).json({ ok: false, error: (json && json.message) || ('HTTP ' + apiRes.status) });
     }
-    if (safeAttachments?.length) payload.attachments = safeAttachments;
-    const result = await resend.emails.send(payload);
-    if (result.error) {
-      console.error('[email/send] Resend error:', result.error);
-      return res.status(502).json({ ok: false, error: result.error.message });
-    }
-    return res.json({ ok: true, id: result.data?.id });
+    return res.json({ ok: true, id: json?.id });
   } catch (err) {
     console.error('[email/send] thrown:', err);
     return res.status(500).json({ ok: false, error: String(err?.message || err) });

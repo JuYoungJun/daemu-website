@@ -64,8 +64,8 @@ export default {
             else if (fn.endsWith('.gif')) out.content_type = 'image/gif';
             else if (fn.endsWith('.webp')) out.content_type = 'image/webp';
             else if (fn.endsWith('.pdf')) out.content_type = 'application/pdf';
-            // Resend REST API: content_id triggers inline embedding
-            if (a.contentId) out.content_id = a.contentId;
+            // Resend REST API: inline_content_id triggers inline embedding (NOT content_id)
+            if (a.contentId) out.inline_content_id = a.contentId;
             return out;
           })
         : null;
