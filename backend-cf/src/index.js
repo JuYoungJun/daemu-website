@@ -53,12 +53,16 @@ export default {
     const FROM = env.FROM_EMAIL || 'DAEMU <onboarding@resend.dev>';
 
     if (url.pathname === PATH_SEND) {
-      const { to, toName, subject, body: text, replyTo, attachments } = body || {};
+      const { to, toName, subject, body: text, html, replyTo, attachments } = body || {};
       if (!to || !subject) return json({ ok: false, error: 'to/subject required' }, 400, cors);
       const safeAtt = Array.isArray(attachments)
-        ? attachments.filter(a => a && a.filename && a.content).slice(0, 10)
+        ? attachments.filter(a => a && a.filename && a.content).slice(0, 12).map(a => {
+            const out = { filename: a.filename, content: a.content };
+            if (a.contentId) { out.content_id = a.contentId; if (a.inline !== false) out.content_disposition = 'inline'; }
+            return out;
+          })
         : null;
-      const r = await sendOne(env.RESEND_API_KEY, { from: FROM, to, subject, text, replyTo, attachments: safeAtt });
+      const r = await sendOne(env.RESEND_API_KEY, { from: FROM, to, subject, text, html, replyTo, attachments: safeAtt });
       return json(r, r.ok ? 200 : 502, cors);
     }
 
@@ -86,9 +90,10 @@ export default {
   }
 };
 
-async function sendOne(apiKey, { from, to, subject, text, replyTo, attachments }) {
+async function sendOne(apiKey, { from, to, subject, text, html, replyTo, attachments }) {
   try {
-    const payload = { from, to: [to], subject, text, reply_to: replyTo };
+    const payload = { from, to: [to], subject, reply_to: replyTo };
+    if (html) { payload.html = html; if (text) payload.text = text; } else { payload.text = text || ''; }
     if (attachments && attachments.length) payload.attachments = attachments;
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',

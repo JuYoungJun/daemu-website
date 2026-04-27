@@ -2,7 +2,7 @@ export default `<main class="page fade-up">
     <section class="wide">
       <a href="admin.html" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Auto-Reply</h1>
-      <p class="adm-section-desc">Contact 폼 / 상담 신규 등록 시 자동으로 발송되는 회신 메일을 관리합니다.<br>여기 저장된 제목·본문이 백엔드(Resend)를 통해 그대로 발송됩니다.</p>
+      <p class="adm-section-desc">Contact 폼 / 상담 신규 등록 시 자동으로 발송되는 회신 메일을 관리합니다.<br>본문에 삽입한 이미지는 <strong>메일 본문 안에 그대로 박혀</strong> 발송됩니다 (파일 첨부 형태가 아님).</p>
 
       <div class="adm-section">
         <div class="adm-section-head">
@@ -32,18 +32,19 @@ export default `<main class="page fade-up">
         <div class="adm-form">
           <div class="full"><label>제목</label><input id="m-subject" type="text" placeholder="[대무] 문의가 접수되었습니다"></div>
           <div class="full">
-            <label>본문 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">변수 토큰은 잠겨있습니다 (×로 제거)</span></label>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+              <label style="margin:0">본문 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">변수 토큰 잠금 · 이미지 본문 인라인 삽입</span></label>
+              <label class="adm-btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+                <input type="file" accept="image/*" id="m-inline-img" onchange="insertInlineImage(this.files)" style="display:none">
+                + 이미지 삽입
+              </label>
+            </div>
             <div id="m-body" class="adm-body-editor" contenteditable="true" spellcheck="false"></div>
           </div>
           <div><label>자동회신</label><select id="m-active"><option value="on">활성 (ON)</option><option value="off">비활성 (OFF)</option></select></div>
           <div><label>회신 정책</label><select id="m-category"><option value="all">전체 동일 적용</option><option value="each">카테고리별 적용</option></select></div>
-          <div class="full">
-            <label>이미지 첨부 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">테스트 발송에 함께 전송 (자동 최적화 적용)</span></label>
-            <input type="file" id="m-files" accept="image/*" multiple onchange="addAttachments(this.files)">
-            <div class="adm-thumb-row" id="m-attach-thumbs"></div>
-          </div>
-          <div class="full"><label>미리보기 (변수 미치환 원본)</label>
-            <div id="m-preview" style="white-space:pre-wrap;background:#f6f4f0;border:1px solid #d7d4cf;padding:18px;font-family:'Noto Sans KR',sans-serif;font-size:13px;color:#4a4744;line-height:1.7;min-height:120px"></div>
+          <div class="full"><label>HTML 미리보기 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">실제 발송 메일과 동일</span></label>
+            <iframe id="m-preview" style="width:100%;min-height:380px;border:1px solid #d7d4cf;background:#fff;border-radius:0"></iframe>
           </div>
           <div class="adm-form-actions">
             <button class="btn" type="button" onclick="saveMail()">저장</button>

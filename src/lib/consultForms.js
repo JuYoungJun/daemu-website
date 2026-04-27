@@ -36,7 +36,9 @@ export function installConsultFormHandler() {
     const phone   = get(['input[type="text"][placeholder*="0000"]', 'input[name="phone"]', 'input[type="tel"]']);
     const email   = get(['input[type="email"]', 'input[name="email"]']);
     const select  = form.querySelector('select');
-    const category = (select && select.value) || form.dataset.category || '상담';
+    const rawCategory = (select && select.value) || '';
+    const isPlaceholder = !rawCategory || rawCategory === '선택해주세요';
+    const category = isPlaceholder ? (form.dataset.category || '상담 문의') : rawCategory;
     const message = (form.querySelector('textarea')?.value || '').trim();
     const hidden  = form.querySelector('input[type="hidden"][name="consult_category"]')?.value;
     const finalCategory = hidden || category;

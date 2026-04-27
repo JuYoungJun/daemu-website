@@ -46,6 +46,33 @@
 }
 .adm-var-token .x:hover{background:rgba(255,255,255,.32)}
 
+/* Inline image token in mail body */
+.adm-mail-imgtoken{
+  position:relative;
+  display:inline-block;
+  margin:6px 0;
+  max-width:100%;
+  vertical-align:middle;
+  user-select:none;
+  border:1px solid #d7d4cf;
+}
+.adm-mail-imgtoken img{
+  display:block;
+  max-width:100%;
+  max-height:240px;
+  height:auto;
+}
+.adm-mail-imgtoken .x{
+  position:absolute;top:6px;right:6px;
+  width:22px;height:22px;
+  background:rgba(17,17,17,.78);color:#f6f4f0;
+  border:none;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;line-height:1;cursor:pointer;
+  font-family:inherit;padding:0;
+}
+.adm-mail-imgtoken .x:hover{background:rgba(17,17,17,1)}
+
 /* Mail variable reference — locked / read-only */
 .adm-mail-vars{
   background:#f6f4f0;

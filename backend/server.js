@@ -39,25 +39,43 @@ function applyVars(text, vars) {
   return String(text).replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''));
 }
 
-// Single email send (optional attachments: [{ filename, content (base64) }])
+// Single email send.
+// Supports attachments: [{ filename, content(base64), contentId, inline }]
+//   - contentId + inline:true → embedded inline image (referenced as <img src="cid:contentId">)
+//   - otherwise → regular paperclip attachment
+// If `html` is provided, sent as HTML email; otherwise text-only.
 app.post('/api/email/send', async (req, res) => {
-  const { to, toName, subject, body, replyTo, attachments } = req.body || {};
+  const { to, toName, subject, body, html, replyTo, attachments } = req.body || {};
   if (!to || !subject) return res.status(400).json({ ok: false, error: 'to and subject are required' });
 
   const safeAttachments = Array.isArray(attachments)
     ? attachments
         .filter((a) => a && a.filename && a.content)
-        .slice(0, 10) // safety cap
-        .map((a) => ({ filename: String(a.filename), content: String(a.content) }))
+        .slice(0, 12)
+        .map((a) => {
+          const out = { filename: String(a.filename), content: String(a.content) };
+          if (a.contentId) {
+            // Resend SDK expects camelCase for inline embedding
+            out.contentId = String(a.contentId);
+            if (a.inline !== false) out.contentDisposition = 'inline';
+          }
+          return out;
+        })
     : undefined;
 
   if (!resend) {
-    console.log('[email/send simulated]', { to, subject, attachments: safeAttachments?.length || 0 });
+    console.log('[email/send simulated]', { to, subject, hasHtml: !!html, attachments: safeAttachments?.length || 0 });
     return res.json({ ok: true, simulated: true, id: 'sim-' + Date.now() });
   }
 
   try {
-    const payload = { from: FROM, to: [to], subject, text: body || '', replyTo };
+    const payload = { from: FROM, to: [to], subject, replyTo };
+    if (html) {
+      payload.html = html;
+      if (body) payload.text = body; // multipart fallback for plain-text clients
+    } else {
+      payload.text = body || '';
+    }
     if (safeAttachments?.length) payload.attachments = safeAttachments;
     const result = await resend.emails.send(payload);
     if (result.error) {
@@ -73,7 +91,7 @@ app.post('/api/email/send', async (req, res) => {
 
 // Bulk campaign send (sequential with throttle)
 app.post('/api/email/campaign', async (req, res) => {
-  const { recipients, subject, body, replyTo } = req.body || {};
+  const { recipients, subject, body, html, attachments, replyTo } = req.body || {};
   if (!Array.isArray(recipients) || !recipients.length) {
     return res.status(400).json({ ok: false, error: 'recipients[] required' });
   }
@@ -83,18 +101,33 @@ app.post('/api/email/campaign', async (req, res) => {
     return res.json({ ok: true, simulated: true, sent: recipients.length, failed: 0 });
   }
 
+  const safeAtt = Array.isArray(attachments)
+    ? attachments.filter(a => a && a.filename && a.content).slice(0, 12).map(a => {
+        const out = { filename: String(a.filename), content: String(a.content) };
+        if (a.contentId) { out.contentId = String(a.contentId); if (a.inline !== false) out.contentDisposition = 'inline'; }
+        return out;
+      })
+    : null;
+
   let sent = 0, failed = 0;
   const errors = [];
   for (const r of recipients) {
     if (!r.email) { failed++; continue; }
     try {
-      const result = await resend.emails.send({
+      const personal = {
         from: FROM,
         to: [r.email],
         subject: applyVars(subject, { name: r.name || '' }),
-        text: applyVars(body || '', { name: r.name || '' }),
         replyTo
-      });
+      };
+      if (html) {
+        personal.html = applyVars(html, { name: r.name || '' });
+        if (body) personal.text = applyVars(body, { name: r.name || '' });
+      } else {
+        personal.text = applyVars(body || '', { name: r.name || '' });
+      }
+      if (safeAtt && safeAtt.length) personal.attachments = safeAtt;
+      const result = await resend.emails.send(personal);
       if (result.error) {
         failed++;
         errors.push({ email: r.email, error: result.error.message });
