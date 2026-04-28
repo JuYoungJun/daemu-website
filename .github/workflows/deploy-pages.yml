@@ -35,8 +35,39 @@ jobs:
           # If empty, the demo runs in simulation mode (Outbox shows simulated sends).
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
-      - name: Add SPA fallback (404.html copy of index.html)
-        run: cp dist/index.html dist/404.html
+      - name: Add SPA fallback (404.html that bounces to / and preserves the path)
+        # 사용자가 /admin/inquiries 같은 SPA 경로를 직접 열면 GitHub Pages가
+        # 404 상태로 페이지를 반환합니다. 이때 정상 index.html을 복사해 두면
+        # React가 부팅되긴 하지만 아주 짧게 404 화면 깜빡임이 보이고
+        # location 새로고침이 필요한 케이스가 생깁니다. 그래서 404.html에서는
+        # 원래 path를 sessionStorage에 저장하고 즉시 base url로 redirect한 뒤,
+        # index.html (이미 추가된 부트 스크립트)가 그 path를 history에 복구합니다.
+        run: |
+          cat > dist/404.html <<'HTML'
+          <!doctype html>
+          <html lang="ko">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width,initial-scale=1" />
+            <title>대무 (DAEMU) — 이동 중…</title>
+            <script>
+              (function () {
+                try { sessionStorage.setItem('daemu_spa_redirect', location.href); } catch (e) {}
+                var base = '/daemu-website/';
+                location.replace(base);
+              })();
+            </script>
+            <meta http-equiv="refresh" content="0;url=/daemu-website/" />
+            <style>
+              html,body{margin:0;padding:0;background:#f6f4f0;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#231815}
+              .loader{display:flex;align-items:center;justify-content:center;min-height:100vh;font-size:13px;letter-spacing:.04em;color:#5a534b}
+            </style>
+          </head>
+          <body>
+            <div class="loader">대무 (DAEMU) — 이동 중…</div>
+          </body>
+          </html>
+          HTML
 
       - uses: actions/configure-pages@v5
 

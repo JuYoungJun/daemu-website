@@ -134,6 +134,21 @@
     </script>
   </head>
   <body class="splash-pending">
+    <!-- SPA path restore — 404.html이 sessionStorage에 보관한 원래 경로를
+         History API로 복구합니다. 사용자가 /admin/inquiries 같은 SPA 경로를
+         직접 열어 GitHub Pages 404를 받았다가 base로 redirect되었을 때
+         "에러 깜빡임 → 새로고침 필요" 패턴을 제거합니다. -->
+    <script>
+      (function () {
+        try {
+          var saved = sessionStorage.getItem('daemu_spa_redirect');
+          if (saved && saved !== location.href) {
+            sessionStorage.removeItem('daemu_spa_redirect');
+            history.replaceState(null, '', saved);
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
     <div id="root"></div>
     <!-- GSAP 3.12.5 self-hosted from public/vendor/gsap to remove the third-party CDN
          attack surface and the chronic SRI maintenance pain. License retained in
