@@ -333,7 +333,7 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>상품명</span>
             <input type="text" value={form.name} onChange={set('name')} placeholder="예: 크루아상 생지 (냉동)" autoFocus />
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
             <label className="adm-inline-field">
               <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>단위</span>
               <input type="text" value={form.unit} onChange={set('unit')} placeholder="예: 100g / 1kg / 500ea" />

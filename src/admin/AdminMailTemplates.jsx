@@ -22,7 +22,8 @@ import { downloadCSV } from '../lib/csv.js';
 import { api } from '../lib/api.js';
 import { isEmailEnabled } from '../lib/email.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
-import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
+import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js';
+import { DB } from '../lib/db.js';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -527,7 +528,7 @@ function TemplateEditor({ data, onClose, onSave }) {
           <button type="button" className="adm-modal-close" onClick={onClose}>×</button>
         </div>
         <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) clamp(140px, 28%, 200px)', gap: 10 }}>
             <Field label="템플릿 이름">
               <input type="text" value={form.name} onChange={set('name')} placeholder="예: 봄맞이 신메뉴 안내" required />
             </Field>
@@ -702,47 +703,213 @@ function TemplatePreviewModal({ template, onClose }) {
   );
 }
 
+// 데이터 소스별 레코드 → 템플릿 변수 매핑 정의.
+// 새 소스를 추가하려면 fetcher + fieldMap + label 만 등록하면 됩니다.
+const DATA_SOURCES = [
+  {
+    key: 'manual',
+    label: '직접 입력',
+    fetch: () => [],
+    fieldMap: {},
+  },
+  {
+    key: 'crm',
+    label: 'CRM 고객',
+    fetch: () => DB.get('crm') || [],
+    fieldMap: {
+      '이름': 'name',
+      '이메일': 'email',
+      '전화': 'phone',
+      '회사': 'company',
+    },
+  },
+  {
+    key: 'partners',
+    label: '파트너사',
+    fetch: () => DB.get('partners') || [],
+    fieldMap: {
+      '이름': 'person',
+      '이메일': 'email',
+      '전화': 'phone',
+      '회사': 'name',
+    },
+  },
+  {
+    key: 'inquiries',
+    label: '문의자',
+    fetch: () => DB.get('inquiries') || [],
+    fieldMap: {
+      '이름': 'name',
+      '이메일': 'email',
+      '전화': 'phone',
+    },
+  },
+  {
+    key: 'subscribers',
+    label: '뉴스레터 구독자',
+    fetch: () => DB.get('subscribers') || [],
+    fieldMap: {
+      '이름': 'name',
+      '이메일': 'email',
+    },
+  },
+];
+
+function getDataSource(key) {
+  return DATA_SOURCES.find((s) => s.key === key) || DATA_SOURCES[0];
+}
+
+// "직접 입력" 모드에서 한 번에 분류된 이메일 그룹을 textarea 에 부어넣는
+// 단축 버튼 정의. 어드민 사용자(admin_users 테이블) 는 별도 저장소라
+// 절대 포함되지 않습니다.
+const QUICK_ADD_GROUPS = [
+  {
+    key: 'crm_active', label: 'CRM 활성 고객', desc: 'lead·qualified·customer',
+    fetch: () => (DB.get('crm') || [])
+      .filter((r) => ['lead', 'qualified', 'customer'].includes(r.status))
+      .map((r) => r.email).filter(Boolean),
+  },
+  {
+    key: 'crm_customer', label: 'CRM 전환 고객만', desc: 'status=customer',
+    fetch: () => (DB.get('crm') || [])
+      .filter((r) => r.status === 'customer')
+      .map((r) => r.email).filter(Boolean),
+  },
+  {
+    key: 'partners_active', label: '활성 파트너', desc: 'active=true',
+    fetch: () => (DB.get('partners') || [])
+      .filter((r) => r.active !== false)
+      .map((r) => r.email).filter(Boolean),
+  },
+  {
+    key: 'subscribers', label: '뉴스레터 구독자', desc: 'status≠unsubscribed',
+    fetch: () => (DB.get('subscribers') || [])
+      .filter((r) => r.status !== 'unsubscribed')
+      .map((r) => r.email).filter(Boolean),
+  },
+  {
+    key: 'inquiries_replied', label: '답변완료 문의자', desc: 'status=답변완료',
+    fetch: () => (DB.get('inquiries') || [])
+      .filter((r) => r.status === '답변완료')
+      .map((r) => r.email).filter(Boolean),
+  },
+  {
+    key: 'inquiries_recent30', label: '최근 30일 문의자', desc: '접수일 30일 이내',
+    fetch: () => {
+      const cutoff = Date.now() - 30 * 86400 * 1000;
+      return (DB.get('inquiries') || [])
+        .filter((r) => {
+          if (!r.date) return false;
+          const t = new Date(r.date).getTime();
+          return Number.isFinite(t) && t >= cutoff;
+        })
+        .map((r) => r.email).filter(Boolean);
+    },
+  },
+];
+
+// 한 레코드에 fieldMap 을 적용해 변수 dict 를 생성.
+function recordToVars(record, fieldMap) {
+  const vars = {};
+  for (const [varName, fieldKey] of Object.entries(fieldMap)) {
+    const v = record?.[fieldKey];
+    if (v != null && v !== '') vars[varName] = String(v);
+  }
+  return vars;
+}
+
 function BulkSendPanel({ templates }) {
   const [templateId, setTemplateId] = useState('');
-  const [recipientsRaw, setRecipientsRaw] = useState('');
+  const [sourceKey, setSourceKey] = useState('manual');
+  const [manualRaw, setManualRaw] = useState('');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [defaultVars, setDefaultVars] = useState({});
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
   const tpl = templates.find((t) => String(t.id) === String(templateId));
+  const source = getDataSource(sourceKey);
+  const sourceRecords = useMemo(() => {
+    if (source.key === 'manual') return [];
+    return source.fetch().filter((r) => r && r.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.email)));
+  }, [source]);
+
+  // 소스 변경 시 selectedIds 를 모든 레코드로 reset (전체 선택이 기본).
+  useEffect(() => {
+    if (source.key === 'manual') {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sourceRecords.map((r) => r.id)));
+    }
+    setResult(null);
+  // eslint-disable-next-line
+  }, [sourceKey, sourceRecords.length]);
+
+  // 템플릿 변경 시 — 매핑되지 않은 변수에 대해 기본값 placeholder 입력란 노출.
+  const tplVars = useMemo(
+    () => extractVariables((tpl?.subject || '') + ' ' + (tpl?.body || '')),
+    [tpl],
+  );
+  const unmappedVars = useMemo(() => {
+    const mappedNames = new Set(Object.keys(source.fieldMap || {}));
+    return tplVars.filter((v) => !mappedNames.has(v));
+  }, [tplVars, source]);
+
+  // 최종 발송 대상 list (email + per-recipient vars).
   const recipients = useMemo(() => {
-    return recipientsRaw
-      .split(/[\n,;]+/)
-      .map((s) => s.trim())
-      .filter((s) => s && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
-  }, [recipientsRaw]);
+    if (source.key === 'manual') {
+      return manualRaw
+        .split(/[\n,;]+/)
+        .map((s) => s.trim())
+        .filter((s) => s && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s))
+        .map((email) => ({ email, vars: { ...defaultVars } }));
+    }
+    return sourceRecords
+      .filter((r) => selectedIds.has(r.id))
+      .map((r) => ({
+        email: String(r.email).trim(),
+        vars: { ...defaultVars, ...recordToVars(r, source.fieldMap) },
+      }));
+  }, [source, sourceRecords, selectedIds, manualRaw, defaultVars]);
+
+  const toggleAll = () => {
+    if (selectedIds.size === sourceRecords.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(sourceRecords.map((r) => r.id)));
+  };
+  const toggleOne = (id) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
 
   const send = async () => {
     if (!tpl) { siteAlert('발송할 템플릿을 선택하세요.'); return; }
-    if (!recipients.length) { siteAlert('수신자 이메일을 1명 이상 입력하세요. (한 줄에 하나)'); return; }
+    if (!recipients.length) { siteAlert('발송 대상이 없습니다. 데이터 소스나 직접 입력란을 확인하세요.'); return; }
     const ok = await siteConfirm(`${recipients.length}명에게 "${tpl.name}" 템플릿으로 발송하시겠습니까?`);
     if (!ok) return;
     setSending(true);
     setResult(null);
     try {
-      // 백엔드 미연결이면 client-side simulation 만 — 이메일은 Outbox 에 기록.
-      // 백엔드 연결 후엔 /api/admin/mail/send-bulk 사용.
       if (api.isConfigured()) {
         const r = await api.post('/api/admin/mail/send-bulk', {
           template: { subject: tpl.subject, body: tpl.body },
-          recipients: recipients.map((email) => ({ email, vars: {} })),
+          recipients,
         });
         setResult({ ok: !!r.ok, sent: r.sent || 0, failed: r.failed || 0, error: r.error });
       } else {
-        // simulated
-        for (const email of recipients) {
-          // logOutbox 는 api.js 내부 함수 — 직접 호출 대신 outbox 직접 기록.
+        // simulated — 변수 치환된 본문을 outbox 에 1건씩 기록.
+        for (const rec of recipients) {
           try {
             const log = JSON.parse(localStorage.getItem('daemu_outbox') || '[]');
             log.unshift({
               id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
               ts: new Date().toISOString(),
               path: '/api/admin/mail/send-bulk',
-              body: { to: email, subject: tpl.subject, body: tpl.body },
+              body: {
+                to: rec.email,
+                subject: applyVars(tpl.subject, rec.vars),
+                body: applyVars(tpl.body, rec.vars),
+              },
               status: 'simulated',
             });
             localStorage.setItem('daemu_outbox', JSON.stringify(log.slice(0, 200)));
@@ -758,6 +925,18 @@ function BulkSendPanel({ templates }) {
     }
   };
 
+  // 첫 발송 미리보기 — 변수 치환 결과 1명분.
+  const firstPreview = useMemo(() => {
+    if (!tpl || !recipients.length) return null;
+    const r = recipients[0];
+    return {
+      to: r.email,
+      subject: applyVars(tpl.subject, r.vars),
+      body: applyVars(tpl.body, r.vars),
+      vars: r.vars,
+    };
+  }, [tpl, recipients]);
+
   return (
     <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 20 }}>
       {!isEmailEnabled() && (
@@ -766,7 +945,7 @@ function BulkSendPanel({ templates }) {
           RESEND_API_KEY 등록 후 실제 발송이 활성화됩니다.
         </p>
       )}
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'grid', gap: 14 }}>
         <Field label="템플릿 선택">
           <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
             <option value="">— 템플릿을 선택하세요 —</option>
@@ -777,15 +956,145 @@ function BulkSendPanel({ templates }) {
             ))}
           </select>
         </Field>
-        <Field label={`수신자 이메일 (한 줄에 하나, 또는 쉼표로 구분) — ${recipients.length}명 인식`}>
-          <textarea rows={5} value={recipientsRaw} onChange={(e) => setRecipientsRaw(e.target.value)}
-            placeholder="customer1@example.com&#10;customer2@example.com&#10;..." />
+
+        <Field label="수신자 데이터 소스">
+          <select value={sourceKey} onChange={(e) => setSourceKey(e.target.value)}>
+            {DATA_SOURCES.map((s) => {
+              const count = s.key === 'manual' ? null : (s.fetch() || []).length;
+              return (
+                <option key={s.key} value={s.key}>
+                  {s.label}{count != null ? ` (${count}명 등록)` : ''}
+                </option>
+              );
+            })}
+          </select>
+          <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
+            {source.key === 'manual'
+              ? '아래에 직접 이메일을 입력합니다. 변수는 모든 수신자에게 동일한 값으로 들어갑니다.'
+              : `${source.label} 의 등록 정보에서 자동으로 가져옵니다 — 이름·이메일·전화·회사 등이 수신자별로 자동 치환됩니다.`}
+          </div>
         </Field>
-        {tpl && (
-          <div style={{ background: '#f6f4f0', padding: 12, fontSize: 12, color: '#5a534b' }}>
-            <strong>발송 미리보기 (첫 1명):</strong> {tpl.subject} → {recipients[0] || '(수신자 없음)'}
+
+        {source.key === 'manual' ? (
+          <div>
+            {/* 분류별 일괄 추가 — 클릭 시 해당 그룹 이메일을 textarea 에 dedup
+                해 부어넣음. 어드민 계정은 별도 저장소(admin_users)라 포함 안 됨. */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
+                분류별 일괄 추가
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {QUICK_ADD_GROUPS.map((g) => {
+                  const count = g.fetch().filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)).length;
+                  return (
+                    <button key={g.key} type="button" className="adm-btn-sm"
+                      disabled={!count}
+                      title={g.desc}
+                      onClick={() => {
+                        const emails = g.fetch().filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+                        if (!emails.length) {
+                          siteAlert(`${g.label} 에 등록된 이메일이 없습니다.`);
+                          return;
+                        }
+                        const existing = manualRaw
+                          .split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+                        const seen = new Set(existing.map((e) => e.toLowerCase()));
+                        const toAdd = emails.filter((e) => !seen.has(e.toLowerCase()));
+                        const next = [...existing, ...toAdd].join('\n');
+                        setManualRaw(next);
+                        siteToast(`${g.label}: ${toAdd.length}명 추가${emails.length - toAdd.length ? ` (중복 ${emails.length - toAdd.length}명 제외)` : ''}`,
+                          { tone: 'success' });
+                      }}>
+                      + {g.label}
+                      <span style={{ marginLeft: 6, color: '#8c867d', fontSize: 10 }}>
+                        {count}명
+                      </span>
+                    </button>
+                  );
+                })}
+                {!!manualRaw.trim() && (
+                  <button type="button" className="adm-btn-sm danger"
+                    onClick={async () => {
+                      if (!(await siteConfirm('직접 입력란을 비우시겠습니까?'))) return;
+                      setManualRaw('');
+                    }}>
+                    초기화
+                  </button>
+                )}
+              </div>
+            </div>
+            <Field label={`수신자 이메일 (한 줄에 하나, 또는 쉼표로 구분) — ${recipients.length}명 인식`}>
+              <textarea rows={6} value={manualRaw} onChange={(e) => setManualRaw(e.target.value)}
+                placeholder="customer1@example.com&#10;customer2@example.com&#10;...&#10;위 분류별 추가 버튼으로 한 번에 추가도 가능합니다." />
+            </Field>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>
+                대상 — {recipients.length}/{sourceRecords.length}명 선택됨
+              </span>
+              <button type="button" className="adm-btn-sm" onClick={toggleAll} disabled={!sourceRecords.length}>
+                {selectedIds.size === sourceRecords.length ? '전체 해제' : '전체 선택'}
+              </button>
+            </div>
+            {!sourceRecords.length ? (
+              <div style={{ background: '#f6f4f0', padding: 14, fontSize: 12, color: '#8c867d', border: '1px dashed #d7d4cf', textAlign: 'center' }}>
+                {source.label} 에 등록된 사용 가능한 항목이 없습니다 (이메일 누락된 항목은 제외됩니다).
+              </div>
+            ) : (
+              <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #d7d4cf', background: '#fff' }}>
+                {sourceRecords.map((r) => (
+                  <label key={r.id} style={{
+                    display: 'flex', gap: 10, alignItems: 'center',
+                    padding: '8px 12px', borderBottom: '1px solid #f0ede7',
+                    fontSize: 12.5, cursor: 'pointer',
+                  }}>
+                    <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleOne(r.id)} />
+                    <span style={{ flex: 1, color: '#231815' }}>{r.name || r.person || '(이름 없음)'}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#5a534b' }}>{r.email}</span>
+                    {r.company && <span style={{ fontSize: 11, color: '#8c867d' }}>· {r.company}</span>}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
+        {tpl && unmappedVars.length > 0 && (
+          <div style={{ background: '#fff8ec', borderLeft: '3px solid #c9a25a', padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+              아래 변수는 데이터 소스에 없습니다 — 모든 수신자에게 같은 값으로 들어갑니다
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+              {unmappedVars.map((v) => (
+                <label key={v} style={{ fontSize: 12, color: '#5a534b' }}>
+                  <span style={{ display: 'block', marginBottom: 2, fontFamily: 'monospace' }}>{`{{${v}}}`}</span>
+                  <input type="text" value={defaultVars[v] || ''}
+                    onChange={(e) => setDefaultVars((d) => ({ ...d, [v]: e.target.value }))}
+                    style={{ width: '100%' }} placeholder={`예: ${v} 값`} />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {firstPreview && (
+          <div style={{ background: '#f6f4f0', padding: 14, fontSize: 12, color: '#5a534b', border: '1px solid #e6e3dd' }}>
+            <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>발송 미리보기 (첫 1명)</div>
+            <div style={{ marginBottom: 6 }}><strong>To:</strong> {firstPreview.to}</div>
+            <div style={{ marginBottom: 6 }}><strong>제목:</strong> {firstPreview.subject}</div>
+            <div style={{ background: '#fff', border: '1px solid #e6e3dd', padding: 10, fontSize: 12, lineHeight: 1.7, maxHeight: 200, overflowY: 'auto', wordBreak: 'keep-all' }}>
+              {renderMailBody(firstPreview.body)}
+            </div>
+            {Object.keys(firstPreview.vars).length > 0 && (
+              <div style={{ fontSize: 11, color: '#8c867d', marginTop: 6 }}>
+                자동 적용된 변수: {Object.entries(firstPreview.vars).map(([k, v]) => `{{${k}}} = ${v}`).join(' · ')}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="adm-action-row" style={{ borderTop: 'none', paddingTop: 0 }}>
           <button type="button" className="btn" disabled={sending || !tpl || !recipients.length} onClick={send}>
             {sending ? '발송 중…' : `${recipients.length}명에게 발송`}

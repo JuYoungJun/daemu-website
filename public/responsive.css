@@ -391,6 +391,67 @@ body { width: 100%; }
   .dmprc-field--full, .dmprc-field { grid-column: 1 / -1; }
 }
 
+/* Home Stages — 480 이하에서 번호를 absolute floating index 로 빼고,
+   타이틀/desc 가 풀 폭을 가지도록 reflow. 기존엔 단순 1열 stack 이라
+   번호와 본문이 같은 폭으로 떨어져 위계가 사라짐. */
+@media (max-width: 480px) {
+  .home-stage-row {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    padding-left: 46px;
+    position: relative;
+  }
+  .home-stage-num {
+    position: absolute;
+    left: 0;
+    top: 18px;
+    padding-top: 0;
+  }
+  .home-stage-meta { padding-left: 0 !important; }
+  .hero-scroll-cue { display: none; }
+  .hero-meta-row { margin: 18px 0 32px !important; }
+}
+
+/* Work brand head — 480 에서 번호와 brand-name 이 동일 grid column 안에서
+   squish 되는 문제. 번호를 작은 caps eyebrow 로 위로 빼고 이름은 풀 폭. */
+@media (max-width: 480px) {
+  .dmwork-brand-head {
+    grid-template-columns: 1fr !important;
+    gap: 6px;
+  }
+  .dmwork-brand-num { font-size: 18px; letter-spacing: .18em; }
+  .dmwork-brand-name { font-size: clamp(36px, 11vw, 52px) !important; }
+}
+
+/* WorkDetail 갤러리 — 첫 이미지 span 2 가 1열로 떨어지면 의미 사라짐 */
+@media (max-width: 768px) {
+  .wd-gallery img:first-child {
+    grid-column: auto !important;
+    aspect-ratio: 1.6 / 1 !important;
+  }
+}
+
+/* 마퀴 — 768 까지 폰트/여백 더 비례적으로 (320 에서 짤림 방지) */
+@media (max-width: 768px) {
+  .marquee-row {
+    font-size: clamp(34px, 9vw, 58px) !important;
+    gap: clamp(14px, 5vw, 28px) !important;
+    padding-right: clamp(14px, 5vw, 28px) !important;
+  }
+}
+
+/* Process 10 단계 — 481~768 사이는 2열 카드 그리드.
+   데스크탑 5열에서 모바일 1열로 곧장 떨어지면 카드가 세로로 너무
+   길어 끝없이 스크롤하는 문제를 완화. 320~480 만 진짜 1열. */
+@media (min-width: 481px) and (max-width: 768px) {
+  .dmprc-phase-steps { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  .dmprc-step { padding: 18px 14px; }
+  .dmprc-step-num { font-size: 22px; }
+}
+@media (max-width: 480px) {
+  .dmprc-form-inner { padding: 28px 16px !important; }
+}
+
 /* ============================================================
    CONTACT PAGE (≤768)
    ============================================================ */
@@ -497,6 +558,17 @@ body { width: 100%; }
   .admin-menu-card { padding: 18px 16px; }
   .admin-stat-card { padding: 14px 12px; }
   .admin-stat-number { font-size: 28px; }
+}
+
+/* 어드민 통계카드 — 480 이하에서 2열 유지하고 숫자만 작게.
+   기존엔 768 에서만 2열이고 480 별도 처리 없어서 세로로 너무 큼. */
+@media (max-width: 480px) {
+  .admin-stats-grid { grid-template-columns: 1fr 1fr !important; gap: 10px; }
+  .admin-stat-card { padding: 14px 10px; }
+  .admin-stat-number { font-size: 22px; }
+  .admin-stat-label { font-size: 11px; }
+}
+@media (max-width: 768px) {
 
   /* Admin sub-page tables tend to overflow — let users scroll horizontally
      within the table block instead of pushing the whole page wider. */

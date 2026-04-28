@@ -756,7 +756,7 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
 
   return (
     <Modal onClose={onClose} title={doc ? '문서 수정' : '새 문서 생성'} wide>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+      <div className="adm-contract-edit-grid">
         <div style={{ display: 'grid', gap: 10 }}>
           <Field label="템플릿 선택">
             <select value={d.template_id || ''} onChange={(e) => setD({ ...d, template_id: e.target.value ? Number(e.target.value) : null })}>
@@ -857,7 +857,7 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
             <p style={{ fontSize: 11, color: '#8c867d', margin: '4px 0 8px' }}>
               선택한 항목의 회사명·대표자·주소·사업자번호 등 등록된 정보를 변수에 자동 채웁니다.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
               <Field label="CRM 고객">
                 <div style={{ display: 'flex', gap: 4 }}>
                   <select value={d.crm_id || ''} onChange={(e) => setD({ ...d, crm_id: e.target.value ? Number(e.target.value) : null })}

@@ -514,7 +514,7 @@ function IssueDetailModal({ issue, onClose, resolved, onToggleResolve }) {
           <strong>{sev.label}</strong> — {sev.desc}
         </div>
 
-        <dl style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 14px', fontSize: 13, marginBottom: 14 }}>
+        <dl className="adm-issue-dl">
           <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>시각</dt>
           <dd style={{ margin: 0 }}>{new Date(issue.ts).toLocaleString('ko')}</dd>
           <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>출처</dt>
