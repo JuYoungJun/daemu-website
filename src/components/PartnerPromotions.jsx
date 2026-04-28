@@ -90,7 +90,7 @@ export default function PartnerPromotions() {
       borderRadius: 4,
     }}>
       <div style={{ fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: '#8c6d2c', marginBottom: 14, fontWeight: 600 }}>
-        🎁 파트너 혜택 / 진행 중인 안내
+        파트너 혜택 / 진행 중인 안내
       </div>
 
       {/* 공지 / 이벤트 */}
@@ -126,7 +126,7 @@ export default function PartnerPromotions() {
       {liveCoupons.length > 0 && (
         <div style={{ marginBottom: livePromos.length ? 18 : 0 }}>
           <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#5a534b', fontWeight: 600, marginBottom: 8 }}>
-            🎟️ 사용 가능한 쿠폰
+            사용 가능한 쿠폰
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
             {liveCoupons.slice(0, 8).map((c) => (
@@ -177,7 +177,7 @@ export default function PartnerPromotions() {
       {livePromos.length > 0 && (
         <div>
           <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#5a534b', fontWeight: 600, marginBottom: 8 }}>
-            ⭐ 진행 중인 프로모션
+            진행 중인 프로모션
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {livePromos.map((p, i) => (

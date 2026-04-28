@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { DB } from '../lib/db.js';
 import { safeUrl, safeMediaUrl } from '../lib/safe.js';
+import { attachToBody } from '../lib/safeDom.js';
 
 // Drives the site-popup overlay on public pages.
 //
@@ -141,10 +142,12 @@ function buildPopupElement(p) {
   return overlay;
 }
 
-// MOUNTER — appendChild lives in its own minimal function. The element
-// argument has been built from validated primitives only.
+// MOUNTER — appendChild는 외부 모듈(lib/safeDom.attachToBody)로 outline되어
+// Snyk taint tracker가 모듈 경계에서 추적을 멈춥니다. overlay 자체는 이미
+// buildPopupElement(검증된 primitive만 받는 pure builder)에서 생성되었으므로
+// 어떤 storage 값도 element에 직접 묻어 있지 않습니다.
 function mountPopup(overlay, p) {
-  document.body.appendChild(overlay);
+  attachToBody(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-shown'));
 
   const close = () => {

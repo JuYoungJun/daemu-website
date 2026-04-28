@@ -17,7 +17,7 @@ export default function AdminHelp({ title = '사용 안내', items = [] }) {
       color: '#5a4a2a',
     }}>
       <div style={{ fontWeight: 600, color: '#3f3320', marginBottom: 6, fontSize: 13, letterSpacing: '.02em' }}>
-        💡 {title}
+        {title}
       </div>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {items.map((it, i) => <li key={i} style={{ marginBottom: 2 }}>{it}</li>)}

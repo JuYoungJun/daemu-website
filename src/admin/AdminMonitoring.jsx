@@ -143,7 +143,7 @@ export default function AdminMonitoring() {
 
           {(health?.warnings || []).length > 0 && (
             <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '12px 16px', marginBottom: 14, fontSize: 12.5, color: '#5a4a2a', borderRadius: 4 }}>
-              {health.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+              {health.warnings.map((w, i) => <div key={i}>{w}</div>)}
             </div>
           )}
 
@@ -159,7 +159,7 @@ export default function AdminMonitoring() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: summary.riskLevel === 'high' ? '#c0392b' : summary.riskLevel === 'medium' ? '#b87333' : '#2e7d32' }}>
-                  {summary.riskLevel === 'high' ? '🚨 보안 위험도 — 높음' : summary.riskLevel === 'medium' ? '⚠️ 보안 위험도 — 주의' : '🛡️ 보안 위험도 — 정상'}
+                  {summary.riskLevel === 'high' ? '보안 위험도 — 높음' : summary.riskLevel === 'medium' ? '보안 위험도 — 주의' : '보안 위험도 — 정상'}
                 </div>
                 <div style={{ fontSize: 11, color: '#8c867d' }}>
                   최근 1시간 의심 IP <strong>{(summary.suspiciousIps1h || []).length}</strong>개 ·

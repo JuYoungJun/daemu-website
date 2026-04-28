@@ -53,7 +53,7 @@ const VARIABLE_GROUPS = [
   { key: 'project',  label: '📋 프로젝트',      desc: '계약 대상 프로젝트와 업무 범위' },
   { key: 'money',    label: '💴 금액·지급 조건', desc: '계약 금액 및 지급 조건 (표기 전용 — 실 결제는 별도)' },
   { key: 'schedule', label: '📅 일정',          desc: '계약 기간과 납품·체결 일정' },
-  { key: 'company',  label: '🏢 당사 / 담당자', desc: '대무(공급사) 기본 정보 — 한 번 채워두면 재사용 가능' },
+  { key: 'company',  label: '당사 / 담당자', desc: '대무(공급사) 기본 정보 — 한 번 채워두면 재사용 가능' },
   { key: 'misc',     label: '📝 특약사항',      desc: '기타 합의 조항' },
 ];
 
@@ -288,7 +288,7 @@ const DEFAULT_PO_TEMPLATE = TEMPLATE_PO;
 
 // 법적 효력 안내문 — 모든 계약/PO 화면에서 동일한 톤으로 노출.
 const LEGAL_DISCLAIMER_LINES = [
-  '⚖️ 법적 효력 안내 — 본 e-Sign은 데모/내부 결재용입니다.',
+  '법적 효력 안내 — 본 e-Sign은 데모/내부 결재용입니다.',
   '강한 법적 효력이 필요한 계약(공증·부동산·대출·행정 신고 등)은',
   'DocuSign·Adobe Sign·KICA 인증서 + 신원확인·감사이력·위변조 방지가 별도로 필요합니다.',
 ];
@@ -768,7 +768,7 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
                   variables: { ...COMPANY_DEFAULTS, ...prev.variables, today: COMPANY_DEFAULTS.today },
                 }));
               }} title="대무(당사) 기본 정보를 자동으로 채웁니다.">
-                🏢 당사 정보 자동 입력
+                당사 정보 자동 입력
               </button>
             </div>
             <p style={{ fontSize: 11.5, color: '#8c867d', margin: '0 0 8px', lineHeight: 1.6 }}>
@@ -1073,7 +1073,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
     const legal = wDoc.createElement('div');
     legal.className = 'legal';
     legal.textContent =
-      '⚖️ 본 e-Sign은 데모/내부 결재용 전자 서명입니다. 강한 법적 효력이 필요한 계약(공증·부동산·대출 등)은 ' +
+      '본 e-Sign은 데모/내부 결재용 전자 서명입니다. 강한 법적 효력이 필요한 계약(공증·부동산·대출 등)은 ' +
       'DocuSign·Adobe Sign·KICA 인증서 + 신원확인·감사이력·위변조 방지 PDF가 별도로 필요합니다.';
     body.appendChild(legal);
 
@@ -1125,7 +1125,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
 
       {doc.sign_token && (
         <div className="adm-sign-link" style={{ marginBottom: 14 }}>
-          <span style={{ fontSize: 16 }}>🔗</span>
+          
           <span style={{ flex: 1 }}>
             <strong style={{ display: 'block', marginBottom: 4, fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: '#5a4a2a' }}>서명 링크</strong>
             <code>{window.location.origin}/sign/{doc.sign_token}</code>
@@ -1163,14 +1163,14 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
 
       <div className="adm-action-row">
         {isAdmin && doc.status === 'draft' && (
-          <button className="btn" type="button" onClick={send}>📤 발송</button>
+          <button className="btn" type="button" onClick={send}>발송</button>
         )}
         {isAdmin && doc.status !== 'signed' && doc.status !== 'canceled' && (
           <button className="adm-btn-sm" type="button" onClick={() => setEditing(true)}>수정</button>
         )}
         <button className="adm-btn-sm" type="button" onClick={exportPdf}
           title="새 창에서 인쇄 다이얼로그를 열고, '대상'을 'PDF로 저장'으로 선택하면 PDF 파일이 다운로드됩니다.">
-          📄 PDF로 저장 / 인쇄
+          PDF로 저장 / 인쇄
         </button>
         {isAdmin && doc.status !== 'canceled' && doc.status !== 'signed' && (
           <button className="adm-btn-sm danger" type="button" onClick={cancel}>취소 처리</button>

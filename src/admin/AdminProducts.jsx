@@ -19,6 +19,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { ensureSeededProducts, getActiveCatalog } from '../lib/partnerProducts.js';
 import { safeMediaUrl } from '../lib/safe.js';
+import ProductThumb from './ProductThumb.jsx';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -180,21 +181,10 @@ export default function AdminProducts() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(cat.items || []).map((p) => {
-                        // Snyk DOM-XSS hardening: validate BEFORE rendering.
-                        // safeMediaUrl returns '' for any unsafe URL — when
-                        // empty we render the emoji tile instead of an <img>.
-                        const safeImg = safeMediaUrl(p.image);
-                        return (
+                      {(cat.items || []).map((p) => (
                         <tr key={p.sku}>
                           <td data-label="">
-                            {safeImg ? (
-                              <img src={safeImg} alt="" style={{ width: 40, height: 40, objectFit: 'cover', background: '#f6f4f0', border: '1px solid #e6e3dd' }} />
-                            ) : (
-                              <div style={{ width: 40, height: 40, background: cat.accent || '#f6f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-                                {p.emoji || '📦'}
-                              </div>
-                            )}
+                            <ProductThumb rawSrc={p.image} emoji={p.emoji} accent={cat.accent} />
                           </td>
                           <td data-label="상품명 / SKU">
                             <div style={{ fontWeight: 500 }}>{p.name}</div>
@@ -210,8 +200,7 @@ export default function AdminProducts() {
                             <button type="button" className="adm-btn-sm danger" onClick={() => deleteProduct(ci, p.sku)}>삭제</button>
                           </td>
                         </tr>
-                        );
-                      })}
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -360,7 +349,7 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
                 {!previewSrc && (form.emoji || '📦')}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" className="adm-btn-sm" onClick={pickImage}>📁 라이브러리에서 선택</button>
+                <button type="button" className="adm-btn-sm" onClick={pickImage}>라이브러리에서 선택</button>
                 {form.image && (
                   <button type="button" className="adm-btn-sm danger" onClick={() => setForm((f) => ({ ...f, image: '' }))}>이미지 제거</button>
                 )}

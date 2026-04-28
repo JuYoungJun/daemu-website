@@ -198,7 +198,7 @@ export default function AdminInquiries() {
             <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['처리중'], color: STATUS_PILL_COLOR['처리중'] }}>처리중 {counts.pending}</span>
             <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['답변완료'], color: STATUS_PILL_COLOR['답변완료'] }}>답변완료 {counts.done}</span>
             <span style={{ flex: 1 }} />
-            <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '🔄 새로고침'}</button>
+            <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '새로고침'}</button>
             <button type="button" className="btn" onClick={() => setCreating(true)}>+ 새 문의(메모)</button>
           </div>
 
@@ -225,7 +225,7 @@ export default function AdminInquiries() {
               <p>{loading ? '불러오는 중…' : '조건에 맞는 문의가 없습니다.'}</p>
               {!api.isConfigured() && (
                 <p style={{ fontSize: 12, marginTop: 6, color: '#b87333' }}>
-                  ⚠️ 백엔드 미연결 상태 — 빌드 환경변수 <code>VITE_API_BASE_URL</code> 등록 후 사이트 재배포가 필요합니다.
+                  백엔드 미연결 상태 — 빌드 환경변수 <code>VITE_API_BASE_URL</code> 등록 후 사이트 재배포가 필요합니다.
                 </p>
               )}
             </div>

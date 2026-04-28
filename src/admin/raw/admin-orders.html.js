@@ -40,7 +40,7 @@ export default `<main class="page fade-up">
             <div class="full"><label>비고/메모</label><textarea id="f-note" placeholder="배송 메모, 특이사항"></textarea></div>
 
             <div class="full" style="border-top:1px solid #e6e3dd;padding-top:18px;margin-top:6px">
-              <h4 style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8c867d;margin:0 0 12px;font-weight:500">📑 발주서 / 계약서 / 명세서</h4>
+              <h4 style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8c867d;margin:0 0 12px;font-weight:500">발주서 / 계약서 / 명세서</h4>
             </div>
 
             <div class="full"><label>계약서 본문 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">계약 조건, 단가 명세, 납기·배송 일정 등</span></label><textarea id="f-contract" rows="6" placeholder="발주 계약 조건을 작성하세요. '계약서 발송' 버튼으로 파트너 이메일에 본문 + 첨부 파일을 함께 전송합니다."></textarea></div>

@@ -124,7 +124,7 @@ export default function TwoFactorPanel({ user, onClose }) {
         {step === 'recovery' && (
           <div>
             <p style={{ fontSize: 13, lineHeight: 1.7, color: '#2e7d32', fontWeight: 500 }}>
-              ✅ 2단계 인증이 활성화되었습니다.
+              2단계 인증이 활성화되었습니다.
             </p>
             <p style={{ fontSize: 12.5, lineHeight: 1.7, color: '#5a4a2a', background: '#fff8ec', border: '1px solid #f0e3c4', padding: 12 }}>
               아래 백업 코드 <strong>8개</strong>를 안전한 곳에 보관하세요. 인증 앱을 잃었을 때 1회씩 사용 가능합니다.
@@ -172,7 +172,7 @@ export default function TwoFactorPanel({ user, onClose }) {
         {step === 'disabled-done' && (
           <div>
             <p style={{ fontSize: 13, lineHeight: 1.7, color: '#c0392b' }}>
-              ⚠️ 2단계 인증이 비활성화되었습니다. 보안 강화를 위해 가능한 한 다시 활성화하시는 것을 권장합니다.
+              2단계 인증이 비활성화되었습니다. 보안 강화를 위해 가능한 한 다시 활성화하시는 것을 권장합니다.
             </p>
             <div className="adm-action-row">
               <button type="button" className="btn" onClick={onClose}>닫기</button>

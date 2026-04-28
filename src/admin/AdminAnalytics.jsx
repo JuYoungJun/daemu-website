@@ -174,7 +174,7 @@ export default function AdminAnalytics() {
               <option value={30}>최근 30일 (전체)</option>
             </select>
             <span style={{ flex: 1 }} />
-            <button type="button" className="adm-btn-sm" onClick={exportCsv}>📊 CSV 내보내기</button>
+            <button type="button" className="adm-btn-sm" onClick={exportCsv}>CSV 내보내기</button>
             <button type="button" className="adm-btn-sm danger" onClick={clearAll}>전체 데이터 삭제</button>
           </div>
 
@@ -219,7 +219,7 @@ export default function AdminAnalytics() {
                 ))}
               </div>
               <p style={{ fontSize: 11, color: '#8c867d', margin: '8px 0 0' }}>
-                💡 가장 트래픽이 높은 시간대에 마케팅 메일/푸시 발송 시 효과적입니다.
+                가장 트래픽이 높은 시간대에 마케팅 메일/푸시 발송 시 효과적입니다.
               </p>
             </div>
             {/* 요일 7개 */}
@@ -248,7 +248,7 @@ export default function AdminAnalytics() {
             <RankCard title="브라우저 언어" items={langBreakdown} emptyLabel="언어 데이터 없음" />
           </div>
           <p style={{ fontSize: 11, color: '#8c867d', marginTop: -10, marginBottom: 18, lineHeight: 1.6 }}>
-            ⚠️ 국가 추정은 사용자 브라우저의 IANA 타임존을 기반으로 합니다 (예: <code>Asia/Seoul → 🇰🇷 한국</code>).
+            국가 추정은 사용자 브라우저의 IANA 타임존을 기반으로 합니다 (예: <code>Asia/Seoul → 🇰🇷 한국</code>).
             VPN/시스템 설정에 따라 부정확할 수 있고, 정확한 IP geolocation이 필요하면 backend에 GeoIP 모듈 추가가 필요합니다.
           </p>
 

@@ -1,3 +1,9 @@
+# ── Snyk CVE-2024-5569 fix (zipp infinite-loop DoS) ──
+# sqlalchemy → importlib-metadata → zipp 의존성 체인에서 zipp@<3.19.1 가 잡힙니다.
+# 이 두 줄을 sqlalchemy 위에 두어 pip이 transitive 풀링 전에 안전 버전을 잠그도록 합니다.
+zipp>=3.19.1
+importlib-metadata>=8.0.0
+
 fastapi>=0.118.0
 uvicorn[standard]>=0.34.0
 httpx>=0.28.1
@@ -12,6 +18,3 @@ passlib[bcrypt]>=1.7.4
 bcrypt>=4.2.0,<5.0
 python-multipart>=0.0.20   # required by FastAPI for form-data
 pyotp>=2.9.0               # TOTP 2FA for admin accounts (RFC 6238)
-# Snyk CVE-2024-5569 fix — sqlalchemy → importlib-metadata → zipp@<3.19.1 has
-# an infinite-loop DoS via Path module. Force the safe version.
-zipp>=3.19.1
