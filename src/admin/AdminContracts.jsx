@@ -670,6 +670,21 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
   const previewBody = applyVars(d.body, d.variables);
   const previewSubject = applyVars(d.subject, d.variables);
 
+  // 본문/제목에서 실제로 사용된 {{변수}}만 추출 — 입력 폼에 그것만 노출.
+  // VARIABLE_HINTS에 정의된 변수만 사용하고, 정의되지 않은 변수는 무시.
+  const usedVarKeys = useMemo(() => {
+    const text = [d.body, d.subject].filter(Boolean).join('\n');
+    const found = new Set();
+    const re = /\{\{\s*([\w-]+)\s*\}\}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) found.add(m[1]);
+    return found;
+  }, [d.body, d.subject]);
+  // 사용 변수가 없는 그룹은 fieldset 자체를 숨김.
+  const visibleGroups = useMemo(() => VARIABLE_GROUPS
+    .map((g) => ({ ...g, items: VARIABLE_HINTS.filter((v) => v.group === g.key && usedVarKeys.has(v.key)) }))
+    .filter((g) => g.items.length > 0), [usedVarKeys]);
+
   const setVar = (k, v) => setD({ ...d, variables: { ...d.variables, [k]: v } });
   const addRecipient = () => setD({ ...d, recipients: [...(d.recipients || []), { name: '', email: '', role: 'signer' }] });
   const updateRecipient = (i, k, v) => {
@@ -742,9 +757,9 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
           </Field>
 
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 4px', flexWrap: 'wrap', gap: 8 }}>
               <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', margin: 0 }}>
-                변수값 입력
+                변수값 입력 — 이 템플릿이 사용하는 항목만
               </h4>
               <button type="button" className="adm-btn-sm" onClick={() => {
                 // 당사 기본 정보 자동 prefill — 매번 입력 안 해도 되도록.
@@ -756,15 +771,24 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
                 🏢 당사 정보 자동 입력
               </button>
             </div>
-            {VARIABLE_GROUPS.map((g) => {
-              const items = VARIABLE_HINTS.filter((v) => v.group === g.key);
-              if (!items.length) return null;
+            <p style={{ fontSize: 11.5, color: '#8c867d', margin: '0 0 8px', lineHeight: 1.6 }}>
+              현재 본문에서 <strong>{usedVarKeys.size}</strong>개 변수가 사용 중입니다.
+              필요한 항목만 폼이 자동으로 표시되며, 다른 템플릿을 선택하면 그에 맞춰 자동 갱신됩니다.
+            </p>
+            {visibleGroups.length === 0 && (
+              <p style={{ fontSize: 12, color: '#8c867d', padding: '14px 0' }}>
+                선택한 템플릿이나 본문에서 사용하는 변수가 없습니다. 본문에 <code>{`{{변수}}`}</code> 형태로 자리표시자를 넣으면 여기에 입력 필드가 자동으로 나타납니다.
+              </p>
+            )}
+            {visibleGroups.map((g) => {
+              const items = g.items;
               return (
                 <fieldset key={g.key} style={{
                   border: '1px solid #e6e3dd', padding: '12px 14px 10px', marginBottom: 10, background: '#fdfcfa',
                 }}>
                   <legend style={{ padding: '0 8px', fontSize: 11.5, color: '#5a534b', letterSpacing: '.04em' }}>
                     <strong>{g.label}</strong> · <span style={{ color: '#8c867d' }}>{g.desc}</span>
+                    <span style={{ marginLeft: 8, color: '#b9b5ae', fontSize: 10 }}>{items.length}개 항목</span>
                   </legend>
                   <div style={{ display: 'grid', gridTemplateColumns: items.some((x) => x.long) ? '1fr' : '1fr 1fr', gap: 8 }}>
                     {items.map((v) => (
@@ -1195,19 +1219,64 @@ function EmptyState({ text }) {
 // A4 PDF 모양으로 문서 본문을 렌더링하는 페이퍼 미리보기.
 // 실제 인쇄/PDF 출력 시 보일 모양과 거의 동일하게 표시되어, 운영자가
 // "어떤 식으로 PDF가 나올지" 미리 확인할 수 있습니다.
+// 본문을 paragraph 단위로 분해하면서, 「제 N 조 (...)」 같은 조항 헤더를
+// 자동으로 강조 표시합니다. 발주서·계약서 모두 동일 패턴.
+function renderPaperBody(text) {
+  if (!text) return null;
+  const lines = String(text).split(/\n/);
+  const out = [];
+  let buffer = [];
+  const flush = (key) => {
+    if (!buffer.length) return;
+    out.push(<p key={`p-${key}`} className="adm-paper-para">{buffer.join('\n')}</p>);
+    buffer = [];
+  };
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    // 조항 헤더 — 「제 N 조 (...)」 / 「제 N 장」 / 「[표준]」 등
+    if (/^제\s*\d+\s*(조|장)/.test(trimmed)) {
+      flush(idx);
+      out.push(<h3 key={`h-${idx}`} className="adm-paper-clause">{trimmed}</h3>);
+      return;
+    }
+    // 큰 섹션 구분선 (―, ─, ===)
+    if (/^[─━=─]{3,}/.test(trimmed)) {
+      flush(idx);
+      out.push(<hr key={`hr-${idx}`} className="adm-paper-rule" />);
+      return;
+    }
+    // 작은 섹션 라벨 — 「■ 갑 (의뢰인)」 같은 형태
+    if (/^[■▣▪◆]/.test(trimmed)) {
+      flush(idx);
+      out.push(<h4 key={`h2-${idx}`} className="adm-paper-section">{trimmed}</h4>);
+      return;
+    }
+    // 빈 줄 → buffer flush, 단락 break
+    if (!trimmed) {
+      flush(idx);
+      return;
+    }
+    buffer.push(line);
+  });
+  flush('end');
+  return out;
+}
+
 function DocPaperPreview({ kind, title, subject, body, recipients, status, createdAt, signatures }) {
   const draft = status === 'draft' || status === 'sent' || status === 'viewed';
+  const wmText = status === 'draft' ? 'DRAFT' : (status === 'sent' || status === 'viewed') ? '발송본' : '';
   return (
     <div className="adm-paper-stage">
-      <div className="adm-paper-sheet">
-        {draft && <div className="adm-paper-watermark">{status === 'draft' ? 'DRAFT' : ''}</div>}
+      <div className={`adm-paper-sheet adm-paper-sheet--${kind}`}>
+        {draft && wmText && <div className="adm-paper-watermark">{wmText}</div>}
         <header className="adm-paper-head">
           <div className="adm-paper-brand">
             <strong>대무 (DAEMU)</strong>
             <span>BAKERY · CAFE BUSINESS PARTNER</span>
           </div>
           <div className="adm-paper-doctype">
-            {KIND_LABEL[kind] || kind}
+            <span className="adm-paper-doctype-en">{kind === 'purchase_order' ? 'PURCHASE ORDER' : 'CONTRACT'}</span>
+            <strong>{KIND_LABEL[kind] || kind}</strong>
           </div>
         </header>
         <div className="adm-paper-meta">
@@ -1216,18 +1285,40 @@ function DocPaperPreview({ kind, title, subject, body, recipients, status, creat
         </div>
         <h1 className="adm-paper-title">{title}</h1>
         <div className="adm-paper-divider" />
-        <pre className="adm-paper-body">{body}</pre>
+        <div className="adm-paper-body adm-paper-body--rich">
+          {renderPaperBody(body) || <p className="adm-paper-para" style={{ color: '#b9b5ae' }}>(본문 비어있음)</p>}
+        </div>
         {(recipients || []).length > 0 && (
           <div className="adm-paper-recipients">
-            <span>수신자</span>
+            <span>수신자 / 서명 대상</span>
             {(recipients || []).map((r, i) => (
-              <div key={i}>{r.name || ''} {r.email ? `<${r.email}>` : ''} {r.role === 'cc' ? '(참조)' : ''}</div>
+              <div key={i} className="adm-paper-recipient-row">
+                <strong>{r.name || '(이름 미지정)'}</strong>
+                {r.email && <span className="adm-paper-email">{r.email}</span>}
+                {r.role === 'cc' && <em className="adm-paper-role">참조</em>}
+                {r.role === 'signer' && <em className="adm-paper-role adm-paper-role--signer">서명자</em>}
+              </div>
             ))}
           </div>
         )}
+
+        {/* 서명란 — 서명이 아직 없을 때도 박스를 보여주어 어디에 서명이 들어갈지 안내 */}
+        <div className="adm-paper-signbox">
+          <div className="adm-paper-signbox-cell">
+            <div className="adm-paper-signbox-label">{kind === 'purchase_order' ? '발주처' : '갑'}</div>
+            <div className="adm-paper-signbox-line" />
+            <div className="adm-paper-signbox-name">서명 / 인</div>
+          </div>
+          <div className="adm-paper-signbox-cell">
+            <div className="adm-paper-signbox-label">{kind === 'purchase_order' ? '공급처' : '을'}</div>
+            <div className="adm-paper-signbox-line" />
+            <div className="adm-paper-signbox-name">서명 / 인</div>
+          </div>
+        </div>
+
         {(signatures || []).length > 0 && (
           <div className="adm-paper-signatures">
-            <h4>서명 기록</h4>
+            <h4>전자 서명 기록</h4>
             {signatures.map((s) => (
               <div key={s.id} className="adm-paper-sig">
                 <strong>{s.signer_name}</strong> · {s.signer_email} · {s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : ''}
