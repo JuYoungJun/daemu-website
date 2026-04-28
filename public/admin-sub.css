@@ -881,6 +881,11 @@
   .adm-issue-dl dt { font-weight: 600; margin-top: 8px; }
 }
 
+/* UTM 빌더 — 입력 패널 / 출력 패널 좌우 split. ≤980 1열 stack. */
+@media (max-width: 980px) {
+  .adm-utm-grid { grid-template-columns: 1fr !important; }
+}
+
 /* 메일 템플릿 가이드 모달의 표 — 가독성 강화.
    헤더 짙은 배경, 셀 padding 충분히, zebra striping, 모바일 가로 스크롤. */
 .adm-guide-table {

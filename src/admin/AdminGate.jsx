@@ -259,6 +259,7 @@ export default function AdminGate() {
     'media':         ['admin', 'developer'],
     'mail':          ['admin', 'developer', 'tester'],
     'mail-templates':['admin', 'developer'],
+    'utm-builder':   ['admin', 'developer', 'tester'],
     'crm':           ['admin'],
     'campaign':      ['admin'],
     'promotion':     ['admin'],
@@ -327,6 +328,7 @@ export default function AdminGate() {
               {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
               {can('mail')      && <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />}
               {can('mail-templates') && <MenuCard to="/admin/mail-templates" title="메일 템플릿 라이브러리" desc="여러 개의 메일 템플릿을 저장·재사용하고, 단체 메일을 발송합니다." items={['템플릿 CRUD + 카테고리 분류','{{변수}} 자리표시자','템플릿별 미리보기','단체 발송 (BCC 아닌 1:1 N건)','Resend 연결 시 실발송, 미연결 시 simulated']} />}
+              {can('utm-builder') && <MenuCard to="/admin/utm-builder" title="UTM 빌더" desc="마케팅 캠페인 추적용 URL 을 자동 조립합니다. 외부 API 없이 100% 무료." items={['utm_source/medium/campaign 자동 조립','source·medium 프리셋 chip','이력 저장·재사용 (최근 50건)','CSV 내보내기','분석 페이지에서 자동 집계']} />}
             </div>
 
             <h3 className="admin-section-title" style={{marginTop:'48px'}}>마케팅 / CRM</h3>

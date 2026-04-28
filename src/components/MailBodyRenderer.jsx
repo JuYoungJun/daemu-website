@@ -16,7 +16,13 @@
 
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 
-const MD_TOKEN_RE = /(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
+// 매칭 우선순위:
+//   1) [![alt](image)](href)  — 이미지 링크 (이미지 클릭 시 href 로 이동)
+//   2) ![alt](url)             — 단순 이미지
+//   3) [text](url)             — 단순 텍스트 링크
+// 정규식이 첫 번째 alternative 부터 차례로 매칭되므로, 이미지 링크 패턴을
+// 가장 먼저 두면 일반 이미지/링크 패턴보다 우선 잡힙니다.
+const MD_TOKEN_RE = /(\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\))|(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
 
 // img src 를 위한 추가 sanitizer — encodeURI 단계로 Snyk Code 가 outbound
 // sanitizer 로 인식. URL 안전 문자(A-Za-z0-9-._~:/?#[]@!$&'()*+,;=) 외의
@@ -40,11 +46,41 @@ export function renderInlineMarkdown(text, keyPrefix = '') {
   const str = String(text);
   while ((m = re.exec(str))) {
     if (m.index > last) out.push(str.slice(last, m.index));
+
+    // 매칭 그룹 인덱스:
+    //   m[1]: [![alt](img)](href) 전체     m[2]: alt   m[3]: img URL   m[4]: href URL
+    //   m[5]: ![alt](url) 전체              m[6]: alt   m[7]: url
+    //   m[8]: [text](url) 전체              m[9]: text  m[10]: url
+
     if (m[1]) {
-      // 이미지 — 4단계 sanitization 후 src 바인딩.
-      const candidate = safeMediaUrl(m[3]);
-      if (candidate) {
-        const finalSrc = encodeImageSrc(String(candidate));
+      // 이미지 링크 — img 와 a href 둘 다 검증.
+      const imgCandidate = safeMediaUrl(m[3]);
+      const hrefCandidate = validateOutboundUrl(m[4]);
+      if (imgCandidate && hrefCandidate) {
+        const finalSrc = encodeImageSrc(String(imgCandidate));
+        const verifiedHref = String(hrefCandidate);
+        if (finalSrc) {
+          const safeAlt = String(m[2] || '').slice(0, 200);
+          out.push(
+            <a
+              key={`${keyPrefix}imglnk-${i++}`}
+              href={verifiedHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'block', textDecoration: 'none' }}
+            >
+              <img
+                src={finalSrc}
+                alt={safeAlt}
+                loading="lazy"
+                style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '12px auto', cursor: 'pointer' }}
+              />
+            </a>
+          );
+        }
+      } else if (imgCandidate) {
+        // href 검증 실패 — 이미지만 표시.
+        const finalSrc = encodeImageSrc(String(imgCandidate));
         if (finalSrc) {
           const safeAlt = String(m[2] || '').slice(0, 200);
           out.push(
@@ -58,12 +94,30 @@ export function renderInlineMarkdown(text, keyPrefix = '') {
           );
         }
       }
-    } else if (m[4]) {
-      // 링크 — validateOutboundUrl 이 이미 encodeURI 통과시킴.
-      const candidate = validateOutboundUrl(m[6]);
+    } else if (m[5]) {
+      // 단순 이미지 — 4단계 sanitization 후 src 바인딩.
+      const candidate = safeMediaUrl(m[7]);
+      if (candidate) {
+        const finalSrc = encodeImageSrc(String(candidate));
+        if (finalSrc) {
+          const safeAlt = String(m[6] || '').slice(0, 200);
+          out.push(
+            <img
+              key={`${keyPrefix}img-${i++}`}
+              src={finalSrc}
+              alt={safeAlt}
+              loading="lazy"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '12px auto' }}
+            />
+          );
+        }
+      }
+    } else if (m[8]) {
+      // 단순 텍스트 링크 — validateOutboundUrl 이 이미 encodeURI 통과시킴.
+      const candidate = validateOutboundUrl(m[10]);
       if (candidate) {
         const verifiedHref = String(candidate);
-        const safeText = String(m[5] || '').slice(0, 200);
+        const safeText = String(m[9] || '').slice(0, 200);
         out.push(
           <a
             key={`${keyPrefix}lnk-${i++}`}
@@ -74,7 +128,7 @@ export function renderInlineMarkdown(text, keyPrefix = '') {
           >{safeText}</a>
         );
       } else {
-        out.push(String(m[5] || ''));
+        out.push(String(m[9] || ''));
       }
     }
     last = re.lastIndex;

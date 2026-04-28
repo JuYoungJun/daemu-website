@@ -138,11 +138,15 @@ export default function MailTemplatesGuide({ onClose }) {
           </Section>
 
           <Section title="이미지·링크 삽입">
-            <p>본문 편집 영역 위에 <strong>+ 이미지 삽입</strong>, <strong>+ 링크 삽입</strong> 버튼이 있습니다.</p>
+            <p>본문 편집 영역 위에 3개 버튼이 있습니다 — 상황에 맞춰 선택하세요.</p>
             <ul style={listStyle}>
-              <li><strong>이미지</strong> — 미디어 라이브러리 픽커가 열림 → 라이브러리에서 선택 또는 신규 업로드 → 자동으로 <code>![](URL)</code> 삽입</li>
-              <li><strong>링크</strong> — URL 입력 → 표시할 텍스트 입력 → <code>[자세히 보기](URL)</code> 삽입</li>
+              <li><strong>+ 이미지</strong> — 단순 이미지. 미디어 라이브러리에서 선택 → <code>![](URL)</code> 자동 삽입</li>
+              <li><strong>+ 클릭 가능한 이미지</strong> — 배너처럼 <em>이미지를 클릭하면 URL 로 이동</em>. 미디어 선택 → 이동할 URL 입력 → <code>[![alt](image)](link)</code> 형태 삽입</li>
+              <li><strong>+ 텍스트 링크</strong> — 글자에 링크. URL + 표시할 텍스트 입력 → <code>[자세히 보기](URL)</code></li>
             </ul>
+            <p style={{ background: '#fff8ec', padding: '10px 14px', borderLeft: '3px solid #c9a25a', fontSize: 12.5 }}>
+              <strong>이벤트 배너 사용 예</strong>: "+ 클릭 가능한 이미지" 로 봄 이벤트 배너를 삽입하고 클릭 시 이동할 이벤트 페이지 URL 을 지정하면, 수신자가 메일에서 배너를 클릭했을 때 이벤트 페이지로 이동합니다. 클릭 추적을 원하면 URL 에 UTM 파라미터를 붙여 보내세요 — 어드민 메뉴의 <strong>UTM 빌더</strong> 에서 자동 생성 가능합니다.
+            </p>
             <p>
               "실시간 미리보기" 토글을 켜두면 작성하면서 결과를 즉시 확인할 수 있습니다.
               발송 시 이미지·링크가 실제 메일에서도 동일하게 렌더링됩니다.

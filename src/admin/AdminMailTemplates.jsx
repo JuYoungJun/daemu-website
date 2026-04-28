@@ -576,6 +576,38 @@ function TemplateEditor({ data, onClose, onSave }) {
     insertAtCursor(`[${text}](${String(safe)})`);
   };
 
+  // 클릭 가능한 이미지 — 이미지 + 링크를 하나의 마크다운 토큰으로 삽입.
+  // 1) 미디어 라이브러리에서 이미지 선택 → 2) 클릭 시 이동할 URL 입력 →
+  //    [![alt](img)](href) 형태로 본문에 삽입. 메일 클라이언트에서
+  //    이미지를 클릭하면 그 URL 로 이동.
+  const onInsertImageLink = async () => {
+    if (!window.openMediaPicker) {
+      siteAlert('미디어 라이브러리를 사용할 수 없습니다.');
+      return;
+    }
+    const imgUrl = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+    if (!imgUrl) return;
+    const safeImg = safeMediaUrl(imgUrl);
+    if (!safeImg) {
+      siteAlert('선택한 이미지 URL 이 안전하지 않아 삽입을 취소했습니다.');
+      return;
+    }
+    const linkRaw = await sitePrompt('이미지를 클릭했을 때 이동할 URL', '', {
+      placeholder: 'https://daemu.kr/event/2026-spring',
+      required: true,
+    });
+    if (!linkRaw) return;
+    const safeLink = validateOutboundUrl(linkRaw);
+    if (!safeLink) {
+      siteAlert('허용되지 않은 URL 입니다 (http/https/mailto/tel 만 가능).');
+      return;
+    }
+    const alt = (await sitePrompt('이미지 설명(alt) — 안 보일 수도 있을 때 대체 텍스트', '', {
+      placeholder: '예: 봄 이벤트 배너',
+    })) || '';
+    insertAtCursor(`\n[![${alt}](${String(safeImg)})](${String(safeLink)})\n`, 'body');
+  };
+
   const onInsertCustomVariable = async () => {
     const name = await sitePrompt('변수 이름을 입력하세요 (예: 직책, 첨부파일명)', '', { placeholder: '한글·영문 모두 가능', required: true });
     if (!name) return;
@@ -664,8 +696,9 @@ function TemplateEditor({ data, onClose, onSave }) {
             }}>
               <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>본문</span>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                <button type="button" className="adm-btn-sm" onClick={onInsertImage}>+ 이미지 삽입</button>
-                <button type="button" className="adm-btn-sm" onClick={onInsertLink}>+ 링크 삽입</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertImage}>+ 이미지</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertImageLink}>+ 클릭 가능한 이미지</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertLink}>+ 텍스트 링크</button>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#5a534b', marginLeft: 8 }}>
                   <input type="checkbox" checked={showLivePreview} onChange={(e) => setShowLivePreview(e.target.checked)} />
                   실시간 미리보기
@@ -677,8 +710,9 @@ function TemplateEditor({ data, onClose, onSave }) {
               placeholder={'안녕하세요 {{이름}}님,\n\n대무가 새로 출시한 봄 메뉴를 소개드립니다.\n\n(상단 변수 chip 으로 {{이름}}, {{발주번호}} 등을 삽입할 수 있습니다.)\n\n위 + 이미지 삽입 버튼으로 미디어 라이브러리에서 사진을 추가하세요.\n\n대무 드림'}
               style={{ fontFamily: 'inherit', lineHeight: 1.7, width: '100%' }} />
             <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
-              · 이미지: 위 <strong>+ 이미지 삽입</strong> → 라이브러리에서 선택<br/>
-              · 링크: 위 <strong>+ 링크 삽입</strong> → URL/텍스트 입력<br/>
+              · 이미지: 위 <strong>+ 이미지</strong> → 라이브러리에서 선택<br/>
+              · 클릭 가능한 이미지(배너): 위 <strong>+ 클릭 가능한 이미지</strong> → 이미지 + 이동 URL<br/>
+              · 텍스트 링크: 위 <strong>+ 텍스트 링크</strong> → URL/텍스트 입력<br/>
               · 변수: 위 변수 chip 클릭 또는 <strong>+ 사용자 정의 변수</strong>
             </div>
           </div>
