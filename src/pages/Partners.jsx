@@ -183,7 +183,7 @@ function SignupForm({ onDone }) {
       <p style={{fontSize:12,color:'#8c867d',marginBottom:18}}>본사 검토 후 승인됩니다.</p>
       <div className="partners-login-field"><input type="text" placeholder="회사명" value={form.company} onChange={u('company')} required /></div>
       <div className="partners-login-field"><input type="text" placeholder="담당자 성함" value={form.person} onChange={u('person')} required /></div>
-      <div className="partners-login-field"><input type="tel" placeholder="연락처 (예: 010-0000-0000)" value={form.phone} onChange={u('phone')} required /></div>
+      <div className="partners-login-field"><input type="tel" inputMode="numeric" maxLength={13} placeholder="연락처 (예: 010-1234-5678)" value={form.phone} onChange={u('phone')} required /></div>
       <div className="partners-login-field"><input type="email" placeholder="이메일" value={form.email} onChange={u('email')} required /></div>
       <div className="partners-login-field"><input type="text" placeholder="업종 (예: 원두 납품)" value={form.type} onChange={u('type')} /></div>
       <div className="partners-login-field"><textarea placeholder="소개 / 요청사항 (선택)" value={form.message} onChange={u('message')} rows={3} style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit'}}></textarea></div>

@@ -881,6 +881,56 @@
   .adm-issue-dl dt { font-weight: 600; margin-top: 8px; }
 }
 
+/* 메일 템플릿 가이드 모달의 표 — 가독성 강화.
+   헤더 짙은 배경, 셀 padding 충분히, zebra striping, 모바일 가로 스크롤. */
+.adm-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: #fff;
+  border: 1px solid #d7d4cf;
+  margin: 8px 0;
+}
+.adm-guide-table thead th {
+  background: #2a2724;
+  color: #f6f4f0;
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: .04em;
+  border-right: 1px solid #4a4744;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.adm-guide-table thead th:last-child { border-right: none; }
+.adm-guide-table tbody td {
+  padding: 10px 12px;
+  border-top: 1px solid #ece9e2;
+  border-right: 1px solid #f0ede7;
+  color: #2a2724;
+  vertical-align: middle;
+}
+.adm-guide-table tbody td:last-child { border-right: none; }
+.adm-guide-table tbody tr:nth-child(even) td { background: #faf8f5; }
+.adm-guide-table tbody tr:hover td { background: #f4f1ea; }
+.adm-guide-table code {
+  background: #fff;
+  padding: 2px 6px;
+  font-size: 11.5px;
+  color: #1f5e7c;
+  border: 1px solid #e6e3dd;
+  border-radius: 2px;
+  font-family: 'SF Mono', Menlo, monospace;
+  white-space: nowrap;
+}
+.adm-guide-table tbody tr:nth-child(even) code { background: #fff; }
+@media (max-width: 600px) {
+  .adm-guide-table { font-size: 11.5px; }
+  .adm-guide-table thead th, .adm-guide-table tbody td { padding: 8px 9px; }
+}
+
 /* Minimum touch target on touch devices (WCAG 2.5.5: 44×44 CSS px) */
 @media (hover: none) and (pointer: coarse) {
   .adm-btn-sm,

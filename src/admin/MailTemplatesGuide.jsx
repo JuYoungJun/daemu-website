@@ -52,12 +52,12 @@ export default function MailTemplatesGuide({ onClose }) {
               "수신자 데이터 소스" 를 선택하면 시스템이 해당 저장소에서 레코드를 가져와 <strong>변수에 자동 매핑</strong>합니다.
               아래 표가 매칭 관계입니다:
             </p>
-            <div style={{ overflowX: 'auto', marginTop: 10 }}>
+            <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid #d7d4cf' }}>
               <table className="adm-guide-table">
                 <thead>
                   <tr>
-                    <th>데이터 소스</th>
-                    <th>저장 위치</th>
+                    <th style={{ minWidth: 110 }}>데이터 소스</th>
+                    <th style={{ minWidth: 150 }}>저장 위치</th>
                     <th>{`{{이름}}`}</th>
                     <th>{`{{이메일}}`}</th>
                     <th>{`{{전화}}`}</th>
@@ -65,14 +65,49 @@ export default function MailTemplatesGuide({ onClose }) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td>직접 입력</td><td>(텍스트 입력)</td><td>—</td><td>입력값</td><td>—</td><td>—</td></tr>
-                  <tr><td>CRM 고객</td><td><code>daemu_crm</code></td><td>name</td><td>email</td><td>phone</td><td>company</td></tr>
-                  <tr><td>파트너사</td><td><code>daemu_partners</code></td><td>person</td><td>email</td><td>phone</td><td>name</td></tr>
-                  <tr><td>문의자</td><td><code>daemu_inquiries</code></td><td>name</td><td>email</td><td>phone</td><td>—</td></tr>
-                  <tr><td>뉴스레터 구독자</td><td><code>daemu_subscribers</code></td><td>name</td><td>email</td><td>—</td><td>—</td></tr>
+                  <tr>
+                    <td><strong>직접 입력</strong></td>
+                    <td><span style={{ color: '#8c867d' }}>(textarea 입력)</span></td>
+                    <td>—</td><td>입력값</td><td>—</td><td>—</td>
+                  </tr>
+                  <tr>
+                    <td><strong>CRM 고객</strong></td>
+                    <td><code>daemu_crm</code></td>
+                    <td><code>name</code></td>
+                    <td><code>email</code></td>
+                    <td><code>phone</code></td>
+                    <td><code>company</code></td>
+                  </tr>
+                  <tr>
+                    <td><strong>파트너사</strong></td>
+                    <td><code>daemu_partners</code></td>
+                    <td><code>person</code></td>
+                    <td><code>email</code></td>
+                    <td><code>phone</code></td>
+                    <td><code>name</code></td>
+                  </tr>
+                  <tr>
+                    <td><strong>문의자</strong></td>
+                    <td><code>daemu_inquiries</code></td>
+                    <td><code>name</code></td>
+                    <td><code>email</code></td>
+                    <td><code>phone</code></td>
+                    <td>—</td>
+                  </tr>
+                  <tr>
+                    <td><strong>뉴스레터 구독자</strong></td>
+                    <td><code>daemu_subscribers</code></td>
+                    <td><code>name</code></td>
+                    <td><code>email</code></td>
+                    <td>—</td>
+                    <td>—</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
+            <p style={{ fontSize: 11.5, color: '#8c867d', marginTop: 6 }}>
+              읽는 법: 첫 번째 줄 — CRM 고객 발송 시 <code>{`{{이름}}`}</code> 자리에 각 고객의 <code>name</code> 필드 값이 자동으로 들어감. 매 수신자마다 다름.
+            </p>
             <p style={{ marginTop: 12 }}>
               예) CRM 고객을 선택하면 <code>{`{{이름}}`}</code> 자리에 각 고객의 <strong>name</strong> 필드가 자동으로 들어갑니다.
               파트너사는 <code>person</code>(담당자) 이 이름이 되고, <code>name</code>(회사명) 이 회사가 됩니다.

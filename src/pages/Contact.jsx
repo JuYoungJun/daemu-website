@@ -228,8 +228,8 @@ export default function Contact() {
               ) : (
                 <div className="form-grid">
                   <div className="field full"><input type="text" placeholder="이름(회사명)" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
-                  <div className="field"><input type="tel" inputMode="tel" placeholder="연락처" autoComplete="tel" value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} required /></div>
+                  <div className="field"><input type="tel" inputMode="numeric" placeholder="연락처 (예: 010-1234-5678)" autoComplete="tel" maxLength={13} value={form.phone} onChange={update('phone')} /></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
                   <div className="field full"><input type="text" placeholder="브랜드명(또는 사업분야)" autoComplete="organization" value={form.brand} onChange={update('brand')} /></div>
                   <div className="field">
                     <select required value={form.region} onChange={update('region')}>

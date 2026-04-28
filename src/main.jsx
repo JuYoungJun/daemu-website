@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 
+// 공개 페이지의 raw-page 폼(전화·이메일 입력) 자동 포맷터 — eager 로드.
+// 가볍고(약 2KB), 모든 페이지에서 즉시 동작해야 하므로 lazy 로 둘 수 없음.
+import { installInputFormatHandler } from './lib/inputFormatGlobal.js';
+installInputFormatHandler();
+
 // FR-01 fix: defer the legacy form handler until a `data-consult-form`
 // submission actually fires. Until then, db.js / email.js / api.js stay
 // out of the public visitor's main bundle.
