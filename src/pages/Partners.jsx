@@ -7,6 +7,7 @@ import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd } from '../lib/seo.js';
 import { api } from '../lib/api.js';
 import PartnerPromotions from '../components/PartnerPromotions.jsx';
+import { validateCoupon, consumeCoupon, describeDiscount } from '../lib/coupons.js';
 
 export default function Partners() {
   useFadeUp([]);
@@ -276,6 +277,10 @@ function Shop({ partner, onSubmitted }) {
   const [cart, setCart] = useState({}); // sku → qty
   const [note, setNote] = useState('');
   const [search, setSearch] = useState('');
+  // 쿠폰 입력/검증 상태
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { coupon, discount }
+  const [couponMsg, setCouponMsg] = useState({ kind: '', text: '' });
 
   const addToCart = (sku, delta = 1) => {
     setCart((c) => {
@@ -298,7 +303,42 @@ function Shop({ partner, onSubmitted }) {
     return p ? { ...p, qty, subtotal: p.price * qty } : null;
   }).filter(Boolean), [cart]);
 
-  const total = items.reduce((a, x) => a + x.subtotal, 0);
+  const subtotal = items.reduce((a, x) => a + x.subtotal, 0);
+  const discount = appliedCoupon ? appliedCoupon.discount : 0;
+  const total = Math.max(0, subtotal - discount);
+
+  // cart 또는 subtotal 변경 시 적용된 쿠폰 재검증 (subtotal 0이 되거나 한도 초과 등)
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    const r = validateCoupon(appliedCoupon.coupon.code, subtotal);
+    if (!r.ok) {
+      setAppliedCoupon(null);
+      setCouponMsg({ kind: 'err', text: '장바구니가 변경되어 쿠폰이 해제되었습니다: ' + r.reason });
+      return;
+    }
+    if (r.discount !== appliedCoupon.discount) {
+      setAppliedCoupon({ coupon: r.coupon, discount: r.discount });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal]);
+
+  const applyCoupon = () => {
+    setCouponMsg({ kind: '', text: '' });
+    const r = validateCoupon(couponInput, subtotal);
+    if (!r.ok) {
+      setAppliedCoupon(null);
+      setCouponMsg({ kind: 'err', text: r.reason });
+      return;
+    }
+    setAppliedCoupon({ coupon: r.coupon, discount: r.discount });
+    const dText = r.discount > 0 ? `-${r.discount.toLocaleString('ko')}원` : describeDiscount(r.coupon);
+    setCouponMsg({ kind: 'ok', text: `쿠폰 적용됨 · ${dText}` });
+  };
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponMsg({ kind: '', text: '' });
+  };
 
   const submit = () => {
     if (!items.length) { alert('상품을 1개 이상 담아주세요.'); return; }
@@ -306,22 +346,43 @@ function Shop({ partner, onSubmitted }) {
       ? items[0].name
       : `${items[0].name} 외 ${items.length - 1}종`;
     const totalQty = items.reduce((a, x) => a + x.qty, 0);
-    const avgPrice = totalQty ? Math.round(total / totalQty) : 0;
+    const avgPrice = totalQty ? Math.round(subtotal / totalQty) : 0;
+
+    // 쿠폰 사용량 +1 (적용된 경우만)
+    if (appliedCoupon?.coupon?.id) {
+      consumeCoupon(appliedCoupon.coupon.id);
+    }
+
     DB.add('orders', {
       partner: partner.name,
       partnerId: partner.id,
       product: summary,
       qty: totalQty,
       price: avgPrice,
+      subtotal,
+      discount,
       total,
+      coupon: appliedCoupon ? {
+        id: appliedCoupon.coupon.id,
+        code: appliedCoupon.coupon.code,
+        type: appliedCoupon.coupon.type,
+        value: appliedCoupon.coupon.value,
+        amount: appliedCoupon.discount,
+      } : null,
       items: items.map(x => ({ sku: x.sku, name: x.name, unit: x.unit, qty: x.qty, price: x.price })),
       note,
       status: '접수'
     });
     window.dispatchEvent(new Event('daemu-db-change'));
-    alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개 / ${total.toLocaleString('ko')}원\n본사 확인 후 처리 단계로 진행됩니다.`);
+
+    const couponLine = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko')}원)` : '';
+    alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개${couponLine}\n결제 예정: ${total.toLocaleString('ko')}원\n본사 확인 후 처리 단계로 진행됩니다.`);
+
     setCart({});
     setNote('');
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponMsg({ kind: '', text: '' });
     onSubmitted && onSubmitted();
   };
 
@@ -459,12 +520,59 @@ function Shop({ partner, onSubmitted }) {
                 </div>
               ))}
             </div>
-            <div style={{display:'flex',justifyContent:'space-between',padding:'12px 0',borderBottom:'2px solid #111',marginBottom:14}}>
-              <span style={{fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase'}}>합계</span>
+            {/* 소계 / 할인 / 합계 */}
+            <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',fontSize:12,color:'#6f6b68'}}>
+              <span>소계</span>
+              <span>{subtotal.toLocaleString('ko')}원</span>
+            </div>
+            {appliedCoupon && (
+              <div style={{display:'flex',justifyContent:'space-between',padding:'4px 0 8px',fontSize:12,color:'#b87333'}}>
+                <span>쿠폰 할인 · <code style={{fontFamily:'monospace'}}>{appliedCoupon.coupon.code}</code></span>
+                <span>-{discount.toLocaleString('ko')}원</span>
+              </div>
+            )}
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderTop:'1px solid #d7d4cf',borderBottom:'2px solid #111',marginBottom:14}}>
+              <span style={{fontSize:11,letterSpacing:'.14em',color:'#111',textTransform:'uppercase',fontWeight:600}}>합계</span>
               <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:24,color:'#111'}}>{total.toLocaleString('ko')}원</span>
             </div>
+
+            {/* 쿠폰 입력 */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,letterSpacing:'.14em',color:'#5a534b',textTransform:'uppercase',marginBottom:6,fontWeight:500}}>
+                🎟️ 쿠폰 코드
+              </div>
+              {appliedCoupon ? (
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'#231815',color:'#f6f4f0',borderRadius:3}}>
+                  <span style={{fontFamily:'monospace',fontSize:13,letterSpacing:'.04em'}}>{appliedCoupon.coupon.code}</span>
+                  <button type="button" onClick={removeCoupon}
+                    style={{background:'transparent',border:'1px solid #e6c891',color:'#e6c891',padding:'3px 8px',fontSize:11,cursor:'pointer'}}>
+                    해제
+                  </button>
+                </div>
+              ) : (
+                <div style={{display:'flex',gap:6}}>
+                  <input type="text" value={couponInput} onChange={(e) => setCouponInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); } }}
+                    placeholder="WELCOME10"
+                    style={{flex:1,padding:'8px 10px',fontFamily:'monospace',fontSize:13,border:'1px solid #d7d4cf',background:'#fff',textTransform:'uppercase',letterSpacing:'.04em'}} />
+                  <button type="button" onClick={applyCoupon} className="adm-btn-sm"
+                    style={{padding:'8px 14px',fontSize:11,border:'1px solid #111',background:'#111',color:'#f6f4f0',cursor:'pointer'}}>
+                    적용
+                  </button>
+                </div>
+              )}
+              {couponMsg.text && (
+                <p style={{margin:'6px 0 0',fontSize:11,color:couponMsg.kind === 'ok' ? '#2e7d32' : '#c0392b'}}>
+                  {couponMsg.text}
+                </p>
+              )}
+              <p style={{margin:'4px 0 0',fontSize:10.5,color:'#8c867d'}}>
+                포털 상단 쿠폰 카드를 클릭하면 코드가 자동 복사됩니다.
+              </p>
+            </div>
+
             <textarea value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="배송 메모, 요청사항, 쿠폰 코드 등 (선택). 예: COUPON: WELCOME10" rows={3}
+              placeholder="배송 메모, 요청사항 (선택)" rows={3}
               style={{width:'100%',padding:10,fontFamily:'inherit',fontSize:12,border:'1px solid #d7d4cf',background:'#fff',marginBottom:12,resize:'vertical',boxSizing:'border-box'}} />
             <button type="button" onClick={submit} className="btn" style={{width:'100%'}}>발주 제출</button>
           </>
