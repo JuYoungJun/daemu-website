@@ -1,16 +1,18 @@
 """DB 부팅 시 자동 시드되는 표준 데이터.
 
 - DocumentTemplate (계약서·발주서 표준 양식 4종)
+- ensure_demo_superadmin (ENV != prod일 때 매 부팅 시 슈퍼관리자 복원)
 - 추가 시드는 본 모듈에 함수 단위로 추가하면 main.py lifespan에서 자동 실행됩니다.
 
 각 시드 함수는 idempotent — 이미 같은 이름의 행이 있으면 건드리지 않습니다.
 """
 from __future__ import annotations
 
+import os
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import DocumentTemplate
+from models import AdminUser, DocumentTemplate
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +314,50 @@ SEED_TEMPLATES = [
         "body": T_PO_INTERIOR,
     },
 ]
+
+
+async def ensure_demo_superadmin(session: AsyncSession) -> None:
+    """데모/개발 환경에서 SQLite 휘발 후에도 슈퍼관리자가 매 부팅 시 자동
+    복원되도록 하는 fallback 시드.
+
+    ENV=prod에서는 동작하지 않습니다 (실수로 운영 DB에 하드코딩 비번이
+    들어가는 사고 방지). 사용자가 비밀번호를 변경한 후라면 비번은
+    절대 덮어쓰지 않고, 행이 사라진 케이스만 다시 만듭니다.
+
+    이 fallback은 TEST_ADMIN_EMAIL/PASSWORD env를 등록하지 않은 사용자도
+    superadmin@daemu.kr / Daemu@Test2026Final! 로 즉시 로그인할 수 있게
+    합니다.
+    """
+    if os.environ.get("ENV", "").lower() in {"prod", "production"}:
+        return
+
+    # auth 모듈을 lazy import해 순환 import 방지
+    from auth import hash_password, ROLE_ADMIN
+
+    DEMO_EMAIL = os.environ.get("DEMO_SUPERADMIN_EMAIL", "superadmin@daemu.kr")
+    DEMO_PASSWORD = os.environ.get("DEMO_SUPERADMIN_PASSWORD", "Daemu@Test2026Final!")
+
+    res = await session.execute(select(AdminUser).where(AdminUser.email == DEMO_EMAIL))
+    existing = res.scalar_one_or_none()
+    if existing:
+        # 이미 존재 — 비번이나 이름은 절대 덮어쓰지 않음. 비활성화 상태만 복구.
+        if not existing.active:
+            existing.active = True
+            await session.commit()
+            print(f"[seeds] demo superadmin {DEMO_EMAIL} reactivated")
+        return
+
+    session.add(AdminUser(
+        email=DEMO_EMAIL,
+        password_hash=hash_password(DEMO_PASSWORD),
+        name="Demo Super-Admin (auto-seeded; remove when going prod)",
+        role=ROLE_ADMIN,
+        active=True,
+        must_change_password=False,
+    ))
+    await session.commit()
+    print(f"[seeds] demo superadmin auto-seeded: {DEMO_EMAIL} (ENV != prod fallback)")
+    print("[seeds] ⚠️ Set ENV=prod and remove this seed before going live.")
 
 
 async def ensure_default_templates(session: AsyncSession) -> None:

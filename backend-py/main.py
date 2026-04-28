@@ -196,10 +196,12 @@ async def lifespan(_app: FastAPI):
         await ensure_default_users(session)
         # 표준 계약서/발주서 템플릿 자동 시드 (idempotent — 이미 있으면 skip)
         try:
-            from seeds import ensure_default_templates
+            from seeds import ensure_default_templates, ensure_demo_superadmin
             await ensure_default_templates(session)
+            # ENV != prod 일 때만 데모 슈퍼관리자 자동 복원 (SQLite 휘발 대응)
+            await ensure_demo_superadmin(session)
         except Exception as e:  # noqa: BLE001
-            print(f"[seeds] template seed failed: {e!r}")
+            print(f"[seeds] auto-seed failed: {e!r}")
     print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
 
     # Background retention task — Privacy Act art.21 compliance.

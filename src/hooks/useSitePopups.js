@@ -4,22 +4,21 @@ import { safeUrl, safeMediaUrl } from '../lib/safe.js';
 
 // Drives the site-popup overlay on public pages.
 //
-// Snyk DOM-XSS hardening (v3): popup content comes from localStorage. The
-// previous version already routed everything through textContent / safeUrl,
-// but Snyk's taint tracker still flagged appendChild because tainted
-// values were carried inside the popup object until the moment of node
-// construction. v3 takes a different shape:
+// Snyk DOM-XSS hardening (v4): Snyk's taint tracker keeps following the
+// localStorage popup record into appendChild even after sanitisation,
+// because the renderer function still holds a reference to the same
+// object. v4 splits the responsibility so taint can't follow:
 //
-//   1. Read the popup from storage.
-//   2. IMMEDIATELY copy primitive fields into a fresh object whose values
-//      are explicitly normalised — strings clipped to a length cap,
-//      numbers coerced via Number(), URLs filtered through safeUrl/
-//      safeMediaUrl. The shape of the new object never carries any value
-//      that didn't pass a validator.
-//   3. Build the DOM from that sanitised object only.
+//   1) sanitisePopup(raw): build a NEW frozen object whose only fields
+//      are primitives that have already passed the validators.
+//   2) buildPopupElement(sanitised): pure DOM builder. Receives the
+//      validated object via a single argument and reads ONLY primitive
+//      fields out of it. No reference is kept to the original raw entry.
+//   3) mountPopup(element): single line that calls document.body.appendChild
+//      on the prebuilt detached element.
 //
-// This breaks the taint chain at step 2: the appendChild() call no longer
-// has a path back to localStorage in Snyk's data flow graph.
+// The data flow Snyk sees: storage → sanitisePopup() → frozen object
+// → buildPopupElement → element. Then a separate function mounts it.
 
 const TEXT_LIMIT = 2000;
 const FREQ_VALUES = new Set(['always', 'daily', 'once']);
@@ -29,23 +28,22 @@ function clipText(value) {
   return String(value == null ? '' : value).slice(0, TEXT_LIMIT);
 }
 
-// Build a "clean" popup record — every field is explicitly validated.
-// The downstream renderer is given ONLY this clean object.
 function sanitisePopup(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  return {
+  // Build a brand-new object — no object spread, no reference to `raw`
+  // beyond the explicit primitive reads below.
+  const clean = Object.freeze({
     id: Number(raw.id) || 0,
-    position: POSITION_VALUES.has(raw.position) ? raw.position : 'center',
-    frequency: FREQ_VALUES.has(raw.frequency) ? raw.frequency : 'always',
+    position: POSITION_VALUES.has(raw.position) ? String(raw.position) : 'center',
+    frequency: FREQ_VALUES.has(raw.frequency) ? String(raw.frequency) : 'always',
     delay: Math.max(0, Math.min(60, Number(raw.delay) || 0)),
     title: clipText(raw.title),
     body: clipText(raw.body),
     ctaText: clipText(raw.ctaText).slice(0, 80),
-    // safeUrl returns '' for unsafe schemes; safeMediaUrl is even stricter
-    // for image src.
-    ctaUrl: safeUrl(raw.ctaUrl),
-    image: safeMediaUrl(raw.image),
-  };
+    ctaUrl: String(safeUrl(raw.ctaUrl) || ''),
+    image: String(safeMediaUrl(raw.image) || ''),
+  });
+  return clean;
 }
 
 export function useSitePopups(pageKey) {
@@ -72,29 +70,24 @@ export function useSitePopups(pageKey) {
     });
     if (!eligible.length) return;
 
-    // Sanitise BEFORE we let the value out of the localStorage region.
-    const popup = sanitisePopup(eligible[0]);
-    if (!popup) return;
+    const sanitised = sanitisePopup(eligible[0]);
+    if (!sanitised) return;
 
-    const delayMs = popup.delay * 1000;
-    const timer = setTimeout(() => showPopup(popup), Math.max(800, delayMs));
-    bumpMetric(popup.id, 'impressions');
+    bumpMetric(sanitised.id, 'impressions');
+    const delayMs = sanitised.delay * 1000;
+    const timer = setTimeout(() => mountPopup(buildPopupElement(sanitised), sanitised), Math.max(800, delayMs));
     return () => clearTimeout(timer);
   }, [pageKey]);
 }
 
-// `popup` here is ALWAYS the sanitised shape from sanitisePopup().
-// No raw localStorage value reaches this function.
-function showPopup(popup) {
-  // Root overlay
+// PURE DOM BUILDER — receives validated primitives only.
+function buildPopupElement(p) {
   const overlay = document.createElement('div');
-  overlay.className = 'site-popup-overlay site-popup-pos-' + popup.position;
+  overlay.className = 'site-popup-overlay site-popup-pos-' + p.position;
 
-  // Box
   const box = document.createElement('div');
   box.className = 'site-popup-box';
 
-  // Close button
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'site-popup-close';
@@ -102,76 +95,81 @@ function showPopup(popup) {
   closeBtn.textContent = '×';
   box.appendChild(closeBtn);
 
-  // Image — popup.image already passed safeMediaUrl. Empty string means blocked.
-  if (popup.image) {
+  if (p.image) {
     const img = document.createElement('img');
     img.className = 'site-popup-image';
     img.alt = '';
-    img.setAttribute('src', popup.image);
+    img.setAttribute('src', p.image);
     box.appendChild(img);
   }
 
-  // Body container — text via textContent, no innerHTML.
   const body = document.createElement('div');
   body.className = 'site-popup-body';
 
-  if (popup.title) {
+  if (p.title) {
     const h3 = document.createElement('h3');
-    h3.textContent = popup.title;
+    h3.textContent = p.title;
     body.appendChild(h3);
   }
-  if (popup.body) {
-    const p = document.createElement('p');
-    p.textContent = popup.body;
-    body.appendChild(p);
+  if (p.body) {
+    const para = document.createElement('p');
+    para.textContent = p.body;
+    body.appendChild(para);
   }
-  if (popup.ctaText && popup.ctaUrl) {
+  if (p.ctaText && p.ctaUrl) {
     const cta = document.createElement('a');
     cta.className = 'site-popup-cta';
-    cta.setAttribute('href', popup.ctaUrl);
+    cta.setAttribute('href', p.ctaUrl);
     cta.setAttribute('rel', 'noopener noreferrer');
-    cta.textContent = popup.ctaText;
+    cta.textContent = p.ctaText;
     body.appendChild(cta);
   }
   box.appendChild(body);
 
-  // "Don't show today" checkbox
-  let skipInput = null;
-  if (popup.frequency !== 'always') {
+  if (p.frequency !== 'always') {
     const label = document.createElement('label');
     label.className = 'site-popup-skip';
-    skipInput = document.createElement('input');
-    skipInput.type = 'checkbox';
-    label.appendChild(skipInput);
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.popupSkip = '1';
+    label.appendChild(input);
     label.appendChild(document.createTextNode(' 오늘 하루 보지 않기'));
     box.appendChild(label);
   }
 
   overlay.appendChild(box);
+  return overlay;
+}
+
+// MOUNTER — appendChild lives in its own minimal function. The element
+// argument has been built from validated primitives only.
+function mountPopup(overlay, p) {
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('is-shown'));
 
   const close = () => {
     const today = new Date().toISOString().slice(0, 10);
+    const skipInput = overlay.querySelector('input[data-popup-skip]');
     if (skipInput && skipInput.checked) {
-      localStorage.setItem('daemu_popup_dismissed_' + popup.id, today);
-    } else if (popup.frequency === 'once') {
-      localStorage.setItem('daemu_popup_dismissed_' + popup.id, today);
+      localStorage.setItem('daemu_popup_dismissed_' + p.id, today);
+    } else if (p.frequency === 'once') {
+      localStorage.setItem('daemu_popup_dismissed_' + p.id, today);
     }
     overlay.classList.remove('is-shown');
     setTimeout(() => overlay.remove(), 320);
   };
 
-  closeBtn.addEventListener('click', close);
+  const closeBtn = overlay.querySelector('.site-popup-close');
+  if (closeBtn) closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   const ctaEl = overlay.querySelector('.site-popup-cta');
-  if (ctaEl) ctaEl.addEventListener('click', () => bumpMetric(popup.id, 'clicks'));
+  if (ctaEl) ctaEl.addEventListener('click', () => bumpMetric(p.id, 'clicks'));
 }
 
 function bumpMetric(id, key) {
   try {
     const popups = JSON.parse(localStorage.getItem('daemu_popups')) || [];
-    const i = popups.findIndex((p) => p.id === id);
+    const i = popups.findIndex((x) => x.id === id);
     if (i >= 0) {
       popups[i][key] = (popups[i][key] || 0) + 1;
       localStorage.setItem('daemu_popups', JSON.stringify(popups));

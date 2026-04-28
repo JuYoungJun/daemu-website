@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { ensureSeededProducts, getActiveCatalog } from '../lib/partnerProducts.js';
+import { safeMediaUrl } from '../lib/safe.js';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -179,11 +180,16 @@ export default function AdminProducts() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(cat.items || []).map((p) => (
+                      {(cat.items || []).map((p) => {
+                        // Snyk DOM-XSS hardening: validate BEFORE rendering.
+                        // safeMediaUrl returns '' for any unsafe URL — when
+                        // empty we render the emoji tile instead of an <img>.
+                        const safeImg = safeMediaUrl(p.image);
+                        return (
                         <tr key={p.sku}>
                           <td data-label="">
-                            {p.image ? (
-                              <img src={p.image} alt="" style={{ width: 40, height: 40, objectFit: 'cover', background: '#f6f4f0', border: '1px solid #e6e3dd' }} />
+                            {safeImg ? (
+                              <img src={safeImg} alt="" style={{ width: 40, height: 40, objectFit: 'cover', background: '#f6f4f0', border: '1px solid #e6e3dd' }} />
                             ) : (
                               <div style={{ width: 40, height: 40, background: cat.accent || '#f6f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
                                 {p.emoji || '📦'}
@@ -204,7 +210,8 @@ export default function AdminProducts() {
                             <button type="button" className="adm-btn-sm danger" onClick={() => deleteProduct(ci, p.sku)}>삭제</button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -338,14 +345,19 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
 
           <div>
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 6 }}>이미지 (선택)</span>
+            {(() => {
+              // 이미지 미리보기 — Snyk DOM-XSS 방지: safeMediaUrl 통과한 값만
+              // CSS background-image에 사용. 무효 URL은 무시되고 emoji가 표시됨.
+              const previewSrc = safeMediaUrl(form.image);
+              return (
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{
                 width: 72, height: 72,
-                background: form.image ? `url(${form.image}) center/cover no-repeat` : (cat?.accent || '#f6f4f0'),
+                background: previewSrc ? `url("${previewSrc}") center/cover no-repeat` : (cat?.accent || '#f6f4f0'),
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 border: '1px solid #d7d4cf', borderRadius: 3, fontSize: 32,
               }}>
-                {!form.image && (form.emoji || '📦')}
+                {!previewSrc && (form.emoji || '📦')}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <button type="button" className="adm-btn-sm" onClick={pickImage}>📁 라이브러리에서 선택</button>
@@ -354,6 +366,8 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
                 )}
               </div>
             </div>
+              );
+            })()}
             <input type="text" value={form.image} onChange={set('image')} placeholder="또는 외부 이미지 URL 직접 입력 (https://...)"
               style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', marginTop: 8, border: '1px solid #d7d4cf', fontSize: 11, fontFamily: 'monospace' }} />
           </div>
