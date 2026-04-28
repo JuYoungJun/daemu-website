@@ -542,11 +542,25 @@ function Account({ partner }) {
   const [pw2, setPw2] = useState('');
   const [msg, setMsg] = useState('');
 
+  // Snyk NoCryptoTimingAttacks: constant-time string compare so an attacker
+  // can't leak the partner password byte-by-byte via response-time analysis.
+  // (Length-mismatch still leaks length, which is acceptable here — we're
+  //  still on legacy in-browser auth, scheduled for removal during Cafe24
+  //  migration when Partner login moves server-side under FastAPI + bcrypt.)
+  const constantTimeEqual = (a, b) => {
+    a = String(a || '');
+    b = String(b || '');
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  };
+
   const submit = (e) => {
     e.preventDefault();
     setMsg('');
     const expected = partner.password || defaultPasswordHint(partner);
-    if (pw0 !== expected) return setMsg('현재 비밀번호가 일치하지 않습니다.');
+    if (!constantTimeEqual(pw0, expected)) return setMsg('현재 비밀번호가 일치하지 않습니다.');
     if (pw1.length < 6) return setMsg('새 비밀번호는 최소 6자 이상이어야 합니다.');
     if (pw1 !== pw2) return setMsg('새 비밀번호가 일치하지 않습니다.');
     if (pw1 === pw0) return setMsg('현재 비밀번호와 다른 값을 입력해주세요.');

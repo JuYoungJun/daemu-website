@@ -43,8 +43,22 @@ export default function LinkInterceptor() {
       const a = e.target.closest && e.target.closest('a[href]');
       if (!a) return;
       const raw = a.getAttribute('href') || '';
-      if (!raw || raw.startsWith('#') || raw.startsWith('mailto:') || raw.startsWith('tel:') || raw.startsWith('javascript:')) return;
-      if (raw.startsWith('http://') || raw.startsWith('https://')) return;
+      if (!raw) return;
+      // Snyk InsufficientUriSchemeSanitization fix: parse the URL via the
+      // browser's URL API so we don't depend on naive startsWith() checks
+      // (those miss whitespace/case/unicode tricks). Anchor + scheme
+      // whitelist + same-origin gating instead.
+      let parsed;
+      try { parsed = new URL(raw, window.location.href); }
+      catch { return; }
+      const scheme = parsed.protocol;
+      if (scheme === 'mailto:' || scheme === 'tel:' || scheme === 'sms:') return;
+      // Block any non-http(s) scheme (javascript:, data:, file:, vbscript:, ...)
+      if (scheme !== 'http:' && scheme !== 'https:') { e.preventDefault(); return; }
+      // External http(s) origins → let the browser handle.
+      if (parsed.origin !== window.location.origin) return;
+      // Hash-only on same page — let the browser scroll.
+      if (parsed.pathname === window.location.pathname && parsed.hash) return;
       if (a.target && a.target !== '_self') return;
       const route = mapLegacy(raw);
       if (!route) return;

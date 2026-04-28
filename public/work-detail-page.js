@@ -136,13 +136,21 @@
       return;
     }
 
-    document.title = data.title.replace(/<[^>]+>/g, '') + ' — DAEMU';
+    // Snyk DOMXSS fix: data.title comes from URL slug → DB lookup. The
+    // title has long contained literal HTML (e.g. "Beclassy <em>나주점</em>"),
+    // which is why innerHTML was used. Switch to escHtml + a single allow-
+    // listed <em> tag so the visual flair survives but injection doesn't.
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"'`]/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' }[c]));
+    const escAllowEm = (s) => esc(s).replace(/&lt;em&gt;/g, '<em>').replace(/&lt;\/em&gt;/g, '</em>');
+
+    document.title = String(data.title || '').replace(/<[^>]+>/g, '') + ' — DAEMU';
     document.getElementById('wd-brand').textContent = data.brand || '';
-    document.getElementById('wd-title').innerHTML = data.title || '';
+    document.getElementById('wd-title').innerHTML = escAllowEm(data.title || '');
     document.getElementById('wd-addr').textContent = data.addr || '';
     if (data.img) {
       document.getElementById('wd-img').src = data.img;
-      document.getElementById('wd-img').alt = (data.title || '').replace(/<[^>]+>/g, '');
+      document.getElementById('wd-img').alt = String(data.title || '').replace(/<[^>]+>/g, '');
     }
 
     const tagsEl = document.getElementById('wd-tags');
@@ -150,14 +158,26 @@
 
     const statsEl = document.getElementById('wd-stats');
     (data.stats || []).forEach(s => {
-      statsEl.innerHTML += `<div class="wd-hero-stat"><span class="wd-hero-stat-label">${s.label}</span><span class="wd-hero-stat-val serif">${s.val}</span></div>`;
+      // Snyk DOMXSS fix: build node tree, no innerHTML.
+      const wrap = document.createElement('div');
+      wrap.className = 'wd-hero-stat';
+      const lab = document.createElement('span'); lab.className = 'wd-hero-stat-label'; lab.textContent = s.label;
+      const val = document.createElement('span'); val.className = 'wd-hero-stat-val serif'; val.textContent = s.val;
+      wrap.appendChild(lab); wrap.appendChild(val);
+      statsEl.appendChild(wrap);
     });
 
     document.getElementById('wd-overview-body').textContent = data.overview || '';
 
     const processEl = document.getElementById('wd-process');
     (data.process || []).forEach(p => {
-      processEl.innerHTML += `<div class="wd-process-item"><div class="wd-process-item-num serif">${p.num}</div><div class="wd-process-item-title">${p.title}</div><div class="wd-process-item-desc">${p.desc}</div></div>`;
+      // Snyk DOMXSS fix: build node tree, no innerHTML.
+      const item = document.createElement('div'); item.className = 'wd-process-item';
+      const num = document.createElement('div'); num.className = 'wd-process-item-num serif'; num.textContent = p.num;
+      const ttl = document.createElement('div'); ttl.className = 'wd-process-item-title'; ttl.textContent = p.title;
+      const desc = document.createElement('div'); desc.className = 'wd-process-item-desc'; desc.textContent = p.desc;
+      item.appendChild(num); item.appendChild(ttl); item.appendChild(desc);
+      processEl.appendChild(item);
     });
 
     // Gallery — use real gallery images if present, else fall back to hero image

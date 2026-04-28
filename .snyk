@@ -1,0 +1,57 @@
+# Snyk policy file (https://docs.snyk.io/manage-issues/snyk-policies)
+# Lists confirmed false-positives or accepted-risk findings with reasons + expiry.
+
+version: v1.27.0
+
+ignore:
+  # ── Snyk Code (SAST) — confirmed false positives ────────────────
+
+  # 1) HardcodedNonCryptoSecret across admin/page IIFEs and lib/auth.js etc.
+  #    Pattern detected: `const KEY = "campaigns"` / `TOKEN_KEY = "daemu_admin_token"`.
+  #    These are localStorage *namespace strings*, not secrets. They identify
+  #    where data is read/written, not credentials. Renaming to "Bucket" or
+  #    "ID" wouldn't change the runtime behavior; the values aren't secrets.
+  'javascript/HardcodedNonCryptoSecret':
+    - '*':
+        reason: >
+          localStorage namespace constants — not credentials. Renaming
+          would not improve security; the string values aren't secrets.
+        expires: 2027-04-28T00:00:00.000Z
+
+  # 2) DisablePoweredBy on backend/server.js — that file was deleted in this
+  #    commit. The finding will disappear on the next scan; ignored just in
+  #    case Snyk caches old paths.
+  'javascript/DisablePoweredBy':
+    - 'backend/server.js > *':
+        reason: 'Legacy Express backend deleted; file no longer exists.'
+        expires: 2026-10-28T00:00:00.000Z
+
+  # 3) Path Traversal on backend/server.js — same situation, file deleted.
+  'javascript/PT':
+    - 'backend/server.js > *':
+        reason: 'Legacy Express backend deleted; file no longer exists.'
+        expires: 2026-10-28T00:00:00.000Z
+
+  # 4) NoRateLimitingForExpensiveWebOperation on backend/server.js — deleted.
+  'javascript/NoRateLimitingForExpensiveWebOperation':
+    - 'backend/server.js > *':
+        reason: 'Legacy Express backend deleted; file no longer exists.'
+        expires: 2026-10-28T00:00:00.000Z
+
+  # ── Snyk Open Source (deps) ─────────────────────────────────────
+
+  # 5) asyncmy SQL Injection (SNYK-PYTHON-ASYNCMY-14185104, CVE-2025-65896)
+  #    The CVE describes an injection vector when caller-supplied input is
+  #    embedded into raw SQL via string formatting. We use SQLAlchemy ORM
+  #    exclusively (see backend-py/routes_crud.py and auth.py); every
+  #    asyncmy execution goes through SQLAlchemy bind parameters. There is
+  #    no f-string or % formatting on user input anywhere in our code path.
+  #    Re-evaluate when asyncmy ships a fix or when migrating drivers.
+  SNYK-PYTHON-ASYNCMY-14185104:
+    - '*':
+        reason: >
+          SQLAlchemy ORM is the only caller of asyncmy in this codebase.
+          All queries are bind-parameterized; raw execute() with f-strings
+          does not occur. Vulnerability requires the unsafe-usage pattern
+          we don't have.
+        expires: 2027-04-28T00:00:00.000Z
