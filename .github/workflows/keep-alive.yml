@@ -1,0 +1,49 @@
+name: Keep Render warm
+
+# Render free tier는 15분간 트래픽이 없으면 dyno를 sleep 상태로 내립니다.
+# sleep 후 첫 요청은 cold-start로 30초+ 지연 + 그 동안 사용자에게 503/타임아웃이
+# 보일 수 있습니다. GitHub Actions cron으로 10분마다 /api/health를 호출해
+# 사실상 24시간 깨워두는 워크플로입니다.
+#
+# 운영 단계 (카페24 VPS)로 이전한 후에는 이 워크플로를 비활성화해도 됩니다.
+# 비활성화 방법: GitHub repo Settings → Actions → Disable workflow.
+#
+# GitHub Actions 비용:
+#   - public repo: 무제한 무료
+#   - private repo: 월 2,000분 무료 (이 워크플로는 1회 ~10초, 144회/일 ≈ 24분/일 = 720분/월)
+#
+# 트래픽 부담:
+#   - /api/health 는 단순 dict 반환, DB ping 1회. 부하 무시 가능.
+
+on:
+  schedule:
+    # 매 10분마다 (UTC 기준). GitHub Actions cron은 정확히 10분이 아닐 수 있어
+    # ±5분 변동 가능 — 그래도 dyno sleep 임계(15분)보다 짧으므로 안전.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:    # 수동 실행도 허용
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          set -e
+          # 첫 요청이 cold-start면 최대 60초까지 기다림
+          for i in 1 2 3 4 5 6; do
+            if curl -fsSL --max-time 30 https://daemu-py.onrender.com/api/health > /tmp/health.json; then
+              echo "✓ health OK on attempt $i"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          echo "::warning::backend health failed after 6 attempts (cold-start may have exceeded 60s)"
+          exit 0   # workflow는 실패시키지 않음 (다음 ping이 또 시도)
+
+      - name: Optional — also touch the public site so GitHub Pages stays cached
+        run: |
+          curl -fsSL --max-time 15 https://juyoungjun.github.io/daemu-website/ > /dev/null \
+            && echo "✓ pages OK" || echo "::warning::pages reachability check failed"

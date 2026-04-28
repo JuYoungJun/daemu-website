@@ -337,27 +337,43 @@ async def ensure_demo_superadmin(session: AsyncSession) -> None:
     DEMO_EMAIL = os.environ.get("DEMO_SUPERADMIN_EMAIL", "superadmin@daemu.kr")
     DEMO_PASSWORD = os.environ.get("DEMO_SUPERADMIN_PASSWORD", "Daemu@Test2026Final!")
 
+    DISPLAY_NAME = "슈퍼 관리자"
+    LEGACY_NAMES = {
+        "Demo Super-Admin (auto-seeded; remove when going prod)",
+        "Super Admin (test)",
+        "Test Super-Admin (TEMPORARY — REMOVE AFTER TESTING)",
+    }
+
     res = await session.execute(select(AdminUser).where(AdminUser.email == DEMO_EMAIL))
     existing = res.scalar_one_or_none()
     if existing:
-        # 이미 존재 — 비번이나 이름은 절대 덮어쓰지 않음. 비활성화 상태만 복구.
+        # 이미 존재 — 비번은 절대 덮어쓰지 않음. 다음만 정상화:
+        #   1) 비활성 상태 복구
+        #   2) 옛 자동 시드의 영문 디버그 라벨이 그대로면 깔끔한 한국어 이름으로 교체
+        changed = False
         if not existing.active:
             existing.active = True
-            await session.commit()
+            changed = True
             print(f"[seeds] demo superadmin {DEMO_EMAIL} reactivated")
+        if existing.name in LEGACY_NAMES or not (existing.name or "").strip():
+            existing.name = DISPLAY_NAME
+            changed = True
+            print(f"[seeds] demo superadmin display name normalised → '{DISPLAY_NAME}'")
+        if changed:
+            await session.commit()
         return
 
     session.add(AdminUser(
         email=DEMO_EMAIL,
         password_hash=hash_password(DEMO_PASSWORD),
-        name="Demo Super-Admin (auto-seeded; remove when going prod)",
+        name=DISPLAY_NAME,
         role=ROLE_ADMIN,
         active=True,
         must_change_password=False,
     ))
     await session.commit()
     print(f"[seeds] demo superadmin auto-seeded: {DEMO_EMAIL} (ENV != prod fallback)")
-    print("[seeds] ⚠️ Set ENV=prod and remove this seed before going live.")
+    print("[seeds] Set ENV=prod and remove this seed before going live.")
 
 
 async def ensure_default_templates(session: AsyncSession) -> None:
