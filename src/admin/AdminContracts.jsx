@@ -14,6 +14,7 @@ import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
+import { extractTextFromPdf, fileToDataUrl } from '../lib/pdfExtract.js';
 
 const KIND_LABEL = { contract: '계약서', purchase_order: '발주서' };
 const STATUS_LABEL = {
@@ -499,9 +500,15 @@ function TemplateEditor({ template, onClose, onSaved }) {
     name: template.name || '', kind: template.kind || 'contract',
     subject: template.subject || '', body: template.body || '',
     variables: template.variables || [], active: template.active !== false,
+    // PDF 업로드 시 채워짐 — 텍스트 추출 실패 시 fallback 으로 첨부 사용.
+    pdfDataUrl: template.pdfDataUrl || '',
+    pdfFilename: template.pdfFilename || '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [pdfImporting, setPdfImporting] = useState(false);
+  const [pdfImportProgress, setPdfImportProgress] = useState(null);
+  const [pdfPreview, setPdfPreview] = useState(null); // { extracted, filename, dataUrl, pageInfo }
 
   const save = async () => {
     setSaving(true); setErr('');
@@ -528,6 +535,84 @@ function TemplateEditor({ template, onClose, onSaved }) {
     }
   };
 
+  // PDF 업로드 → 텍스트 추출 → 미리보기 → 사용자 승인 후 본문에 적용.
+  // 추출이 실패하면 PDF 자체를 dataURL 로 보관해 fallback 첨부 가능.
+  const onPdfUpload = async (file) => {
+    if (!file) return;
+    if (!/pdf/i.test(file.type) && !/\.pdf$/i.test(file.name)) {
+      siteAlert('PDF 파일만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      siteAlert('PDF 파일이 너무 큽니다 (최대 10MB).');
+      return;
+    }
+    setPdfImporting(true);
+    setPdfImportProgress({ current: 0, total: 1 });
+    setErr('');
+
+    let extracted = '';
+    let extractionError = null;
+    try {
+      extracted = await extractTextFromPdf(file, {
+        maxPages: 30,
+        onProgress: (current, total) => setPdfImportProgress({ current, total }),
+      });
+    } catch (e) {
+      extractionError = String(e?.message || e);
+    }
+
+    let dataUrl = '';
+    try {
+      dataUrl = await fileToDataUrl(file);
+    } catch (e) {
+      // dataUrl 도 실패하면 진짜 fallback 없음.
+      console.error('[pdfExtract] dataUrl conversion failed:', e);
+    }
+
+    setPdfImporting(false);
+    setPdfImportProgress(null);
+    setPdfPreview({
+      extracted: (extracted || '').trim(),
+      extractionError,
+      filename: file.name,
+      dataUrl,
+      sizeKb: Math.round(file.size / 1024),
+    });
+  };
+
+  const applyExtractedText = () => {
+    if (!pdfPreview) return;
+    setT((prev) => ({
+      ...prev,
+      body: pdfPreview.extracted,
+      pdfDataUrl: pdfPreview.dataUrl || '',
+      pdfFilename: pdfPreview.filename || '',
+    }));
+    setPdfPreview(null);
+  };
+
+  const applyAsAttachment = () => {
+    if (!pdfPreview) return;
+    // 본문은 그대로 두고, pdfDataUrl 만 보관 — 발송 시 첨부/링크로 사용.
+    setT((prev) => ({
+      ...prev,
+      pdfDataUrl: pdfPreview.dataUrl || '',
+      pdfFilename: pdfPreview.filename || '',
+      // 본문이 비어있으면 안내 메시지 자동 채움.
+      body: prev.body && prev.body.trim()
+        ? prev.body
+        : `[첨부 PDF 사용 — 코드 변환 없이 ${pdfPreview.filename} 그대로 발송]\n\n` +
+          `수신자에게는 PDF 파일이 첨부되어 발송됩니다.\n` +
+          `필요한 변수가 있으면 본 안내문 아래에 추가로 작성하세요. 예: 안녕하세요 {{clientName}}님,`,
+    }));
+    setPdfPreview(null);
+  };
+
+  const removePdfFallback = () => {
+    setT((prev) => ({ ...prev, pdfDataUrl: '', pdfFilename: '' }));
+  };
+
   return (
     <Modal onClose={onClose} title={template.id ? '템플릿 수정' : '템플릿 등록'}>
       <div style={{ display: 'grid', gap: 12 }}>
@@ -540,6 +625,46 @@ function TemplateEditor({ template, onClose, onSaved }) {
             <option value="purchase_order">발주서</option>
           </select>
         </Field>
+
+        {/* 기존에 쓰던 PDF 양식을 가져와 본문 텍스트로 변환 또는 그대로 첨부.
+            추출 실패 시 PDF 그대로 첨부하는 fallback 도 같이 제공. */}
+        <div style={{ background: '#f6f4f0', border: '1px solid #e6e3dd', padding: 12 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
+            기존 PDF 에서 가져오기 (선택)
+          </div>
+          {!t.pdfFilename && !pdfImporting && (
+            <label className="adm-btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
+              <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
+                onChange={(e) => { onPdfUpload(e.target.files?.[0]); e.target.value = ''; }} />
+              + PDF 양식 업로드 (≤10MB)
+            </label>
+          )}
+          {pdfImporting && (
+            <div style={{ fontSize: 12, color: '#5a4a2a' }}>
+              PDF 분석 중…{pdfImportProgress ? ` (${pdfImportProgress.current}/${pdfImportProgress.total} 페이지)` : ''}
+            </div>
+          )}
+          {t.pdfFilename && !pdfImporting && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: '#2a2724' }}>
+                <strong>첨부 PDF:</strong> {t.pdfFilename}
+              </span>
+              <a href={t.pdfDataUrl} target="_blank" rel="noopener noreferrer" className="adm-btn-sm">PDF 보기</a>
+              <label className="adm-btn-sm" style={{ cursor: 'pointer' }}>
+                <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
+                  onChange={(e) => { onPdfUpload(e.target.files?.[0]); e.target.value = ''; }} />
+                다른 PDF 로 교체
+              </label>
+              <button type="button" className="adm-btn-sm danger" onClick={removePdfFallback}>PDF 첨부 제거</button>
+            </div>
+          )}
+          <p style={{ fontSize: 11, color: '#8c867d', marginTop: 8, marginBottom: 0, lineHeight: 1.7 }}>
+            기존 양식 PDF 를 올리면 텍스트를 자동 추출해 본문 템플릿으로 변환합니다.
+            추출이 잘 안 되거나 그대로 사용하고 싶으면 <strong>PDF 그대로 첨부</strong> 옵션도 선택할 수 있습니다.
+            (변환은 client-side 로 진행되며 외부 서버에 업로드되지 않습니다.)
+          </p>
+        </div>
+
         <Field label="이메일 제목 (변수 사용 가능)">
           <input type="text" value={t.subject} onChange={(e) => setT({ ...t, subject: e.target.value })} />
         </Field>
@@ -569,7 +694,69 @@ function TemplateEditor({ template, onClose, onSaved }) {
           <button className="btn" type="button" onClick={save} disabled={saving}>{saving ? '저장 중…' : '저장'}</button>
         </div>
       </div>
+
+      {pdfPreview && (
+        <PdfImportPreviewModal
+          preview={pdfPreview}
+          onUseExtracted={applyExtractedText}
+          onUseAsAttachment={applyAsAttachment}
+          onCancel={() => setPdfPreview(null)}
+        />
+      )}
     </Modal>
+  );
+}
+
+function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onCancel }) {
+  const hasText = preview.extracted && preview.extracted.trim().length > 30;
+  const charCount = preview.extracted ? preview.extracted.length : 0;
+  return (
+    <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="adm-modal-box is-wide">
+        <div className="adm-modal-head">
+          <h2>PDF 가져오기 — {preview.filename} ({preview.sizeKb}KB)</h2>
+          <button type="button" className="adm-modal-close" onClick={onCancel} aria-label="닫기">×</button>
+        </div>
+
+        {preview.extractionError && (
+          <div style={{ background: '#fff0ec', border: '1px solid #f0c4c0', padding: '10px 14px', fontSize: 12.5, color: '#c0392b', marginBottom: 14 }}>
+            <strong>텍스트 추출 실패:</strong> {preview.extractionError}<br/>
+            아래 "PDF 그대로 첨부" 를 선택하시면 변환 없이 PDF 파일 자체를 사용합니다.
+          </div>
+        )}
+
+        {hasText ? (
+          <>
+            <div style={{ fontSize: 12, color: '#5a534b', marginBottom: 8 }}>
+              <strong>추출된 텍스트 미리보기</strong> ({charCount.toLocaleString('ko')}자) — 본문에 적용하면 직접 편집·변수화 가능합니다.
+            </div>
+            <pre style={{
+              background: '#f6f4f0', border: '1px solid #e6e3dd',
+              padding: 14, fontSize: 12, lineHeight: 1.75,
+              maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap',
+              wordBreak: 'keep-all', fontFamily: 'inherit', margin: 0,
+            }}>{preview.extracted.slice(0, 5000)}{preview.extracted.length > 5000 ? '\n\n...(너무 길어 5,000자에서 잘림 — 적용 후 본문에서 전체 확인)' : ''}</pre>
+            <p style={{ fontSize: 11, color: '#8c867d', marginTop: 8 }}>
+              추출 품질이 만족스러우면 <strong>변환 결과 적용</strong>, 그대로 PDF 를 쓰고 싶으면 <strong>PDF 그대로 첨부</strong> 를 선택하세요.
+            </p>
+          </>
+        ) : (
+          <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: 14, fontSize: 13, color: '#5a4a2a' }}>
+            텍스트 추출량이 거의 없습니다 (스캔 PDF 또는 이미지 기반). PDF 그대로 첨부해서 사용하는 것을 권장합니다.
+          </div>
+        )}
+
+        <div className="adm-action-row">
+          <button type="button" className="adm-btn-sm" onClick={onCancel}>취소</button>
+          <button type="button" className="adm-btn-sm" onClick={onUseAsAttachment}>
+            PDF 그대로 첨부
+          </button>
+          <button type="button" className="btn" onClick={onUseExtracted} disabled={!hasText}>
+            변환 결과 적용 (본문 채움)
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
