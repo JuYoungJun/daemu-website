@@ -48,6 +48,122 @@ function nextId(list) {
   return list.length ? Math.max(...list.map((x) => Number(x.id) || 0)) + 1 : 1;
 }
 
+// 첫 진입 시 자동 시드되는 기본 템플릿 5종.
+// 이미 같은 이름이 있으면 건드리지 않습니다(idempotent).
+const SEED_TEMPLATES = [
+  {
+    name: '신규 파트너 환영',
+    category: 'partner',
+    subject: '[대무] {{이름}}님, 파트너 등록을 환영합니다',
+    body:
+`안녕하세요 {{이름}}님,
+
+대무 파트너로 등록해 주셔서 감사합니다.
+지금부터 발주 포털을 통해 다음 기능을 사용하실 수 있습니다:
+
+  · 표준 카탈로그 발주
+  · 발주 진행 상태 실시간 확인
+  · 계약서·발주서 e-Sign 서명 및 사본 다운로드
+
+문의 사항은 본 메일에 회신해 주세요.
+
+대무 (DAEMU)
+daemu_office@naver.com · 061-335-1239`,
+    active: true,
+  },
+  {
+    name: '발주 처리 안내',
+    category: 'reply',
+    subject: '[대무] {{발주번호}} 발주가 접수되었습니다',
+    body:
+`안녕하세요 {{이름}}님,
+
+요청하신 발주 {{발주번호}} 가 정상 접수되었습니다.
+
+  · 접수일: {{접수일}}
+  · 예정 출고: {{출고예정일}}
+  · 합계: {{합계금액}}
+
+진행 상태는 파트너 포털에서 실시간 확인 가능합니다.
+변경 또는 취소가 필요하시면 출고 1영업일 전까지 연락 주세요.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '뉴스레터 — 시즌 메뉴',
+    category: 'newsletter',
+    subject: '[대무] {{이름}}님께 보내는 이번 시즌 추천 메뉴',
+    body:
+`안녕하세요 {{이름}}님,
+
+대무가 새로 큐레이션한 이번 시즌 메뉴를 소개드립니다.
+
+  · 봄 시그니처 — 딸기 크렘 다누아즈
+  · 한정 베이커리 — 무화과 크림 브리오슈
+  · 시즌 음료 — 로즈 라떼
+
+자세한 레시피 노트와 도입 사례는 아래 링크에서 확인하실 수 있습니다.
+{{상세링크}}
+
+수신을 원치 않으시면 본 메일 하단의 수신거부 링크를 이용해 주세요.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '미팅 일정 안내',
+    category: 'general',
+    subject: '[대무] {{이름}}님과의 미팅 일정 확인',
+    body:
+`안녕하세요 {{이름}}님,
+
+요청하신 미팅 일정을 아래와 같이 조정했습니다.
+
+  · 일시: {{일시}}
+  · 장소: {{장소}}
+  · 참석자: {{참석자}}
+  · 안건: {{안건}}
+
+변경이 필요하시면 1영업일 전까지 회신 부탁드립니다.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '이벤트/공지 안내',
+    category: 'event',
+    subject: '[대무] {{이벤트명}} 안내',
+    body:
+`안녕하세요 {{이름}}님,
+
+{{이벤트명}} 을 다음과 같이 진행합니다.
+
+  · 일정: {{시작일}} ~ {{종료일}}
+  · 대상: {{대상}}
+  · 혜택: {{혜택}}
+
+자세한 내용은 아래에서 확인하실 수 있습니다.
+{{상세링크}}
+
+대무 (DAEMU)`,
+    active: true,
+  },
+];
+
+function ensureSeedTemplates() {
+  const current = readTemplates();
+  const existingNames = new Set(current.map((t) => (t.name || '').trim()));
+  const toAdd = SEED_TEMPLATES.filter((t) => !existingNames.has(t.name));
+  if (!toAdd.length) return current;
+  const now = new Date().toISOString();
+  let nid = nextId(current);
+  const seeded = toAdd.map((t) => ({ ...t, id: nid++, createdAt: now, updatedAt: now }));
+  const next = [...current, ...seeded];
+  saveTemplates(next);
+  return next;
+}
+
 // {{var_name}} 자리표시자 추출.
 function extractVariables(text) {
   const set = new Set();
@@ -65,7 +181,7 @@ function applyVars(text, vars) {
 }
 
 export default function AdminMailTemplates() {
-  const [templates, setTemplates] = useState(() => readTemplates());
+  const [templates, setTemplates] = useState(() => ensureSeedTemplates());
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState('');

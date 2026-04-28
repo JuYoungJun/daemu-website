@@ -18,9 +18,17 @@ export default function AdminGate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mustChange, setMustChange] = useState(() => !!Auth.user()?.must_change_password);
+  // 첫 접속 이메일 인증 필요 여부 — strict null 검사. localStorage 에
+  // 필드 자체가 없는 *legacy* 케이스(undefined)는 '아직 모름' 으로 보고
+  // verify 화면을 띄우지 않음 (refreshMe 이후 정확한 값이 들어옴).
+  // 그래서 '깜빡' 현상이 사라짐.
   const [needsEmailVerify, setNeedsEmailVerify] = useState(
-    () => !!Auth.user() && Auth.user()?.email_verified_at == null,
+    () => !!Auth.user() && Auth.user()?.email_verified_at === null,
   );
+  // refreshMe 가 끝나기 전에는 hydrating=true 로 두고, verify/changePw 화면을
+  // 절대 렌더링하지 않음. 정상 dashboard 가 stale state 로 잠시 잘못 그려지지
+  // 않게 보호하는 가드.
+  const [hydrating, setHydrating] = useState(() => Auth.isLoggedIn() && api.isConfigured());
   const [showChange, setShowChange] = useState(false);
   const [show2fa, setShow2fa] = useState(false);
   // 2FA login flow state — when backend says need_totp, we keep email/password
@@ -35,12 +43,15 @@ export default function AdminGate() {
   // even if it changed on another device or via admin reset.
   useEffect(() => {
     if (loggedIn && api.isConfigured()) {
+      setHydrating(true);
       Auth.refreshMe().then((u) => {
         if (u) {
           setMustChange(!!u.must_change_password);
           setNeedsEmailVerify(u.email_verified_at == null);
         } else { Auth.logout(); setLoggedIn(false); }
-      });
+      }).finally(() => setHydrating(false));
+    } else {
+      setHydrating(false);
     }
   }, [loggedIn]);
 
@@ -97,6 +108,18 @@ export default function AdminGate() {
     setMustChange(false);
     setShowChange(false);
   };
+
+  // 하이드레이션 중에는 stale 한 verify/changePw 화면이 깜빡 표시되지 않도록
+  // 미니 스피너만 보여줌. /api/auth/me 응답이 오면 정확한 분기로 진입.
+  if (loggedIn && hydrating) {
+    return (
+      <AdminShell>
+        <main className="page" style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: '#8c867d', fontSize: 13, letterSpacing: '.08em' }}>세션 확인 중…</div>
+        </main>
+      </AdminShell>
+    );
+  }
 
   // 첫 접속 어드민 — 이메일 인증을 가장 먼저 요구.
   if (loggedIn && needsEmailVerify) {

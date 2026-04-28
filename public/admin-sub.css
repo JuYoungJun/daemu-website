@@ -1038,19 +1038,27 @@
   max-height: min(78vh, 920px);
   overflow: auto;
 }
-/* fit 모드 — sheet가 stage 폭을 가득 채워 항상 잘 보이게.
-   짧은 본문일 때도 종이 카드 느낌이 유지되도록 stage 높이의 대부분을
-   채우는 min-height 를 부여. (이전 'auto' 는 회색 배경이 노출되는 버그.) */
-.adm-paper-stage--fit { align-items: stretch; }
+/* fit 모드 — sheet 가 stage 전체 폭을 가득 채우는 기본 보기.
+   본문이 짧을 때 아래로 회색이 보이지 않도록 stage 자체 배경을 흰색으로
+   통일. (paper-on-desk 효과는 zoom 모드에서만 유지.) flex stretch 와
+   sheet min-height 둘 다 설정해 viewport 가 작은 케이스에서도 종이가
+   짧아 보이지 않게 함. */
+.adm-paper-stage--fit {
+  background: #fff;
+  align-items: stretch;
+  min-height: max(60vh, 720px);
+}
 .adm-paper-stage--fit .adm-paper-sheet {
   width: 100%;
   max-width: 210mm;
-  min-height: max(60vh, 720px);
+  min-height: 100%;
   padding: 32px clamp(20px, 4vw, 48px);
-  box-shadow: 0 6px 22px rgba(35,24,21,.16), 0 1px 0 rgba(0,0,0,.08);
+  /* fit 모드에서는 stage 가 흰색이라 그림자가 어색 — 가벼운 보더로 대체. */
+  box-shadow: none;
+  border: 1px solid #ece9e2;
   align-self: stretch;
 }
-/* zoom 모드 — A4 정확한 크기로 표시(스크롤 가능) */
+/* zoom 모드 — A4 정확한 크기로 표시(스크롤 가능). paper-on-desk 효과 유지. */
 .adm-paper-stage--zoom {
   align-items: flex-start;
   padding: 20px;

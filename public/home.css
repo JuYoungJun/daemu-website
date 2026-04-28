@@ -86,7 +86,7 @@
   padding: 0 0 .04em;
 }
 .hero-line--offset {
-  padding-left: 8vw;
+  padding-left: clamp(0px, 4vw, 8vw);
 }
 .hero-word {
   display: inline-block;
@@ -233,8 +233,8 @@
 .marquee-row {
   display: flex;
   align-items: center;
-  gap: 54px;
-  padding-right: 54px;
+  gap: clamp(20px, 6vw, 54px);
+  padding-right: clamp(20px, 8vw, 54px);
   font-family: 'Cormorant Garamond', serif;
   font-size: clamp(42px, 6vw, 84px);
   font-weight: 400;
