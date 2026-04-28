@@ -32,22 +32,28 @@ function ensureTestPartner() {
         note: '테스트용 임시 파트너 계정 — 운영 시 /admin/partners 에서 비활성화/삭제하세요.',
         password: TEST_PW,
         passwordChanged: true,
+        // PartnerAuth.login() 의 83번째 줄이 `mustChangePassword !== false`를
+        // 검사하므로 반드시 명시적 false 가 필요. undefined 면 true 로 평가됨.
+        mustChangePassword: false,
         passwordUpdatedAt: new Date().toISOString(),
       });
       return;
     }
 
     // 기존 행의 비번/플래그를 강제 정상화 — 이전 빌드 시드된 잔존 데이터에
-    // passwordChanged 플래그가 빠져 있어 매 로그인마다 변경 화면이 뜨던 문제 해결.
+    // passwordChanged / mustChangePassword 플래그가 빠져 있어 매 로그인마다
+    // 변경 화면이 뜨던 문제 해결.
     const existing = partners[idx];
     const needsRepair =
       existing.password !== TEST_PW ||
       existing.passwordChanged !== true ||
+      existing.mustChangePassword !== false ||
       existing.active !== 'active';
     if (needsRepair) {
       DB.update('partners', existing.id, {
         password: TEST_PW,
         passwordChanged: true,
+        mustChangePassword: false,
         passwordUpdatedAt: new Date().toISOString(),
         active: 'active',
       });
