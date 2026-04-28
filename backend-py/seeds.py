@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -350,6 +351,7 @@ async def ensure_demo_superadmin(session: AsyncSession) -> None:
         # 이미 존재 — 비번은 절대 덮어쓰지 않음. 다음만 정상화:
         #   1) 비활성 상태 복구
         #   2) 옛 자동 시드의 영문 디버그 라벨이 그대로면 깔끔한 한국어 이름으로 교체
+        #   3) 데모 슈퍼관리자는 첫 접속 이메일 인증을 면제 (테스트 계정이므로)
         changed = False
         if not existing.active:
             existing.active = True
@@ -359,6 +361,14 @@ async def ensure_demo_superadmin(session: AsyncSession) -> None:
             existing.name = DISPLAY_NAME
             changed = True
             print(f"[seeds] demo superadmin display name normalised → '{DISPLAY_NAME}'")
+        # 슈퍼관리자는 데모 계정이므로 인증 면제. 컬럼이 NULL 이면 채워준다.
+        if existing.email_verified_at is None:
+            existing.email_verified_at = datetime.now(timezone.utc)
+            changed = True
+            print(f"[seeds] demo superadmin email verification bypassed")
+        if existing.must_change_password:
+            existing.must_change_password = False
+            changed = True
         if changed:
             await session.commit()
         return
@@ -370,6 +380,10 @@ async def ensure_demo_superadmin(session: AsyncSession) -> None:
         role=ROLE_ADMIN,
         active=True,
         must_change_password=False,
+        # 데모 슈퍼관리자는 시드 시점에 이메일 인증 완료 상태로 시작.
+        # (실제 신규 어드민 계정은 email_verified_at=NULL 로 시작해 첫
+        # 접속 시 본인의 진짜 이메일을 입력 → 인증 후 그 이메일로 갱신.)
+        email_verified_at=datetime.now(timezone.utc),
     ))
     await session.commit()
     print(f"[seeds] demo superadmin auto-seeded: {DEMO_EMAIL} (ENV != prod fallback)")

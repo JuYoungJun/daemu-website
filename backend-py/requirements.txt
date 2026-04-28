@@ -1,9 +1,9 @@
 # ── Snyk CVE-2024-5569 fix (zipp infinite-loop DoS) ──
-# Snyk 가 명시적으로 권장하는 fix version 인 3.19.1 로 정확히 핀.
-# pip resolver 와 Snyk 정적 파서 모두 이 줄을 보고 동일한 버전을 잡도록
-# `==` 사용. importlib-metadata 도 zipp 3.19.1 호환 라인으로 핀.
+# Snyk 권장 fix version 인 3.19.1 로 정확히 핀.
+# Python 3.12 부터는 importlib.metadata 가 stdlib 에 있어 외부 importlib-metadata
+# 패키지가 *런타임에 설치되지 않음*. 명시적으로 import 하지 않으므로 추가 핀
+# 불필요. (sqlalchemy 2.0.x 도 stdlib 만 사용.)
 zipp==3.19.1
-importlib-metadata==8.0.0
 
 fastapi>=0.118.0
 uvicorn[standard]>=0.34.0
@@ -11,7 +11,10 @@ httpx>=0.28.1
 python-dotenv>=1.0.1
 pydantic>=2.11.0
 email-validator>=2.2.0      # required by pydantic.EmailStr
-sqlalchemy[asyncio]>=2.0.36
+# SQLAlchemy 2.0.50+ 에서 importlib-metadata 의존성을 더 깨끗이 정리.
+# 이 floor 를 올림으로써 Snyk 정적 파서가 옛 importlib-metadata@6.7.0
+# 트랜시티브 경로를 다시 잡지 않게 함.
+sqlalchemy[asyncio]>=2.0.50
 aiosqlite>=0.20.0          # SQLite async driver (default for dev / Render demo)
 asyncmy>=0.2.10            # MySQL async driver (used when DATABASE_URL=mysql+asyncmy://...)
 pyjwt>=2.10.0

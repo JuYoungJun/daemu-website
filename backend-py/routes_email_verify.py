@@ -25,7 +25,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,11 +51,15 @@ def _generate_code() -> str:
 
 
 class SendIn(BaseModel):
-    pass  # body 없음 — 인증된 사용자 컨텍스트만 사용
+    # 신규 어드민이 첫 접속 시 *본인의 실제* 이메일을 입력. 비어있으면
+    # 현재 계정에 등록된 이메일(슈퍼관리자가 임시로 넣어둔 placeholder)
+    # 로 발송.
+    new_email: EmailStr | None = None
 
 
 class SendOut(BaseModel):
     ok: bool
+    target_email: str
     cooldown_until: datetime | None = None
     expires_at: datetime
     simulated: bool = False
@@ -67,22 +71,39 @@ class VerifyIn(BaseModel):
 
 class VerifyOut(BaseModel):
     ok: bool
+    email: str  # 검증 후 사용자에게 적용된 새 이메일
 
 
 @router.post("/send", response_model=SendOut)
 async def send_verification_code(
+    payload: SendIn,
     request: Request,
     session: AsyncSession = Depends(get_session),
     me: AdminUser = Depends(get_current_user),
 ):
-    """6자리 인증 코드를 어드민 이메일로 발송.
+    """6자리 인증 코드를 발송.
 
-    이미 인증된 사용자는 409.
+    new_email 이 입력되면 그 이메일로 발송 → 검증 시 user.email 갱신.
+    new_email 이 없으면 현재 user.email 로 발송.
+    이미 인증된 사용자(email_verified_at 가 채워진 상태)는 409.
     """
     if me.email_verified_at is not None:
         raise HTTPException(409, detail="이미 이메일 인증된 계정입니다.")
 
     now = datetime.now(timezone.utc)
+
+    # 신규 어드민이 입력한 본인의 실제 이메일. 없으면 현재 계정 이메일 사용.
+    target_email = (payload.new_email.lower() if payload.new_email else me.email.lower()).strip()
+    if not target_email:
+        raise HTTPException(400, detail="이메일 주소가 비어있습니다.")
+
+    # 입력된 이메일이 기존 다른 어드민 계정에서 이미 사용 중이면 차단.
+    if target_email != me.email.lower():
+        dup = await session.execute(
+            select(AdminUser).where(AdminUser.email == target_email, AdminUser.id != me.id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(409, detail="이미 등록된 이메일입니다. 다른 주소를 입력해 주세요.")
 
     # 기존 미사용 OTP 가 있으면 cooldown / lock 검사.
     q = await session.execute(
@@ -116,6 +137,7 @@ async def send_verification_code(
     code_hash = _hash_code(code)
     expires_at = now + timedelta(seconds=OTP_TTL_SECONDS)
     ip = request.client.host if request.client else ""
+    pending = "" if target_email == me.email.lower() else target_email[:190]
 
     if existing:
         existing.code_hash = code_hash
@@ -124,6 +146,7 @@ async def send_verification_code(
         existing.attempts = 0
         existing.locked_until = None
         existing.ip = ip[:45]
+        existing.pending_email = pending
     else:
         existing = AdminEmailOtp(
             user_id=me.id,
@@ -132,16 +155,18 @@ async def send_verification_code(
             expires_at=expires_at,
             last_sent_at=now,
             ip=ip[:45],
+            pending_email=pending,
         )
         session.add(existing)
 
     await session.flush()
 
-    # 메일 발송 — 가능하면 Resend, 없으면 simulated.
-    simulated = await _dispatch_verification_email(me.email, me.name or "", code)
+    # 메일 발송 — 입력된 신규 이메일로 발송 (없으면 기존 이메일).
+    simulated = await _dispatch_verification_email(target_email, me.name or "", code)
 
     return SendOut(
         ok=True,
+        target_email=target_email,
         cooldown_until=now + timedelta(seconds=SEND_COOLDOWN_SECONDS),
         expires_at=expires_at,
         simulated=simulated,
@@ -156,7 +181,7 @@ async def confirm_verification_code(
     me: AdminUser = Depends(get_current_user),
 ):
     if me.email_verified_at is not None:
-        return VerifyOut(ok=True)
+        return VerifyOut(ok=True, email=me.email)
 
     code = (payload.code or "").strip()
     if not (len(code) == 6 and code.isdigit()):
@@ -197,8 +222,23 @@ async def confirm_verification_code(
     # 검증 성공.
     row.used_at = now
     me.email_verified_at = now
+
+    # pending_email 이 있으면 user.email 을 그 값으로 갱신 (race-safe 중복 검사).
+    if row.pending_email and row.pending_email != me.email.lower():
+        dup = await session.execute(
+            select(AdminUser).where(
+                AdminUser.email == row.pending_email,
+                AdminUser.id != me.id,
+            )
+        )
+        if dup.scalar_one_or_none():
+            # 검증은 성공했지만 새 이메일이 이미 다른 계정 — email 변경은 포기.
+            await session.flush()
+            return VerifyOut(ok=True, email=me.email)
+        me.email = row.pending_email
+
     await session.flush()
-    return VerifyOut(ok=True)
+    return VerifyOut(ok=True, email=me.email)
 
 
 async def _dispatch_verification_email(to_email: str, to_name: str, code: str) -> bool:

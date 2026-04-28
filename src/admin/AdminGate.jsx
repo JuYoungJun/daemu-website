@@ -107,7 +107,20 @@ export default function AdminGate() {
             <h1 className="page-title">Admin</h1>
             <EmailVerifyForm
               email={Auth.user()?.email || ''}
-              onVerified={() => setNeedsEmailVerify(false)}
+              onVerified={(newEmail) => {
+                // 검증 성공 시 user 객체의 email 도 갱신 (백엔드에서 user.email 이
+                // 새 이메일로 바뀌었기 때문). refreshMe 가 비동기로 동기화되지만
+                // 즉시 UI 일관성을 위해 로컬 캐시도 미리 업데이트.
+                try {
+                  const u = Auth.user();
+                  if (u && newEmail) {
+                    localStorage.setItem('daemu_admin_user', JSON.stringify({
+                      ...u, email: newEmail, email_verified_at: new Date().toISOString(),
+                    }));
+                  }
+                } catch { /* ignore */ }
+                setNeedsEmailVerify(false);
+              }}
               onLogout={onLogout}
             />
           </section>

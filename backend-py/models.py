@@ -357,6 +357,9 @@ class AdminEmailOtp(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 첫 접속 어드민이 새 이메일을 입력했을 때, 검증 완료 시 user.email
+    # 을 이 값으로 업데이트. None 이면 기존 user.email 그대로 유지.
+    pending_email: Mapped[str] = mapped_column(String(190), default="")
     ip: Mapped[str] = mapped_column(String(45), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 

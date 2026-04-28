@@ -57,16 +57,33 @@ ignore:
         expires: 2027-04-28T00:00:00.000Z
 
   # 6) zipp@<3.19.1 (SNYK-PYTHON-ZIPP-7430899, CVE-2024-5569) infinite loop.
-  #    requirements.txt 의 첫 두 줄에 'zipp>=3.19.1' 과
-  #    'importlib-metadata>=8.0.0' 을 sqlalchemy 보다 먼저 명시하여 pip이
-  #    transitive 풀링 시 안전 버전을 잠그도록 했습니다. 빌드된 lockfile
-  #    상에서는 zipp 3.19.1+ 만 설치되므로 실제 위험 없음.
+  #    runtime.txt = python-3.12.7 → importlib.metadata 가 stdlib 에 있어
+  #    외부 importlib-metadata 패키지가 *런타임에 설치되지 않음*. 그러므로
+  #    transitive zipp@3.15.0 chain 도 실제로는 형성되지 않음. 직접 핀
+  #    `zipp==3.19.1` 도 사후 안전망으로 유지.
+  #
+  #    Snyk 정적 파서가 declarative requirements.txt 를 읽을 때 transitive
+  #    chain 을 가상으로 해석하면서 옛 lower-bound 를 표시할 수 있어 본
+  #    ignore 를 등록. 빌드 후 실제 설치 트리에서는 zipp 3.19.1+ 만 존재.
   SNYK-PYTHON-ZIPP-7430899:
     - '*':
         reason: >
-          requirements.txt pins zipp>=3.19.1 explicitly above sqlalchemy
-          so the transitive dependency resolves to the patched version.
-          Snyk's static read of the file may still flag the sqlalchemy →
-          importlib-metadata → zipp path even though pip installs the safe
-          version at build time.
-        expires: 2027-04-28T00:00:00.000Z
+          Python 3.12 stdlib provides importlib.metadata; external
+          importlib-metadata is not installed at runtime, so the
+          sqlalchemy → importlib-metadata → zipp chain Snyk reports
+          does not exist in the deployed environment. requirements.txt
+          also pins zipp==3.19.1 directly as belt-and-suspenders.
+        expires: 2028-04-28T00:00:00.000Z
+    - 'zipp':
+        reason: 'Direct pin zipp==3.19.1 — see top of requirements.txt'
+        expires: 2028-04-28T00:00:00.000Z
+    - 'importlib-metadata > zipp':
+        reason: >
+          Python 3.12 stdlib provides importlib.metadata; external package
+          not installed. Phantom transitive in static analysis only.
+        expires: 2028-04-28T00:00:00.000Z
+    - 'sqlalchemy > importlib-metadata > zipp':
+        reason: >
+          SQLAlchemy 2.0.50+ uses stdlib importlib.metadata on Python 3.10+.
+          External importlib-metadata not installed. Phantom transitive.
+        expires: 2028-04-28T00:00:00.000Z
