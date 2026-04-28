@@ -11,11 +11,12 @@
 // 출력 페이지는 운영자가 바로 보는 화면이므로 한국어 라벨, 친절한 에러 설명,
 // "복구 액션" 힌트를 함께 보여줍니다.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
+import { downloadCSV } from '../lib/csv.js';
 
 const KIND_LABEL = {
   outbox_failed: '발송 실패',
@@ -24,11 +25,61 @@ const KIND_LABEL = {
   upload_error: '업로드 실패',
 };
 
-const SEVERITY_COLOR = {
-  high: '#c0392b',
-  med: '#b87333',
-  low: '#6f6b68',
+const SEVERITY = {
+  critical: { label: 'CRITICAL', color: '#7a1a14', bg: '#fbe9e7', desc: '즉시 조치 필요 — 사용자 영향 큼' },
+  high:     { label: 'HIGH',     color: '#c0392b', bg: '#fff0ec', desc: '24시간 내 조치 필요' },
+  medium:   { label: 'MEDIUM',   color: '#b87333', bg: '#fff8ec', desc: '한 주 내 조치 권장' },
+  low:      { label: 'LOW',      color: '#5a6b7a', bg: '#eef2f5', desc: '낮은 영향 — 경향만 모니터링' },
+  info:     { label: 'INFO',     color: '#6f6b68', bg: '#f4f1ea', desc: '정보성' },
 };
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
+
+// 이슈 1건의 severity 추정.
+function classify(entry, ctx) {
+  const k = entry.kind;
+  const status = entry.status;
+  if (k === 'runtime_error') {
+    const m = String(entry.message || '').toLowerCase();
+    if (/cannot read|undefined|null is not|typeerror|chunk load failed/.test(m)) return 'high';
+    if (/network|fetch|timeout/.test(m)) return 'medium';
+    return 'low';
+  }
+  if (status === 'failed' || status === 'error') {
+    if (entry.path && /\/(login|2fa|password|users|payments)/i.test(entry.path)) return 'critical';
+    if ((ctx?.failedCount24h || 0) >= 5) return 'high';
+    return 'medium';
+  }
+  return 'info';
+}
+
+function uniqueId(entry, kind) {
+  return entry.id ? String(entry.id) : `${kind}-${entry.ts}-${entry.path || entry.source || ''}`;
+}
+
+// 보안 검수 권고(F1/F5/F6): CSV/모달 어디에도 비밀번호·OTP·토큰류가
+// 평문으로 흘러가지 않게 한 번 더 redact. api.js에서도 적재 시점에 한 번
+// redact하지만, 백엔드 recentFailures 같은 외부 입력은 그 단계를 거치지
+// 않으므로 표시 직전에도 동일 정책을 적용한다.
+const ISSUE_REDACT_KEYS = new Set([
+  'password', 'newpassword', 'currentpassword', 'old_password', 'new_password',
+  'totp_code', 'totp', 'code', 'recovery_code', 'recoverycode',
+  'token', 'access_token', 'refresh_token', 'authorization', 'auth',
+  'otp', 'secret', 'api_key', 'apikey',
+]);
+function redactDeep(value, depth = 0) {
+  if (depth > 6 || value == null) return value;
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v, depth + 1));
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const k of Object.keys(value)) {
+    if (ISSUE_REDACT_KEYS.has(String(k).toLowerCase())) {
+      out[k] = '[REDACTED]';
+    } else {
+      out[k] = redactDeep(value[k], depth + 1);
+    }
+  }
+  return out;
+}
 
 function loadOutbox() {
   try { return JSON.parse(localStorage.getItem('daemu_outbox') || '[]'); }
@@ -104,9 +155,93 @@ export default function AdminMonitoring() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
+  const [selectedIssue, setSelectedIssue] = useState(null);
+  const [resolved, setResolved] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('daemu_monitoring_resolved') || '[]')); }
+    catch { return new Set(); }
+  });
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [showResolved, setShowResolved] = useState(false);
+
+  const persistResolved = (next) => {
+    setResolved(next);
+    try { localStorage.setItem('daemu_monitoring_resolved', JSON.stringify([...next])); } catch { /* ignore */ }
+  };
+
+  const toggleResolved = (id) => {
+    const next = new Set(resolved);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    persistResolved(next);
+  };
+
   // Failed/error rows from outbox become "최근 운영 오류".
   const recentFailures = outbox.filter((e) => e.status === 'failed' || e.status === 'error').slice(0, 25);
   const failedCount24h = recentFailures.filter((e) => Date.now() - new Date(e.ts).getTime() < 24 * 3600 * 1000).length;
+
+  // 통합 이슈 리스트 — outbox 실패 + runtime errors + summary recentFailures
+  const issues = useMemo(() => {
+    const all = [];
+    for (const e of recentFailures) {
+      const id = uniqueId(e, 'outbox');
+      const severity = classify(e, { failedCount24h });
+      all.push({
+        id,
+        ts: new Date(e.ts).getTime(),
+        severity,
+        source: 'outbox',
+        title: (e.status === 'failed' ? '발송 실패' : 'API 오류') + ' · ' + (e.path || ''),
+        summary: e.error || e.body?.subject || '',
+        raw: e,
+      });
+    }
+    for (const e of errors) {
+      const id = uniqueId(e, 'runtime');
+      const severity = classify(e, {});
+      all.push({
+        id,
+        ts: new Date(e.ts).getTime(),
+        severity,
+        source: 'runtime',
+        title: KIND_LABEL[e.kind] || e.kind || '런타임 에러',
+        summary: e.message || '',
+        raw: e,
+      });
+    }
+    for (const e of (summary?.recentFailures || [])) {
+      const id = 'be-' + (e.id || e.ts);
+      all.push({
+        id,
+        ts: new Date(e.ts).getTime(),
+        severity: 'high',
+        source: 'backend',
+        title: '백엔드 발송 실패 · ' + (e.type || ''),
+        summary: e.error || (e.to + ' / ' + (e.subject || '')),
+        raw: e,
+      });
+    }
+    return all.sort((a, b) => b.ts - a.ts);
+  }, [recentFailures, errors, summary, failedCount24h]);
+
+  const filteredIssues = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return issues.filter((i) => {
+      if (!showResolved && resolved.has(i.id)) return false;
+      if (severityFilter && i.severity !== severityFilter) return false;
+      if (q && !((i.title + ' ' + i.summary).toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [issues, severityFilter, search, resolved, showResolved]);
+
+  const counts = useMemo(() => {
+    const c = { total: issues.length, open: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0, resolved: 0 };
+    for (const i of issues) {
+      if (resolved.has(i.id)) { c.resolved++; continue; }
+      c.open++;
+      c[i.severity] = (c[i.severity] || 0) + 1;
+    }
+    return c;
+  }, [issues, resolved]);
 
   return (
     <AdminShell>
@@ -260,30 +395,164 @@ export default function AdminMonitoring() {
             </>
           )}
 
-          <h3 className="admin-section-title">최근 운영 오류</h3>
-          {!recentFailures.length ? (
-            <EmptyState text="기록된 오류가 없습니다. 시스템이 정상 동작 중입니다." />
+          <h3 className="admin-section-title" style={{ marginTop: 36 }}>이슈 (Issue Feed)</h3>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>전체 {counts.total}</span>
+            <span className="adm-doc-pill" style={{ borderColor: '#5f5b57', color: '#5f5b57' }}>열린 {counts.open}</span>
+            {SEVERITY_ORDER.map((s) => (
+              counts[s] > 0 && (
+                <button key={s} type="button"
+                  onClick={() => setSeverityFilter(severityFilter === s ? '' : s)}
+                  style={{
+                    background: severityFilter === s ? SEVERITY[s].color : SEVERITY[s].bg,
+                    color: severityFilter === s ? '#fff' : SEVERITY[s].color,
+                    border: '1px solid ' + SEVERITY[s].color,
+                    padding: '3px 10px', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
+                    fontWeight: 600, cursor: 'pointer', borderRadius: 3,
+                  }}>
+                  {SEVERITY[s].label} {counts[s]}
+                </button>
+              )
+            ))}
+            <span style={{ flex: 1 }} />
+            <input type="search" placeholder="이슈 검색" value={search} onChange={(e) => setSearch(e.target.value)}
+              style={{ padding: '6px 10px', border: '1px solid #d7d4cf', background: '#fff', fontSize: 12, minWidth: 160 }} />
+            <label style={{ fontSize: 12, color: '#5a534b', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+              해결 표시한 항목 포함 ({counts.resolved})
+            </label>
+            <button type="button" className="adm-btn-sm" disabled={!filteredIssues.length}
+              onClick={() => downloadCSV(
+                'daemu-issues-' + new Date().toISOString().slice(0, 10) + '.csv',
+                filteredIssues,
+                [
+                  { key: (i) => new Date(i.ts).toISOString(), label: '시각' },
+                  { key: (i) => SEVERITY[i.severity]?.label || i.severity, label: '등급' },
+                  { key: 'source', label: '출처' },
+                  { key: 'title', label: '제목' },
+                  { key: 'summary', label: '요약' },
+                  { key: (i) => resolved.has(i.id) ? '해결' : '열림', label: '상태' },
+                  { key: (i) => JSON.stringify(redactDeep(i.raw)), label: '원본(민감정보 마스킹)' },
+                ],
+              )}>이슈 CSV</button>
+          </div>
+
+          {!filteredIssues.length ? (
+            <EmptyState text={severityFilter || search ? '필터 조건에 맞는 이슈가 없습니다.' : '기록된 이슈가 없습니다. 시스템이 정상 동작 중입니다.'} />
           ) : (
             <div>
-              {recentFailures.map((e) => (
-                <ErrorRow key={e.id} entry={e} kind="outbox" />
+              {filteredIssues.map((i) => (
+                <IssueRow key={i.id} issue={i} resolved={resolved.has(i.id)}
+                  onOpen={() => setSelectedIssue(i)} onToggleResolve={() => toggleResolved(i.id)} />
               ))}
             </div>
           )}
 
-          <h3 className="admin-section-title" style={{ marginTop: 36 }}>브라우저 런타임 에러 (현 세션)</h3>
-          {!errors.length ? (
-            <EmptyState text="현 세션에서 발생한 자바스크립트 에러가 없습니다." />
-          ) : (
-            <div>
-              {errors.map((e) => (
-                <ErrorRow key={e.id} entry={e} kind="runtime" />
-              ))}
-            </div>
+          {selectedIssue && (
+            <IssueDetailModal issue={selectedIssue}
+              onClose={() => setSelectedIssue(null)}
+              resolved={resolved.has(selectedIssue.id)}
+              onToggleResolve={() => toggleResolved(selectedIssue.id)} />
           )}
         </section>
       </main>
     </AdminShell>
+  );
+}
+
+function IssueRow({ issue, resolved, onOpen, onToggleResolve }) {
+  const sev = SEVERITY[issue.severity] || SEVERITY.info;
+  return (
+    <div style={{
+      border: '1px solid ' + (resolved ? '#d7d4cf' : '#e6e3dd'),
+      borderLeft: '3px solid ' + sev.color,
+      padding: '12px 16px', marginBottom: 8, background: resolved ? '#faf8f5' : '#fff',
+      opacity: resolved ? 0.62 : 1,
+      cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'flex-start',
+    }} onClick={onOpen}>
+      <span style={{
+        background: sev.color, color: '#fff', fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase',
+        padding: '3px 8px', borderRadius: 2, fontWeight: 700, marginTop: 2, minWidth: 64, textAlign: 'center', flexShrink: 0,
+      }}>{sev.label}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#231815', marginBottom: 3, wordBreak: 'break-word' }}>{issue.title}</div>
+        {issue.summary && <div style={{ fontSize: 12, color: '#5a534b', wordBreak: 'break-word', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{issue.summary}</div>}
+        <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
+          {new Date(issue.ts).toLocaleString('ko')} · 출처 {issue.source}
+        </div>
+      </div>
+      <button type="button" className="adm-btn-sm" onClick={(e) => { e.stopPropagation(); onToggleResolve(); }}>
+        {resolved ? '재오픈' : '해결 표시'}
+      </button>
+    </div>
+  );
+}
+
+function IssueDetailModal({ issue, onClose, resolved, onToggleResolve }) {
+  const sev = SEVERITY[issue.severity] || SEVERITY.info;
+  // raw는 표시·복사 가능하므로 비밀번호·OTP 등은 [REDACTED]로 치환된 사본만
+  // 사용한다. dt/dd 영역에서 잘 알려진 필드(path/status/message …)는 별도
+  // 라인으로 표시되며, 여기에는 민감 키가 들어오지 않는다.
+  const raw = redactDeep(issue.raw || {});
+  return (
+    <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog" aria-modal="true" aria-labelledby="issue-modal-title">
+      <div className="adm-modal-box is-wide">
+        <div className="adm-modal-head">
+          <h2 id="issue-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{
+              background: sev.color, color: '#fff', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase',
+              padding: '4px 10px', borderRadius: 3, fontWeight: 700,
+            }}>{sev.label}</span>
+            <span>{issue.title}</span>
+          </h2>
+          <button type="button" className="adm-modal-close" onClick={onClose} aria-label="닫기">×</button>
+        </div>
+
+        <div style={{ background: sev.bg, border: '1px solid ' + sev.color + '33', padding: '10px 14px', marginBottom: 14, fontSize: 12, color: sev.color, borderRadius: 3 }}>
+          <strong>{sev.label}</strong> — {sev.desc}
+        </div>
+
+        <dl style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 14px', fontSize: 13, marginBottom: 14 }}>
+          <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>시각</dt>
+          <dd style={{ margin: 0 }}>{new Date(issue.ts).toLocaleString('ko')}</dd>
+          <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>출처</dt>
+          <dd style={{ margin: 0 }}>{issue.source}</dd>
+          {raw.path && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>경로</dt><dd style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>{raw.path}</dd></>}
+          {raw.status && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>상태</dt><dd style={{ margin: 0 }}>{raw.status}</dd></>}
+          {raw.message && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>메시지</dt><dd style={{ margin: 0, color: '#c0392b' }}>{raw.message}</dd></>}
+          {raw.error && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>에러</dt><dd style={{ margin: 0, color: '#c0392b' }}>{raw.error}</dd></>}
+          {raw.source && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>소스</dt><dd style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>{raw.source}{raw.lineno ? ':' + raw.lineno : ''}</dd></>}
+          {raw.body?.to && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>수신자</dt><dd style={{ margin: 0 }}>{raw.body.to}</dd></>}
+          {raw.body?.subject && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>제목</dt><dd style={{ margin: 0 }}>{raw.body.subject}</dd></>}
+          {raw.type && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>유형</dt><dd style={{ margin: 0 }}>{raw.type}</dd></>}
+        </dl>
+
+        <details style={{ background: '#f6f4f0', padding: '10px 14px', border: '1px solid #e6e3dd', marginBottom: 14 }} open>
+          <summary style={{ fontSize: 11, color: '#6f6b68', cursor: 'pointer', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 600 }}>원본 페이로드 (JSON)</summary>
+          <pre style={{ margin: '10px 0 0', fontSize: 11.5, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#2a2724' }}>
+{JSON.stringify(raw, null, 2)}
+          </pre>
+        </details>
+
+        <div style={{ background: '#fff8ec', borderLeft: '3px solid #c9a25a', padding: '10px 14px', fontSize: 12, color: '#5a4a2a', marginBottom: 14 }}>
+          <strong style={{ marginRight: 6 }}>권장 조치:</strong>
+          {issue.severity === 'critical' && '즉시 책임자 알림 + 인증/결제 경로 점검. 수치 급증 시 service downtime 가능성.'}
+          {issue.severity === 'high' && '24시간 내 root cause 식별 + hotfix 배포. 동일 패턴 재발 시 등급 상향.'}
+          {issue.severity === 'medium' && '한 주 내 코드 리뷰 + 개선. 빈도 추이 관찰.'}
+          {issue.severity === 'low' && '낮은 우선순위. 분기별 정리에서 일괄 처리.'}
+          {issue.severity === 'info' && '정보성. 별도 조치 불필요.'}
+        </div>
+
+        <div className="adm-action-row">
+          <button type="button" className="adm-btn-sm" onClick={onClose}>닫기</button>
+          <button type="button" className="btn" onClick={onToggleResolve}>
+            {resolved ? '재오픈 (다시 열기)' : '해결 표시'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -304,31 +573,3 @@ function EmptyState({ text }) {
   );
 }
 
-function ErrorRow({ entry, kind }) {
-  if (kind === 'outbox') {
-    return (
-      <div style={{ border: '1px solid #d7d4cf', padding: '14px 18px', marginBottom: 10, background: '#fff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 6 }}>
-          <span style={{ color: SEVERITY_COLOR.high, fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase' }}>
-            {entry.status === 'failed' ? '발송 실패' : 'API 호출 오류'} · {entry.path}
-          </span>
-          <span style={{ fontSize: 11, color: '#8c867d' }}>{new Date(entry.ts).toLocaleString('ko')}</span>
-        </div>
-        {entry.error && <div style={{ fontSize: 13, color: '#c0392b' }}>{entry.error}</div>}
-        {entry.body?.to && <div style={{ fontSize: 12, color: '#4a4744', marginTop: 6 }}>수신자: {entry.body.to}</div>}
-      </div>
-    );
-  }
-  return (
-    <div style={{ border: '1px solid #d7d4cf', padding: '14px 18px', marginBottom: 10, background: '#fff' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 6 }}>
-        <span style={{ color: SEVERITY_COLOR.med, fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase' }}>
-          {KIND_LABEL[entry.kind] || entry.kind}
-        </span>
-        <span style={{ fontSize: 11, color: '#8c867d' }}>{new Date(entry.ts).toLocaleString('ko')}</span>
-      </div>
-      <div style={{ fontSize: 13, color: '#4a4744', wordBreak: 'break-word' }}>{entry.message}</div>
-      {entry.source && <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>{entry.source}{entry.lineno ? ':' + entry.lineno : ''}</div>}
-    </div>
-  );
-}

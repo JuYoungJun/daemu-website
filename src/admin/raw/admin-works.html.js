@@ -70,12 +70,20 @@ export default `<main class="page fade-up">
           <div class="adm-form" style="margin-bottom:32px">
             <div class="full" id="hero-slot-wrap">
               <label>히어로 이미지 (1장) <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">work-detail 상단 메인 이미지</span></label>
-              <input type="file" id="f-hero-file" accept="image/*" onchange="addHeroImage(this.files)">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+                <button type="button" class="adm-btn-sm" onclick="pickHeroFromLibrary()">미디어 라이브러리에서 선택</button>
+                <span style="font-size:11px;color:#8c867d">또는 파일 업로드</span>
+                <input type="file" id="f-hero-file" accept="image/*" onchange="addHeroImage(this.files)">
+              </div>
               <div class="adm-thumb-row" id="f-hero-thumb"></div>
             </div>
             <div class="full">
               <label>갤러리 이미지 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">여러 장 (자동 최적화 · 1920px 캡)</span></label>
-              <input type="file" id="f-files" accept="image/*" multiple onchange="addImages(this.files)">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+                <button type="button" class="adm-btn-sm" onclick="pickGalleryFromLibrary()">미디어 라이브러리에서 선택</button>
+                <span style="font-size:11px;color:#8c867d">또는 파일 업로드</span>
+                <input type="file" id="f-files" accept="image/*" multiple onchange="addImages(this.files)">
+              </div>
               <div class="adm-thumb-row" id="f-thumbs"></div>
             </div>
             <div class="full"><label>설명 <span style="text-transform:none;letter-spacing:0;color:#8c867d;font-size:11px">Work 카드 노출용 짧은 설명</span></label><textarea id="f-desc" placeholder="프로젝트 카드 노출용 짧은 설명"></textarea></div>

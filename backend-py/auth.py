@@ -153,6 +153,9 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "outbox":        {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ, ROLE_DEVELOPER: _READ},
     "mail-template": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
     "content":       {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL},
+    # Partner brand logos shown on the public Home page (display only,
+    # different from partner login accounts under "partners" key).
+    "partner-brands": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
     "newsletter":    {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
     # Operational health / error monitoring page (read-only).
     "monitoring":    {ROLE_ADMIN: _READ, ROLE_DEVELOPER: _READ},

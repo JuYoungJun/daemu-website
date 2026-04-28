@@ -1,8 +1,24 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useExternalScript } from '../hooks/useExternalScript.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd, faqLd } from '../lib/seo.js';
 import PromotionBanner from '../components/PromotionBanner.jsx';
+import { safeUrl, safeMediaUrl } from '../lib/safe.js';
+
+const PARTNER_STORAGE_KEY = 'daemu_partner_brands';
+
+function loadPartnerBrands() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PARTNER_STORAGE_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((b) => b && b.active !== false && b.name)
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  } catch {
+    return [];
+  }
+}
 // R-02: Organization/LocalBusiness/WebSite live in index.html as the static
 // @graph — single source of truth. Don't re-inject them on Home.
 
@@ -17,6 +33,16 @@ const HOME_FAQS = [
 
 export default function Home() {
   useExternalScript('/home.js', []);
+  const [partnerBrands, setPartnerBrands] = useState(() => loadPartnerBrands());
+  useEffect(() => {
+    const refresh = () => setPartnerBrands(loadPartnerBrands());
+    window.addEventListener('storage', refresh);
+    window.addEventListener('daemu-db-change', refresh);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('daemu-db-change', refresh);
+    };
+  }, []);
   useSeo({
     title: '베이커리 · 카페 비즈니스 파트너',
     description: '대무는 전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사입니다. 브랜드 전략부터 메뉴 개발, 공간 설계, 운영까지 카페 비즈니스의 구조를 함께 설계합니다.',
@@ -300,6 +326,32 @@ export default function Home() {
             <p className="home-partners-desc">대무와 함께 브랜드를 만들어가는 협업 파트너입니다.</p>
           </div>
           <div className="home-partners-grid" id="home-partners-grid">
+            {partnerBrands.map((b) => {
+              const safeLogo = safeMediaUrl(b.logo);
+              const safeLink = safeUrl(b.url);
+              const card = (
+                <div className="home-partner-card">
+                  {safeLogo ? (
+                    <img src={safeLogo} alt={String(b.name || '')} loading="lazy"
+                      style={{ maxWidth: '78%', maxHeight: 64, objectFit: 'contain' }} />
+                  ) : (
+                    <p className="home-partner-card-text" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}>
+                      {String(b.name || '')}
+                    </p>
+                  )}
+                </div>
+              );
+              return safeLink ? (
+                <a key={b.id} href={safeLink} target="_blank" rel="noopener noreferrer"
+                  className="home-partner-card-link"
+                  data-track="cta_click" data-track-label={`home-partner-${b.id}`}
+                  style={{ textDecoration: 'none' }}>
+                  {card}
+                </a>
+              ) : (
+                <div key={b.id}>{card}</div>
+              );
+            })}
             <div className="home-partner-card home-partner-card--coming">
               <div className="home-partner-card-icon">
                 <svg viewBox="0 0 40 40" width="40" height="40">

@@ -12,6 +12,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
+import { downloadCSV } from '../lib/csv.js';
 
 const KIND_LABEL = { contract: '계약서', purchase_order: '발주서' };
 const STATUS_LABEL = {
@@ -592,6 +593,22 @@ function DocumentsPane({ documents, templates, onChange, isAdmin, loading, onOpe
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <span style={{ fontSize: 11, color: '#8c867d', marginLeft: 'auto' }}>{filtered.length}건</span>
+        <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+          onClick={() => downloadCSV(
+            'daemu-documents-' + new Date().toISOString().slice(0, 10) + '.csv',
+            filtered,
+            [
+              { key: 'id', label: 'ID' },
+              { key: (d) => KIND_LABEL[d.kind] || d.kind, label: '종류' },
+              { key: (d) => STATUS_LABEL[d.status] || d.status, label: '상태' },
+              { key: 'title', label: '제목' },
+              { key: 'subject', label: '메일제목' },
+              { key: (d) => (d.recipients || []).map((r) => `${r.name || ''} <${r.email || ''}>`).join('; '), label: '수신자' },
+              { key: (d) => d.created_at ? new Date(d.created_at).toISOString() : '', label: '작성일' },
+              { key: (d) => d.sent_at ? new Date(d.sent_at).toISOString() : '', label: '발송일' },
+              { key: (d) => d.signed_at ? new Date(d.signed_at).toISOString() : '', label: '서명일' },
+            ],
+          )}>CSV 내보내기</button>
       </div>
 
       {loading && <p style={{ color: '#8c867d', fontSize: 12 }}>불러오는 중…</p>}
@@ -1265,9 +1282,33 @@ function renderPaperBody(text) {
 function DocPaperPreview({ kind, title, subject, body, recipients, status, createdAt, signatures }) {
   const draft = status === 'draft' || status === 'sent' || status === 'viewed';
   const wmText = status === 'draft' ? 'DRAFT' : (status === 'sent' || status === 'viewed') ? '발송본' : '';
+  // 화면 미리보기용 줌 — 0=fit(컨테이너 폭에 맞춤), 1=실제 A4(210mm)
+  // 'fit'이 기본. 인쇄·PDF 저장 시는 print CSS에서 무조건 1배 A4로 출력됨.
+  const [zoom, setZoom] = useState('fit');
+  const stageClass = 'adm-paper-stage adm-paper-stage--' + (zoom === 'fit' ? 'fit' : 'zoom');
+  const sheetStyle = zoom === 'fit'
+    ? undefined
+    : { transform: `scale(${zoom})`, transformOrigin: 'top center' };
   return (
-    <div className="adm-paper-stage">
-      <div className={`adm-paper-sheet adm-paper-sheet--${kind}`}>
+    <div className="adm-paper-frame">
+      <div className="adm-paper-toolbar" role="toolbar" aria-label="미리보기 표시 옵션">
+        <span className="adm-paper-toolbar-label">표시</span>
+        <button type="button"
+          className={'adm-paper-zoom-btn' + (zoom === 'fit' ? ' is-active' : '')}
+          onClick={() => setZoom('fit')}>화면 맞춤</button>
+        <button type="button"
+          className={'adm-paper-zoom-btn' + (zoom === 0.75 ? ' is-active' : '')}
+          onClick={() => setZoom(0.75)}>75%</button>
+        <button type="button"
+          className={'adm-paper-zoom-btn' + (zoom === 1 ? ' is-active' : '')}
+          onClick={() => setZoom(1)}>100% (A4)</button>
+        <button type="button"
+          className={'adm-paper-zoom-btn' + (zoom === 1.25 ? ' is-active' : '')}
+          onClick={() => setZoom(1.25)}>125%</button>
+        <span className="adm-paper-toolbar-hint">PDF/인쇄는 항상 실제 A4 크기로 저장됩니다</span>
+      </div>
+    <div className={stageClass}>
+      <div className={`adm-paper-sheet adm-paper-sheet--${kind}`} style={sheetStyle}>
         {draft && wmText && <div className="adm-paper-watermark">{wmText}</div>}
         <header className="adm-paper-head">
           <div className="adm-paper-brand">
@@ -1332,6 +1373,7 @@ function DocPaperPreview({ kind, title, subject, body, recipients, status, creat
           <div>daemu_office@naver.com · 061-335-1239</div>
         </footer>
       </div>
+    </div>
     </div>
   );
 }

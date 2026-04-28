@@ -121,6 +121,25 @@ export default function AdminAnalytics() {
 
   const maxTrend = Math.max(1, ...trend.map(([, n]) => n));
 
+  // 이전 기간 대비 변화량 (KPI delta)
+  const prevCutoffStart = cutoff - windowDays * 86400 * 1000;
+  const prevPeriod = events.filter((e) => (e.ts || 0) >= prevCutoffStart && (e.ts || 0) < cutoff);
+  const prevPV = prevPeriod.filter((e) => e.name === 'pageview').length;
+  const pvDelta = prevPV ? Math.round(((pageviews.length - prevPV) / prevPV) * 100) : null;
+  const prevSessions = new Set(prevPeriod.filter((e) => e.name === 'pageview').map((e) => e.session));
+  const sessDelta = prevSessions.size ? Math.round(((sessions.size - prevSessions.size) / prevSessions.size) * 100) : null;
+
+  // 인사이트 한 줄
+  const peakHour = hourBuckets.reduce((acc, x) => x.n > acc.n ? x : acc, { h: 0, n: 0 });
+  const peakWeekday = weekdayBuckets.reduce((acc, x) => x.n > acc.n ? x : acc, { d: 0, n: 0 });
+  const topPage = topPages[0];
+  const insightLines = [];
+  if (peakHour.n) insightLines.push(`피크 시간대 — ${peakHour.h}시 (${peakHour.n}회)`);
+  if (peakWeekday.n) insightLines.push(`피크 요일 — ${WEEKDAY_LABEL[peakWeekday.d]}요일 (${peakWeekday.n}회)`);
+  if (topPage) insightLines.push(`가장 많이 본 페이지 — ${topPage[0]} (${topPage[1]}회)`);
+
+  const hasAnyData = filtered.length > 0;
+
   // CSV 내보내기
   const exportCsv = () => {
     downloadCSV('daemu-analytics-' + new Date().toISOString().slice(0, 10) + '.csv', filtered, [
@@ -178,15 +197,35 @@ export default function AdminAnalytics() {
             <button type="button" className="adm-btn-sm danger" onClick={clearAll}>전체 데이터 삭제</button>
           </div>
 
-          {/* 1행 KPI */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 22 }}>
-            <KPI label="페이지뷰" value={pageviews.length.toLocaleString('ko')} />
-            <KPI label="세션 수" value={sessions.size.toLocaleString('ko')} />
-            <KPI label="평균 체류 시간" value={avgDwell + '초'} />
-            <KPI label="CTA 클릭" value={ctaClicks.toLocaleString('ko')} />
-            <KPI label="폼 제출" value={formSubmits.toLocaleString('ko')} />
-            <KPI label="총 이벤트" value={filtered.length.toLocaleString('ko')} />
-          </div>
+          {!hasAnyData ? (
+            <div style={{ background: '#fff', border: '1px dashed #d7d4cf', padding: '60px 24px', textAlign: 'center', color: '#8c867d', marginBottom: 22 }}>
+              <div style={{ fontSize: 22, fontFamily: "'Cormorant Garamond', Georgia, serif", color: '#231815', marginBottom: 8 }}>아직 수집된 트래픽이 없습니다</div>
+              <p style={{ fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                다른 탭/창에서 사이트를 둘러보면 여기에 자동으로 누적됩니다.<br />
+                위 기간 셀렉터를 늘려보거나, <strong>홈/서비스/문의</strong> 페이지를 한 번씩 들러주세요.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* 1행 KPI — 큰 숫자 + 전기간 대비 변화율 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
+                <KPI label="페이지뷰" value={pageviews.length.toLocaleString('ko')} delta={pvDelta} />
+                <KPI label="세션 수" value={sessions.size.toLocaleString('ko')} delta={sessDelta} />
+                <KPI label="평균 체류 시간" value={avgDwell + '초'} />
+                <KPI label="CTA 클릭" value={ctaClicks.toLocaleString('ko')} />
+                <KPI label="폼 제출" value={formSubmits.toLocaleString('ko')} accent={formSubmits > 0 ? '#2e7d32' : undefined} />
+                <KPI label="총 이벤트" value={filtered.length.toLocaleString('ko')} />
+              </div>
+
+              {/* 인사이트 1줄 요약 */}
+              {insightLines.length > 0 && (
+                <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', borderLeft: '3px solid #c9a25a', padding: '12px 18px', marginBottom: 22, fontSize: 12.5, lineHeight: 1.85, color: '#5a4a2a' }}>
+                  <strong style={{ marginRight: 8, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>이 기간 인사이트</strong>
+                  {insightLines.join(' · ')}
+                </div>
+              )}
+            </>
+          )}
 
           {/* 일자별 트렌드 */}
           <h3 className="admin-section-title">일자별 페이지뷰 추이</h3>
@@ -205,7 +244,7 @@ export default function AdminAnalytics() {
 
           {/* 시간대 / 요일별 트래픽 */}
           <h3 className="admin-section-title">트래픽 시간대 / 요일</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 22 }}>
+          <div className="adm-analytics-pair" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 14, marginBottom: 22 }}>
             {/* 시간대 24개 */}
             <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 16 }}>
               <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 12 }}>시간대 (0~23시) 페이지뷰</div>
@@ -313,11 +352,21 @@ export default function AdminAnalytics() {
   );
 }
 
-function KPI({ label, value }) {
+function KPI({ label, value, delta, accent }) {
+  const deltaColor = delta == null ? '#b9b5ae' : delta > 0 ? '#2e7d32' : delta < 0 ? '#c0392b' : '#8c867d';
+  const deltaSign = delta == null ? '' : delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : '— ';
   return (
-    <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: '16px 18px' }}>
+    <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: '18px 20px', borderTop: accent ? `2px solid ${accent}` : undefined }}>
       <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: "'Cormorant Garamond', Georgia, serif", fontWeight: 500, letterSpacing: '-.01em', color: '#231815' }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 28, fontFamily: "'Cormorant Garamond', Georgia, serif", fontWeight: 500, letterSpacing: '-.01em', color: accent || '#231815', lineHeight: 1.1 }}>{value}</div>
+        {delta != null && (
+          <span style={{ fontSize: 11, color: deltaColor, letterSpacing: '.04em', fontWeight: 600 }}>
+            {deltaSign}{Math.abs(delta)}%
+            <span style={{ color: '#b9b5ae', fontWeight: 400, marginLeft: 4 }}>전기간 대비</span>
+          </span>
+        )}
+      </div>
     </div>
   );
 }

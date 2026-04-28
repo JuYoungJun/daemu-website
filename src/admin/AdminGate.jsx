@@ -189,6 +189,7 @@ export default function AdminGate() {
   // Permission map mirrors backend auth.PERMISSIONS — keep in sync.
   const PERM = {
     'content':       ['admin', 'developer'],
+    'partner-brands':['admin', 'developer', 'tester'],
     'works':         ['admin', 'developer', 'tester'],
     'inquiries':     ['admin', 'tester'],
     'partners':      ['admin'],
@@ -253,6 +254,7 @@ export default function AdminGate() {
             <h3 className="admin-section-title">관리 메뉴</h3>
             <div className="admin-menu-grid">
               {can('content')   && <MenuCard to="/admin/content" title="콘텐츠 관리" desc="연혁, 소개, 서비스 등 사이트 콘텐츠를 수정합니다." items={['회사 소개 수정','연혁 관리','서비스 항목 편집','프로세스 내용 수정']} />}
+              {can('partner-brands') && <MenuCard to="/admin/partner-brands" title="함께하는 파트너사" desc="Home 페이지 '함께하는 파트너사' 섹션에 노출되는 협업 파트너 로고를 관리합니다." items={['파트너 로고 등록·수정','노출 순서 조정 (↑↓)','외부 링크 연결','노출/비활성 토글','즉시 사이트 반영']} />}
               {can('works')     && <MenuCard to="/admin/works" title="작업사례 관리" desc="포트폴리오 및 작업사례를 등록하고 수정합니다." items={['작업사례 등록','기존 사례 수정','이미지 업로드','게시 상태 관리']} />}
               {can('inquiries') && <MenuCard to="/admin/inquiries" title="상담/문의 관리" desc="고객 상담 신청 및 문의 내역을 확인하고 관리합니다." items={['신규 문의 확인','상담 상태 관리','메일 자동회신 설정','문의 이력 검색']} />}
               {can('partners')  && <MenuCard to="/admin/partners" title="파트너 계정 관리" desc="파트너 계정 발급, 권한 설정, 승인을 관리합니다." items={['신규 계정 발급','계정 승인/거절','역할 및 권한 설정','계정 비활성화']} />}

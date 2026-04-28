@@ -147,6 +147,19 @@
   function removeImage(i) { pendingImages.splice(i, 1); renderThumbs(); }
   function removeHero() { pendingHero = null; renderHeroThumb(); }
 
+  async function pickHeroFromLibrary() {
+    if (!window.openMediaPicker) { alert('미디어 라이브러리를 사용할 수 없습니다.'); return; }
+    const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+    if (url) { pendingHero = url; renderHeroThumb(); }
+  }
+  async function pickGalleryFromLibrary() {
+    if (!window.openMediaPicker) { alert('미디어 라이브러리를 사용할 수 없습니다.'); return; }
+    const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+    if (url) { pendingImages.push({ name: '미디어 라이브러리', src: url }); renderThumbs(); }
+  }
+  window.pickHeroFromLibrary = pickHeroFromLibrary;
+  window.pickGalleryFromLibrary = pickGalleryFromLibrary;
+
   function openAdd() {
     editingId = null;
     pendingImages = [];

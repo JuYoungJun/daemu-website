@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminShell from '../components/AdminShell.jsx';
 import { Link } from 'react-router-dom';
+import { downloadCSV } from '../lib/csv.js';
 
 const STATUS_LABEL = {
   simulated: '시뮬레이션',
@@ -53,6 +54,23 @@ export default function AdminOutbox() {
             <input type="search" placeholder="검색 (제목·수신자·내용)" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <span className="spacer"></span>
             <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.08em'}}>{filtered.length}건</span>
+            <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+              onClick={() => downloadCSV(
+                'daemu-outbox-' + new Date().toISOString().slice(0, 10) + '.csv',
+                filtered,
+                [
+                  { key: 'id', label: 'ID' },
+                  { key: (e) => new Date(e.ts).toISOString(), label: '시각' },
+                  { key: 'status', label: '상태' },
+                  { key: 'path', label: '경로' },
+                  { key: (e) => e?.body?.to || '', label: 'To' },
+                  { key: (e) => e?.body?.toName || '', label: 'ToName' },
+                  { key: (e) => e?.body?.subject || '', label: '제목' },
+                  { key: (e) => e?.body?.recipients ? e.body.recipients.length : '', label: '수신자수' },
+                  { key: (e) => (e?.body?.body || '').slice(0, 500), label: '본문(앞500자)' },
+                  { key: 'error', label: '오류' },
+                ],
+              )}>CSV 내보내기</button>
             <button type="button" className="adm-btn-sm danger" onClick={clear}>로그 비우기</button>
           </div>
 

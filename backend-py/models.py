@@ -329,6 +329,80 @@ class NewsletterSubscriber(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+class AdminEmailOtp(Base):
+    """6-digit email OTP for admin login (B1 scaffolding).
+
+    Issued only when AUTH_EMAIL_OTP_ENABLED=true and RESEND_API_KEY is set.
+    The hash is sha256 of the cleartext code; never log or store cleartext.
+    Cleanup cron prunes rows older than 1h.
+    """
+    __tablename__ = "admin_email_otp"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    ip: Mapped[str] = mapped_column(String(45), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class SuspiciousEvent(Base):
+    """B2 — 의심행위(추정) 보존. 개인정보보호법 호환을 위해 보존 정책 명문화 필수.
+
+    수집 항목 (보존 기간 90일 기본 / evidence flag = true 시 365일):
+      - actor identifiers (IP, UA hash) — pseudonymous, not raw PII
+      - request fingerprint (path, method, status, request_id)
+      - reason ("brute_force_login", "scrape_pattern", "csrf_violation",
+        "unauthorized_admin_attempt", "abnormal_payload" …)
+      - severity (low / medium / high / critical)
+
+    "evidence" 플래그가 true인 row만 자동 삭제 cron에서 제외됩니다.
+    법적 절차(고소 등)에 사용할 row는 운영자가 명시적으로 evidence=true 설정.
+    """
+    __tablename__ = "suspicious_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="medium", index=True)
+    reason: Mapped[str] = mapped_column(String(80), index=True)
+    ip: Mapped[str] = mapped_column(String(45), default="", index=True)
+    user_agent_hash: Mapped[str] = mapped_column(String(64), default="")
+    path: Mapped[str] = mapped_column(String(255), default="")
+    method: Mapped[str] = mapped_column(String(10), default="")
+    status_code: Mapped[int] = mapped_column(Integer, default=0)
+    request_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
+    detail: Mapped[dict | list | None] = mapped_column(JSON, default=dict)
+    # evidence=true → 보존 정책 무시(법적 사유), 운영자가 수동 raise할 때만
+    evidence: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    evidence_note: Mapped[str] = mapped_column(String(255), default="")
+    # operator가 결정 후 잠금 (변경 불가) — 위변조 방지
+    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sealed_by: Mapped[str] = mapped_column(String(190), default="")
+
+
+class MailTemplateLib(Base):
+    """B1 — 어드민이 여러 메일 템플릿을 저장/관리.
+
+    기존 MailTemplate(단일 row)을 보완. 템플릿 라이브러리는 단체메일 발송 시
+    선택해 사용. variables는 {{var_name}} 자리표시자.
+    """
+    __tablename__ = "mail_template_lib"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    category: Mapped[str] = mapped_column(String(40), default="general")
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    variables: Mapped[list | dict | None] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(190), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class AuditLog(Base):
     """접속기록 / 권한변경 / 인증이력 — 개인정보 보호법 제29조 안전성 확보 조치 준수.
     Retain ≥ 1년. The retention cron in main.py keeps these untouched so they

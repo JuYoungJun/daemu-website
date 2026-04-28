@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AdminShell from '../components/AdminShell.jsx';
 import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
+import { downloadCSV } from '../lib/csv.js';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_DESC = {
@@ -126,7 +127,24 @@ export default function AdminUsers() {
 
           {error && <div style={{ color: '#b04a3b', fontSize: 13, marginBottom: 16 }}>{error}</div>}
 
-          <h3 className="admin-section-title">계정 목록 ({items.length})</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <h3 className="admin-section-title" style={{ margin: 0 }}>계정 목록 ({items.length})</h3>
+            <span style={{ flex: 1 }} />
+            <button type="button" className="adm-btn-sm" disabled={!items.length}
+              onClick={() => downloadCSV(
+                'daemu-users-' + new Date().toISOString().slice(0, 10) + '.csv',
+                items,
+                [
+                  { key: 'id', label: 'ID' },
+                  { key: 'email', label: '이메일' },
+                  { key: 'name', label: '이름' },
+                  { key: (u) => ROLE_LABEL[u.role] || u.role, label: '권한' },
+                  { key: (u) => u.active ? '활성' : '비활성', label: '상태' },
+                  { key: (u) => u.created_at ? new Date(u.created_at).toISOString() : '', label: '가입일' },
+                  { key: (u) => u.last_login_at ? new Date(u.last_login_at).toISOString() : '', label: '최근로그인' },
+                ],
+              )}>CSV 내보내기</button>
+          </div>
           <div className="adm-table-wrap" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>

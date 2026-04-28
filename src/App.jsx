@@ -11,6 +11,7 @@ import Splash from './components/Splash.jsx';
 import DialogHost from './components/DialogHost.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieConsent from './components/CookieConsent.jsx';
+import SitePopupOverlay from './components/SitePopupOverlay.jsx';
 import { useSplash } from './hooks/useSplash.js';
 import { useSitePopups } from './hooks/useSitePopups.js';
 
@@ -55,6 +56,7 @@ const AdminContracts = lazy(() => import('./admin/AdminContracts.jsx'));
 const AdminProducts = lazy(() => import('./admin/AdminProducts.jsx'));
 const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics.jsx'));
 const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
+const AdminPartnerBrands = lazy(() => import('./admin/AdminPartnerBrands.jsx'));
 const SignDocument = lazy(() => import('./pages/SignDocument.jsx'));
 
 const AdminFallback = () => (
@@ -175,7 +177,7 @@ export default function App() {
   const popupKey = (!isAdmin && !isError && !showSplash)
     ? (PUBLIC_PAGE_KEYS[location.pathname] || (location.pathname.startsWith('/work/') ? 'work' : 'home'))
     : null;
-  useSitePopups(popupKey);
+  const popup = useSitePopups(popupKey);
 
   return (
     <ErrorBoundary>
@@ -185,6 +187,7 @@ export default function App() {
       <LinkInterceptor />
       <DialogHost />
       <CookieConsent />
+      {popup && <SitePopupOverlay popup={popup} />}
       <Splash key={(isAdmin || isError) ? 'no-splash-zone' : 'public-zone'} show={showSplash && !isAdmin && !isError} />
       <Routes>
         <Route path="/" element={<PublicRoute pageKey="home"><Home /></PublicRoute>} />
@@ -218,6 +221,7 @@ export default function App() {
         <Route path="/admin/products" element={wrap(<RequireAuth><AdminProducts /></RequireAuth>)} />
         <Route path="/admin/analytics" element={wrap(<RequireAuth><AdminAnalytics /></RequireAuth>)} />
         <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
+        <Route path="/admin/partner-brands" element={wrap(<RequireAuth><AdminPartnerBrands /></RequireAuth>)} />
 
         {/* Public e-sign page — no auth, sign_token in path. */}
         <Route path="/sign/:token" element={wrap(<SignDocument />)} />

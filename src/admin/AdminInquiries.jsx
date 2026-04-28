@@ -19,6 +19,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
 import { DB } from '../lib/db.js';
 import { sendAdminReply, isEmailEnabled } from '../lib/email.js';
+import { downloadCSV } from '../lib/csv.js';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -199,6 +200,25 @@ export default function AdminInquiries() {
             <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['답변완료'], color: STATUS_PILL_COLOR['답변완료'] }}>답변완료 {counts.done}</span>
             <span style={{ flex: 1 }} />
             <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '새로고침'}</button>
+            <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+              onClick={() => downloadCSV(
+                'daemu-inquiries-' + new Date().toISOString().slice(0, 10) + '.csv',
+                filtered,
+                [
+                  { key: 'id', label: 'ID' },
+                  { key: 'name', label: '이름' },
+                  { key: 'phone', label: '연락처' },
+                  { key: 'email', label: '이메일' },
+                  { key: 'type', label: '카테고리' },
+                  { key: 'status', label: '상태' },
+                  { key: 'open', label: '오픈시기' },
+                  { key: 'brand', label: '브랜드' },
+                  { key: 'region', label: '지역' },
+                  { key: 'msg', label: '문의내용' },
+                  { key: 'reply', label: '회신메모' },
+                  { key: 'date', label: '접수일' },
+                ],
+              )}>CSV 내보내기</button>
             <button type="button" className="btn" onClick={() => setCreating(true)}>+ 새 문의(메모)</button>
           </div>
 

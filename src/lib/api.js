@@ -80,6 +80,31 @@ export const api = {
   },
 };
 
+// 보안 검수 권고(F1/F5): localStorage outbox에는 비밀번호·OTP·토큰류
+// cleartext가 절대 적재되지 않도록 발송 직전에 redact한다.
+// 운영자가 모니터링 모달이나 CSV로 export해도 [REDACTED]만 보임.
+const REDACT_KEYS = new Set([
+  'password', 'newpassword', 'currentpassword', 'old_password', 'new_password',
+  'totp_code', 'totp', 'code', 'recovery_code', 'recoverycode',
+  'token', 'access_token', 'refresh_token', 'authorization', 'auth',
+  'otp', 'secret', 'api_key', 'apikey',
+]);
+
+function redactForLog(value, depth = 0) {
+  if (depth > 6 || value == null) return value;
+  if (Array.isArray(value)) return value.map((v) => redactForLog(v, depth + 1));
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const k of Object.keys(value)) {
+    if (REDACT_KEYS.has(String(k).toLowerCase())) {
+      out[k] = '[REDACTED]';
+    } else {
+      out[k] = redactForLog(value[k], depth + 1);
+    }
+  }
+  return out;
+}
+
 function logOutbox(path, body, status, extra = {}) {
   try {
     const key = 'daemu_outbox';
@@ -88,7 +113,7 @@ function logOutbox(path, body, status, extra = {}) {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       ts: new Date().toISOString(),
       path,
-      body,
+      body: redactForLog(body),
       status,
       ...extra
     });

@@ -20,6 +20,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { ensureSeededProducts, getActiveCatalog } from '../lib/partnerProducts.js';
 import { safeMediaUrl } from '../lib/safe.js';
 import ProductThumb from './ProductThumb.jsx';
+import { downloadCSV } from '../lib/csv.js';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -137,6 +138,22 @@ export default function AdminProducts() {
             <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>카테고리 {catalog.length}</span>
             <span className="adm-doc-pill" style={{ borderColor: '#1f5e7c', color: '#1f5e7c' }}>상품 {totalItems}</span>
             <span style={{ flex: 1 }} />
+            <button type="button" className="adm-btn-sm" disabled={!totalItems}
+              onClick={() => downloadCSV(
+                'daemu-products-' + new Date().toISOString().slice(0, 10) + '.csv',
+                catalog.flatMap((c) => (c.items || []).map((it) => ({ ...it, _category: c.category }))),
+                [
+                  { key: '_category', label: '카테고리' },
+                  { key: 'sku', label: 'SKU' },
+                  { key: 'name', label: '상품명' },
+                  { key: 'unit', label: '단위' },
+                  { key: 'price', label: '가격' },
+                  { key: 'stock', label: '재고' },
+                  { key: 'emoji', label: '이모지' },
+                  { key: 'image', label: '이미지URL' },
+                  { key: 'desc', label: '설명' },
+                ],
+              )}>CSV 내보내기</button>
             <button type="button" className="btn" onClick={() => setCreatingCategory(true)}>+ 카테고리 추가</button>
           </div>
 
