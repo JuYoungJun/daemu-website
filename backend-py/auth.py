@@ -156,6 +156,10 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "newsletter":    {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
     # Operational health / error monitoring page (read-only).
     "monitoring":    {ROLE_ADMIN: _READ, ROLE_DEVELOPER: _READ},
+    # Contract / PO documents — only super admin can write/send/cancel.
+    # Sub-admin (tester) gets read-only so they can monitor signing status.
+    "documents":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
+    "document-templates": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _READ},
 }
 
 

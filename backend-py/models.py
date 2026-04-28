@@ -240,6 +240,72 @@ class ContentBlock(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class DocumentTemplate(Base):
+    """계약서 / 발주서 템플릿. body는 {{변수}} 플레이스홀더를 가진 텍스트.
+    kind: contract | purchase_order
+    """
+    __tablename__ = "document_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(190))
+    kind: Mapped[str] = mapped_column(String(24), default="contract", index=True)
+    subject: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    variables: Mapped[list | dict | None] = mapped_column(JSON, default=list)  # ["clientName","amount",...]
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Document(Base):
+    """생성된 계약서 / 발주서. 템플릿에서 변수가 치환된 final body를 보관."""
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("document_templates.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(24), default="contract", index=True)  # contract | purchase_order
+    title: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    variables: Mapped[list | dict | None] = mapped_column(JSON, default=dict)
+    # Recipients — multiple supported. Each entry: {name, email, role}.
+    recipients: Mapped[list | dict | None] = mapped_column(JSON, default=list)
+    # Linked entities (optional) — kept loose so admins can reference any source.
+    crm_id: Mapped[int | None] = mapped_column(ForeignKey("crm_customers.id"), nullable=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
+    work_id: Mapped[int | None] = mapped_column(ForeignKey("works.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    # status: draft | sent | viewed | signed | canceled
+    sign_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    first_viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    canceled_reason: Mapped[str] = mapped_column(String(255), default="")
+    history: Mapped[list | dict | None] = mapped_column(JSON, default=list)  # audit trail
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class DocumentSignature(Base):
+    """문서 서명 기록. 동일 문서에 여러 서명자가 가능하므로 별도 테이블."""
+    __tablename__ = "document_signatures"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    signer_name: Mapped[str] = mapped_column(String(120))
+    signer_email: Mapped[str] = mapped_column(String(190), default="", index=True)
+    signature_data: Mapped[str] = mapped_column(Text, default="")  # data URL of canvas drawing
+    consented: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_text: Mapped[str] = mapped_column(Text, default="")
+    ip: Mapped[str] = mapped_column(String(45), default="")
+    user_agent: Mapped[str] = mapped_column(String(255), default="")
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class NewsletterSubscriber(Base):
     """Newsletter subscription — captured from the public site (Partners/Contact).
     Public POST /api/newsletter/subscribe creates a row; admin Campaign page

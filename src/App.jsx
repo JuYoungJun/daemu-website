@@ -49,7 +49,9 @@ const AdminPromotion = lazy(() => import('./admin/AdminPromotion.jsx'));
 const AdminPopup = lazy(() => import('./admin/AdminPopup.jsx'));
 const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
 const AdminMonitoring = lazy(() => import('./admin/AdminMonitoring.jsx'));
+const AdminContracts = lazy(() => import('./admin/AdminContracts.jsx'));
 const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
+const SignDocument = lazy(() => import('./pages/SignDocument.jsx'));
 
 const AdminFallback = () => (
   <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5f5b57', fontSize: 13 }}>
@@ -71,6 +73,7 @@ function isAdminPath(pathname) {
 function isKnownPath(pathname) {
   if (PUBLIC_PAGE_KEYS[pathname]) return true;
   if (pathname.startsWith('/work/')) return true;
+  if (pathname.startsWith('/sign/')) return true;
   if (isAdminPath(pathname)) return true;
   return false;
 }
@@ -193,7 +196,11 @@ export default function App() {
         <Route path="/admin/popup" element={wrap(<RequireAuth><AdminPopup /></RequireAuth>)} />
         <Route path="/admin/outbox" element={wrap(<RequireAuth><AdminOutbox /></RequireAuth>)} />
         <Route path="/admin/monitoring" element={wrap(<RequireAuth><AdminMonitoring /></RequireAuth>)} />
+        <Route path="/admin/contracts" element={wrap(<RequireAuth><AdminContracts /></RequireAuth>)} />
         <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
+
+        {/* Public e-sign page — no auth, sign_token in path. */}
+        <Route path="/sign/:token" element={wrap(<SignDocument />)} />
 
         {/* Error showcase routes — accessible directly for QA + linkable from CTA */}
         <Route path="/error/400" element={<BadRequest />} />

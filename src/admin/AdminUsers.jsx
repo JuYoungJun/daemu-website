@@ -5,9 +5,9 @@ import { Auth } from '../lib/auth.js';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_DESC = {
-  admin: '전체 권한. 사용자·고객·파트너·CRM·결제/계약·시스템 설정까지 모두 접근.',
-  tester: '서브 관리자 — 대부분 읽기 전용. 팝업 등록/문의 모니터링은 가능. 사용자/결제/시스템 설정은 차단.',
-  developer: '개발자 — 작업사례·팝업·메일템플릿·콘텐츠 관리. 고객 PII·결제는 차단.',
+  admin: '전체 권한. 사용자·고객·파트너·CRM·계약·시스템 설정까지 모두 접근.',
+  tester: '서브 관리자 — 대부분 읽기 전용. 팝업 등록/문의 모니터링은 가능. 사용자·시스템 설정은 차단.',
+  developer: '개발자 — 작업사례·팝업·메일템플릿·콘텐츠 관리. 고객 PII는 차단.',
 };
 
 export default function AdminUsers() {

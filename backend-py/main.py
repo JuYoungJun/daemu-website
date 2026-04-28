@@ -414,6 +414,10 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(crud_router)
 
+# Contract / PO documents — kept in its own module to avoid bloating routes_crud.
+from routes_documents import router as documents_router
+app.include_router(documents_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

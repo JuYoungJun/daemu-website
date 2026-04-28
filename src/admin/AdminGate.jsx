@@ -143,6 +143,7 @@ export default function AdminGate() {
     'popup':         ['admin', 'developer', 'tester'],
     'outbox':        ['admin', 'developer', 'tester'],
     'monitoring':    ['admin', 'developer'],
+    'contracts':     ['admin', 'tester'],
     'users':         ['admin'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
@@ -200,6 +201,7 @@ export default function AdminGate() {
               {can('popup')     && <MenuCard to="/admin/popup" title="팝업" desc="사이트 팝업 배너를 등록·수정하고 노출 규칙을 관리합니다." items={['중앙/우하단/상단 위치','이미지 + CTA 버튼','노출 빈도 (매번/일1회/영구1회)','타겟 페이지 + 노출/클릭 추적']} />}
               {can('outbox')    && <MenuCard to="/admin/outbox" title="Outbox" desc="이메일·캠페인·계약서 발송 이력을 확인합니다." items={['백엔드 API 호출 로그','시뮬레이션 / 발송완료 / 실패 구분','수신자·제목·본문 검색','데모 환경에서도 발송 시뮬레이션 확인']} />}
               {can('monitoring') && <MenuCard to="/admin/monitoring" title="유지보수 모니터링" desc="운영 중 발생한 오류와 백엔드 헬스를 확인합니다." items={['백엔드 헬스 1분 주기 체크','24시간 발송 실패 카운트','API 호출 오류 누적','브라우저 런타임 에러 수집']} />}
+              {can('contracts') && <MenuCard to="/admin/contracts" title="계약서 / 발주서" desc="계약서·발주서 템플릿과 문서를 관리하고 e-Sign 서명을 추적합니다." items={['표준 템플릿 + 변수 치환','고객·프로젝트 연결','이메일 발송 + 서명 링크','캔버스 e-Sign + 감사 이력','PDF 출력 (브라우저 인쇄)']} />}
             </div>
 
             {can('users') && (
