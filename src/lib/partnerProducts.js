@@ -40,13 +40,44 @@ export const PRODUCT_CATALOG = [
 
 // Flat lookup by sku
 export function findProduct(sku) {
-  for (const cat of PRODUCT_CATALOG) {
-    const it = cat.items.find((x) => x.sku === sku);
+  // Admin이 등록한 데이터를 먼저 본다.
+  const admin = getActiveCatalog();
+  for (const cat of admin) {
+    const it = (cat.items || []).find((x) => x.sku === sku);
     if (it) return { ...it, category: cat.category, accent: cat.accent };
   }
   return null;
 }
 
 export function flatProducts() {
-  return PRODUCT_CATALOG.flatMap((c) => c.items.map((it) => ({ ...it, category: c.category, accent: c.accent })));
+  return getActiveCatalog().flatMap((c) => (c.items || []).map((it) => ({ ...it, category: c.category, accent: c.accent })));
+}
+
+// Active 카탈로그를 결정한다.
+//   1) localStorage 'daemu_products' 가 있으면 그것을 사용 (admin이 관리)
+//   2) 없으면 시드 PRODUCT_CATALOG 반환
+// admin/products 페이지는 [{ category, accent, items: [...] }] 형태를 그대로 저장.
+export function getActiveCatalog() {
+  try {
+    const raw = localStorage.getItem('daemu_products');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch { /* ignore */ }
+  return PRODUCT_CATALOG;
+}
+
+// admin/products 페이지에서 사용 — 시드 카탈로그를 localStorage에 1회 복제.
+// 이미 데이터가 있으면 손대지 않음 (idempotent).
+export function ensureSeededProducts() {
+  try {
+    const raw = localStorage.getItem('daemu_products');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return;
+    }
+    localStorage.setItem('daemu_products', JSON.stringify(PRODUCT_CATALOG));
+    window.dispatchEvent(new Event('daemu-db-change'));
+  } catch { /* ignore */ }
 }

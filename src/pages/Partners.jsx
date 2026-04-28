@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFadeUp } from '../hooks/useFadeUp.js';
 import { PartnerAuth, defaultPasswordHint } from '../lib/partnerAuth.js';
-import { PRODUCT_CATALOG, findProduct } from '../lib/partnerProducts.js';
+import { PRODUCT_CATALOG, findProduct, getActiveCatalog } from '../lib/partnerProducts.js';
 import { DB } from '../lib/db.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd } from '../lib/seo.js';
@@ -281,6 +281,19 @@ function Shop({ partner, onSubmitted }) {
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null); // { coupon, discount }
   const [couponMsg, setCouponMsg] = useState({ kind: '', text: '' });
+  // 카탈로그 (admin이 등록한 데이터 우선, 없으면 시드 PRODUCT_CATALOG)
+  const [catalog, setCatalog] = useState(() => getActiveCatalog());
+
+  // admin이 /admin/products에서 변경한 내용이 즉시 반영되도록 동기화
+  useEffect(() => {
+    const refresh = () => setCatalog(getActiveCatalog());
+    window.addEventListener('storage', refresh);
+    window.addEventListener('daemu-db-change', refresh);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('daemu-db-change', refresh);
+    };
+  }, []);
 
   const addToCart = (sku, delta = 1) => {
     setCart((c) => {
@@ -386,21 +399,21 @@ function Shop({ partner, onSubmitted }) {
     onSubmitted && onSubmitted();
   };
 
-  // 검색어 필터 (상품명/SKU/단위)
+  // 검색어 필터 (상품명/SKU/단위) — catalog는 storage 변경 시 자동 갱신됨
   const filteredCatalog = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return PRODUCT_CATALOG;
-    return PRODUCT_CATALOG
+    if (!q) return catalog;
+    return catalog
       .map((cat) => ({
         ...cat,
-        items: cat.items.filter((p) =>
+        items: (cat.items || []).filter((p) =>
           (p.name || '').toLowerCase().includes(q) ||
           (p.sku || '').toLowerCase().includes(q) ||
           (p.unit || '').toLowerCase().includes(q)
         ),
       }))
-      .filter((cat) => cat.items.length > 0);
-  }, [search]);
+      .filter((cat) => (cat.items || []).length > 0);
+  }, [catalog, search]);
 
   return (
     <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:32,alignItems:'flex-start'}}>

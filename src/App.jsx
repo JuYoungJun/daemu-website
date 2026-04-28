@@ -51,6 +51,7 @@ const AdminPopup = lazy(() => import('./admin/AdminPopup.jsx'));
 const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
 const AdminMonitoring = lazy(() => import('./admin/AdminMonitoring.jsx'));
 const AdminContracts = lazy(() => import('./admin/AdminContracts.jsx'));
+const AdminProducts = lazy(() => import('./admin/AdminProducts.jsx'));
 const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
 const SignDocument = lazy(() => import('./pages/SignDocument.jsx'));
 
@@ -206,6 +207,7 @@ export default function App() {
         <Route path="/admin/outbox" element={wrap(<RequireAuth><AdminOutbox /></RequireAuth>)} />
         <Route path="/admin/monitoring" element={wrap(<RequireAuth><AdminMonitoring /></RequireAuth>)} />
         <Route path="/admin/contracts" element={wrap(<RequireAuth><AdminContracts /></RequireAuth>)} />
+        <Route path="/admin/products" element={wrap(<RequireAuth><AdminProducts /></RequireAuth>)} />
         <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
 
         {/* Public e-sign page — no auth, sign_token in path. */}

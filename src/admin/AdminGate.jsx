@@ -203,6 +203,7 @@ export default function AdminGate() {
     'outbox':        ['admin', 'developer', 'tester'],
     'monitoring':    ['admin', 'developer'],
     'contracts':     ['admin', 'tester'],
+    'products':      ['admin', 'tester'],
     'users':         ['admin'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
@@ -254,7 +255,8 @@ export default function AdminGate() {
               {can('works')     && <MenuCard to="/admin/works" title="작업사례 관리" desc="포트폴리오 및 작업사례를 등록하고 수정합니다." items={['작업사례 등록','기존 사례 수정','이미지 업로드','게시 상태 관리']} />}
               {can('inquiries') && <MenuCard to="/admin/inquiries" title="상담/문의 관리" desc="고객 상담 신청 및 문의 내역을 확인하고 관리합니다." items={['신규 문의 확인','상담 상태 관리','메일 자동회신 설정','문의 이력 검색']} />}
               {can('partners')  && <MenuCard to="/admin/partners" title="파트너 계정 관리" desc="파트너 계정 발급, 권한 설정, 승인을 관리합니다." items={['신규 계정 발급','계정 승인/거절','역할 및 권한 설정','계정 비활성화']} />}
-              {can('orders')    && <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','상품 등록 및 가격','정산 내역 관리']} />}
+              {can('orders')    && <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','정산 내역 관리','출고/배송 추적']} />}
+              {can('products')  && <MenuCard to="/admin/products" title="발주 상품 관리" desc="파트너 포털에 노출되는 발주 카탈로그(카테고리·상품·가격·이미지)를 관리합니다." items={['카테고리 추가/수정/삭제','상품 등록·가격·재고','이미지·이모지 설정','즉시 파트너 포털 반영']} />}
               {can('stats')     && <MenuCard to="/admin/stats" title="통계 및 리포트" desc="방문자, 문의, 발주 등 주요 지표를 확인합니다." items={['방문자 통계','문의 유입 분석','발주 현황 리포트','월별 매출 추이']} />}
               {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
               {can('mail')      && <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />}

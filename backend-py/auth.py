@@ -160,6 +160,10 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     # Sub-admin (tester) gets read-only so they can monitor signing status.
     "documents":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
     "document-templates": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _READ},
+    # Order catalog — admin can write, tester reads (e.g. for QA).
+    # Currently localStorage-only on the client; permission key reserved
+    # for the eventual backend Product table.
+    "products":      {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
 }
 
 
