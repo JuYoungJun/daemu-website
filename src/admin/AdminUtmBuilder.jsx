@@ -16,6 +16,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
 import { validateOutboundUrl } from '../lib/safe.js';
+import { SafeOpenLink } from '../components/SafeOpenLink.jsx';
 
 const HISTORY_KEY = 'daemu_utm_history';
 const MAX_HISTORY = 50;
@@ -278,13 +279,13 @@ export default function AdminUtmBuilder() {
                     이력에 저장
                   </button>
                   <span style={{ flex: 1 }} />
-                  <a href={url || '#'} target="_blank" rel="noopener noreferrer"
+                  <SafeOpenLink
+                    href={url}
                     className="adm-btn-sm"
-                    onClick={(e) => { if (!url) e.preventDefault(); }}
-                    aria-disabled={!url}
-                    style={{ opacity: url ? 1 : 0.5, pointerEvents: url ? 'auto' : 'none', textDecoration: 'none' }}>
+                    style={{ textDecoration: 'none' }}
+                    ariaLabel="새 탭에서 열어보기">
                     새 탭에서 열어보기
-                  </a>
+                  </SafeOpenLink>
                 </div>
 
                 {url && (
