@@ -2,9 +2,17 @@
 // Sets <title>, <meta name="description">, OG/Twitter cards, canonical URL,
 // and a per-page JSON-LD block at the `<script id="seo-jsonld">` slot.
 //
-// When the team adopts a custom domain, change SITE_BASE_URL in one place.
+// SITE_BASE_URL is read from the VITE_SITE_BASE_URL build-time env var
+// (set in .env.production / GitHub Actions / Cafe24 build) and falls back
+// to the GitHub Pages URL. Static crawler files (robots.txt, sitemap.xml,
+// llms.txt, .well-known/security.txt, plus the JSON-LD inside index.html)
+// remain hard-coded — when the domain changes, run the migration script
+// noted in SEO_REPORT.md to update those.
 
-export const SITE_BASE_URL = 'https://juyoungjun.github.io/daemu-website';
+export const SITE_BASE_URL = (
+  import.meta.env.VITE_SITE_BASE_URL
+  || 'https://juyoungjun.github.io/daemu-website'
+).replace(/\/$/, '');
 export const BRAND = '대무 (DAEMU)';
 export const DEFAULT_OG_IMAGE = SITE_BASE_URL + '/assets/logo.svg';
 
@@ -50,7 +58,13 @@ function setJsonLd(id, data) {
     el.setAttribute('data-seo-id', id);
     document.head.appendChild(el);
   }
-  el.textContent = JSON.stringify(data);
+  // S-05 defense in depth: textContent already prevents script execution,
+  // but escape `<` and `-->` so that if a future maintainer flips this to
+  // innerHTML / SSR-as-string we don't immediately become a stored-XSS sink.
+  // OWASP JSON-in-script guidance.
+  el.textContent = JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/-->/g, '--\\u003e');
 }
 
 function removeJsonLd(id) {

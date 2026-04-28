@@ -93,15 +93,28 @@ _적용자: in-session implementation (specialist agent hit usage cap, implement
 - Bing Copilot 에서 같은 질문
 
 ### E. 도메인 발급 후 (예: daemu.kr)
-다음 파일들의 `juyoungjun.github.io/daemu-website` 를 새 도메인으로 일괄 치환:
+
+**1. 동적 부분 (한 번에 자동 적용)**
+GitHub Actions Variables 또는 `.env.production` 에 추가:
+```
+VITE_SITE_BASE_URL=https://daemu.kr
+```
+이거 하나로 `src/lib/seo.js` 의 `SITE_BASE_URL` 이 빌드 시점에 교체되어 모든 React 페이지의 canonical/og:url/JSON-LD 링크가 새 도메인을 가리킵니다.
+
+**2. 정적 부분 (수동 일괄 치환 필요)**
+다음 파일들은 빌드 타임에 변환되지 않으므로 직접 search-replace:
 - `public/robots.txt` (Sitemap 라인 1줄)
 - `public/sitemap.xml` (10건)
 - `public/.well-known/security.txt` (Canonical 라인)
-- `public/llms.txt` (사이트맵 섹션)
-- `index.html` (canonical, og:url, og:image, JSON-LD 그래프 4-5군데)
-- `src/lib/seo.js` 의 `SITE_BASE_URL` 상수 1줄
+- `public/llms.txt` (사이트맵 섹션 + 본문 링크)
+- `index.html` (canonical, og:url, og:image, JSON-LD `@graph` 의 `@id` / url / logo / image — 약 8군데)
 
-또는 환경변수 `VITE_SITE_BASE_URL` 도입해서 한 번에 처리 가능 (현재는 코드 한 줄 변경).
+빠른 치환 명령:
+```bash
+cd "$(git rev-parse --show-toplevel)"
+grep -rl 'juyoungjun.github.io/daemu-website' public/ index.html | \
+  xargs sed -i '' 's|https://juyoungjun.github.io/daemu-website|https://daemu.kr|g'
+```
 
 ---
 

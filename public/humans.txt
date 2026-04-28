@@ -9,6 +9,3 @@ Founded: 2019
 # SITE
 Last update: 2026-04-28
 Standards: HTML5, CSS3, ES2022
-Components: React 18, Vite, FastAPI, SQLAlchemy
-Doctype: SPA (BrowserRouter)
-Hosting: GitHub Pages (frontend) + Render (backend)

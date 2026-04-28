@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
 import '../styles/errors.css';
 import { useSeo } from '../hooks/useSeo.js';
 
@@ -13,18 +12,14 @@ export default function ErrorPage({
 }) {
   const navigate = useNavigate();
 
-  // noindex on every error page so Google/Naver/AI crawlers don't index 404s.
+  // R-01 fix: useSeo() handles document.title via setSeo. The previous
+  // manual useEffect was overwriting it, leaving the wrong title on every
+  // error page. Single source of truth is now useSeo.
   useSeo({
-    title: `${code} — ${title}`,
+    title: `${code}`,
     description: message,
     noindex: true,
   });
-
-  useEffect(() => {
-    const original = document.title;
-    document.title = `${code} · 대무 (DAEMU)`;
-    return () => { document.title = original; };
-  }, [code]);
 
   const goHome = () => navigate('/');
   const goBack = () => {

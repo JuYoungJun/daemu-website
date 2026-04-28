@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
 import { useExternalScript } from '../hooks/useExternalScript.js';
 import { useSeo } from '../hooks/useSeo.js';
-import { breadcrumbLd, faqLd, LOCAL_BUSINESS_LD } from '../lib/seo.js';
+import { breadcrumbLd, faqLd } from '../lib/seo.js';
+// R-02: Organization/LocalBusiness/WebSite live in index.html as the static
+// @graph — single source of truth. Don't re-inject them on Home.
 
 const HOME_FAQS = [
-  { q: '대무는 어떤 회사인가요?', a: '전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사입니다. 2019년 설립, 40+ 프로젝트 진행. 브랜드 전략·메뉴 개발·공간 설계·운영까지 일관된 카페 비즈니스 구조를 설계합니다.' },
+  { q: '대무는 어떤 회사인가요?', a: '전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사. 2019년 설립, 40+ 프로젝트. 전략·메뉴·브랜드·공간·운영 5단계 통합 설계.' },
   { q: '카페 창업 컨설팅 비용은 얼마인가요?', a: '프로젝트 범위에 따라 결정됩니다. 전략 단독·풀 컨설팅(전략→운영)·부분 위탁 등 옵션을 상담을 통해 견적 산정합니다.' },
   { q: '나주에서 카페 컨설팅을 받을 수 있나요?', a: '가능합니다. 본사가 전라남도 나주시이며 인천·광주·전남권 다수 진행. 화상·방문 상담 모두 지원합니다.' },
   { q: '베이커리 메뉴 개발도 하나요?', a: '네. 빵·디저트·음료를 브랜드 방향에 맞춰 R&D부터 SOP 정리까지 진행합니다.' },
@@ -20,7 +22,6 @@ export default function Home() {
     path: '/',
     keywords: '대무, DAEMU, 베이커리 컨설팅, 카페 창업, 카페 컨설팅, 메뉴 개발, 브랜드 전략, 공간 설계, 매장 운영, 나주 카페, 전남 카페 컨설팅',
     jsonLd: [
-      LOCAL_BUSINESS_LD,
       breadcrumbLd([{ name: '홈', path: '/' }]),
       faqLd(HOME_FAQS),
     ],

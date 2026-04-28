@@ -357,3 +357,141 @@ These are working well. Resist the urge to refactor them:
 You have a demo-stage product that already does more than most demo-stage products. The next 4 weeks of focused work — not refactor weeks, _focused_ — are the difference between "we lose the deal because the form doesn't send the confirmation" and "we close the deal and the customer thinks they're working with a real software team." The ordering above (demo prep → launch prep) is sequential and small enough that one engineer can ship it. Don't try to do the legacy IIFE port before the demo; do it after, when the client is paying you to keep building.
 
 The single most important architectural decision _not yet made_ is whether `localStorage` "DB" is a demo crutch or a permanent offline-mode feature. Right now it's both, and that ambiguity is the source of every Critical-rated finding above except F-04. Pick one, document it, code accordingly.
+
+---
+
+## Re-Review (2026-04-28, post-SEO)
+
+_Reviewer: same._
+_Scope: only the SEO/GEO/AEO pass introduced in commit `b9616c9` — `src/lib/seo.js`, `src/hooks/useSeo.js`, page-level `useSeo()` calls, expanded `index.html`, `public/robots.txt`, `public/sitemap.xml`, `public/llms.txt`, `public/humans.txt`, `public/.well-known/security.txt`, the Home AEO hidden block, the `noindex` wiring on `ErrorPage.jsx`, and the `.visually-hidden` utility added to `responsive.css`._
+_v1 findings are NOT re-listed unless they got worse._
+
+### Headline verdict
+
+The pass moves the project meaningfully forward on **F-10 (SEO is a wasteland)** — that finding is now mostly closed. It also makes a real attempt at GEO/AEO, which is correct strategy for a 2026-era marketing site. **Engineering quality of the new code is mediocre to acceptable**: the implementation is small, no new dependencies, no big bundle hit (~3 KB gzipped), and the cleanup model is mostly correct. But it ships with a real bug on every error page, hardcodes the same JSON-LD twice (static + dynamic) so the two will drift, contradicts its own report (`SEO_REPORT.md`) on the env-var approach, and leaves WorkDetail without per-page metadata while still listing it in the sitemap. **Net direction: better, not free of new regressions.** The codebase is materially improved on the SEO axis and slightly degraded on the maintenance axis (more hardcoded text in more places, plus a duplication of truth).
+
+### Summary table
+
+| ID | Severity | Title | Where | Effort |
+|---|---|---|---|---|
+| R-01 | High | `ErrorPage` calls `useSeo()` and then a manual `useEffect` overwrites `document.title` — race + contradictory titles for crawlers and bookmarks | `src/components/ErrorPage.jsx:17-27` | S |
+| R-02 | High | Static JSON-LD in `index.html` and the JS exports in `src/lib/seo.js` are now two copies of the same truth — they will drift | `index.html:53-116` vs `src/lib/seo.js:113-179` | S |
+| R-03 | High | `WorkDetail.jsx` is in the sitemap but has no `useSeo()`, no canonical, no per-work title — Perplexity/Bing snapshot the home meta against the work URL | `src/pages/WorkDetail.jsx:6-19`, `public/sitemap.xml:44-49` | S |
+| R-04 | High | `SITE_BASE_URL` is hardcoded in 6 files. `SEO_REPORT.md:104` claims env-var migration is wired — it is not. Migration cost on custom-domain switch is silently 6× higher than reported | `src/lib/seo.js:7`, `index.html`, `public/robots.txt`, `public/sitemap.xml`, `public/llms.txt`, `public/.well-known/security.txt` | M |
+| R-05 | Medium | LocalBusiness JSON-LD is injected twice on the home page: once statically in `index.html`, once via `useSeo({jsonLd:[LOCAL_BUSINESS_LD,...]})` | `index.html:82-105` + `src/pages/Home.jsx:22-26` | S |
+| R-06 | Medium | Home page now emits an `<h2>` _before_ the document `<h1>` — the visually-hidden AEO block uses `<h2>` and renders earlier in source than the hero `<h1>` | `src/pages/Home.jsx:34-50, 69` | S |
+| R-07 | Medium | Process page meta description contains a Hangul typo (`사진이팅`) that gets indexed | `src/pages/Process.jsx:10` | XS |
+| R-08 | Medium | i18n debt is now strictly worse — Korean strings are baked into JSON-LD, FAQ arrays, page metadata, `llms.txt`, and humans.txt with no extraction surface. Flips F-14 from "70 files" to "70 files + structured-data hardcoded text + 4 static `public/*.txt` files" | `src/lib/seo.js`, `src/pages/*.jsx`, `public/llms.txt`, `public/humans.txt`, `index.html` | L |
+| R-09 | Medium | `useSeo` cleanup removes only the JSON-LD blocks scoped to the previous render; meta tags persist with stale values until the next page sets them | `src/lib/seo.js:104-107` | S |
+| R-10 | Medium | First HTML byte sent to a non-JS crawler (Perplexity, Bing snapshot, KakaoTalk preview) is the static `index.html`, whose title is "대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너". For `/about`, `/service`, `/team`, `/contact` etc., that crawler sees **the home title and the home description on the wrong URL.** | `index.html:10-11`, all routes other than `/` | M |
+| R-11 | Medium | `.visually-hidden` uses `white-space: nowrap` — fine when clipped to 1×1, but if the rule is ever relaxed (e.g. focus-within for skip-link reuse) the AEO block becomes a 2-line nowrap hellscape | `public/responsive.css:8-18` | S |
+| R-12 | Medium | First FAQ answer is 102 chars — fine for Google but past Perplexity's typical pull-quote sweet spot of ≤80. The other 5 are tight; this one will get summarized by the model rather than quoted verbatim | `src/pages/Home.jsx:7` | XS |
+| R-13 | Low | `ProfessionalService` and `Organization` in the `@graph` describe the same entity but have no `sameAs`/`parentOrganization` link — schema.org accepts it, but a tighter graph would consolidate trust signals | `index.html:53-114` | S |
+| R-14 | Low | `naver-site-verification` and `google-site-verification` placeholder tokens (`REPLACE_WITH_*`) ship to production. If pushed unchanged the meta tags are still parsed by both consoles and refused, with a subtle "ownership not verified" until manually fixed | `index.html:18-19` | XS |
+| R-15 | Low | `index.html` `description` (255 chars) is 5 chars past the 240-char Google snippet truncation. Naver truncates earlier (~150 chars). The most important sentence ("브랜드 전략부터…") will be cut on Naver SERP | `index.html:11` | XS |
+| R-16 | Low | `Partners.jsx` is `index,follow` and emits a portal title ("Partners — 파트너사 모집…") with no `noindex`. The page is a B2B login portal; indexing it advertises an internal endpoint to scrapers | `src/pages/Partners.jsx:11-17`, `public/robots.txt:7` | S |
+| R-17 | Low | Home FAQ injected by JS only (`faqLd(HOME_FAQS)` lives in `useSeo`), but the visually-hidden block already renders the same Q&A in the static DOM as `<dl>/<dt>/<dd>`. The FAQ JSON-LD vs. visible-text consistency is good for trust signals but means three sources of truth for the same FAQ: HOME_FAQS array, the rendered `<dl>`, and `public/llms.txt`. Edit one, the others go stale | `src/pages/Home.jsx:6-13, 50-58`, `public/llms.txt:24-48` | M |
+| R-18 | Low | `useSeo` re-runs `JSON.stringify(cfg)` on every render to compute the dep key. For the Home page the cfg includes 6 FAQ Q&A pairs + breadcrumb + LocalBusiness — ~2 KB stringified. Cheap on its own, but it runs **before** every render's reconciliation. Trivially fixable with `useMemo` on the cfg | `src/hooks/useSeo.js:8-13` | XS |
+| R-19 | Info | `humans.txt:13` claims "Components: React 18, Vite, FastAPI, SQLAlchemy" — exposing backend stack to public crawlers. Low-impact information disclosure; a recon bot now knows what to fingerprint | `public/humans.txt:13` | XS |
+
+### Detail on the load-bearing items
+
+#### R-01 — `ErrorPage` title race
+
+```jsx
+// src/components/ErrorPage.jsx:17-27
+useSeo({
+  title: `${code} — ${title}`,
+  description: message,
+  noindex: true,
+});
+
+useEffect(() => {
+  const original = document.title;
+  document.title = `${code} · 대무 (DAEMU)`;     // ← overrides what useSeo just wrote
+  return () => { document.title = original; };
+}, [code]);
+```
+
+`useSeo` writes `document.title = "404 — 페이지를 찾을 수 없습니다 · 대무 (DAEMU)"`. Then a separate `useEffect` immediately overwrites it to `"404 · 대무 (DAEMU)"`. The OG/Twitter meta still shows the long form, the `<title>` shows the short form, and the cleanup function restores `original` (which was whatever the previous page's title was — i.e. it'll restore the home title on unmount, regardless of where the user navigates next). Three different titles for the same DOM event, depending on which observer is looking.
+
+**Fix**: drop the `useEffect` — `useSeo` already does this — or remove the `title` line from the `useSeo` call and keep the manual one. Pick one path.
+
+#### R-02 — JSON-LD divergence
+
+`index.html` lines 53-116 and `src/lib/seo.js` lines 113-179 are two copies of the same Organization, ProfessionalService, and WebSite blocks. They are byte-equivalent today. They will not be byte-equivalent six months from now. The first time someone updates the phone number in `seo.js` and not the index.html static block, every search engine will see two different telephone numbers for the same `@id` and silently distrust both.
+
+**Fix**: pick one source. Either (a) delete the static block in `index.html` and inject everything via `setSeo` on the home route (lose pre-JS crawler signal for the global graph but consolidate truth), or (b) keep the static block in index.html, delete `ORGANIZATION_LD`/`LOCAL_BUSINESS_LD`/`WEBSITE_LD` exports, and stop re-injecting LocalBusiness from `Home.jsx`. Option (b) is what the inline comment on `index.html:51-52` already promised ("Per-page LD is injected by src/lib/seo.js on route changes"). The current code does both.
+
+#### R-03 — WorkDetail SEO blackhole
+
+`sitemap.xml:44-49` lists `https://juyoungjun.github.io/daemu-website/work/beclassy-naju` as a crawlable URL. `WorkDetail.jsx` renders raw HTML and calls neither `useSeo` nor anything that sets a title. So when Google fetches that URL with JS-rendering, it'll get whatever title the previous client navigation left in the DOM (or the static `index.html` title on a cold visit). For Perplexity/Bing static-snapshot, it's worse — they'll see the home title against a work-detail URL, which is the textbook "duplicate title across many URLs" SEO smell.
+
+**Fix**: make WorkDetail call `useSeo` with a slug-derived title, description, and Article JSON-LD. SEO_REPORT.md "next steps" #4 already flags this — but it shouldn't have shipped to the sitemap before the page itself was wired up. **Either remove the work-detail URL from sitemap.xml or wire WorkDetail with `useSeo` before the next deploy.**
+
+#### R-04 — Hardcoded base URL contradicts the report
+
+`SEO_REPORT.md:104` says:
+
+> 또는 환경변수 `VITE_SITE_BASE_URL` 도입해서 한 번에 처리 가능 (현재는 코드 한 줄 변경).
+
+The implication is "or you can introduce VITE_SITE_BASE_URL and handle it once." Reality: it's NOT introduced. `src/lib/seo.js:7` has `export const SITE_BASE_URL = 'https://juyoungjun.github.io/daemu-website';` and that's the only place where it could matter. The `public/*.txt` files and `index.html` are static — they can't read env vars at all without a build-time substitution step (which doesn't exist).
+
+So the actual migration cost when the team buys `daemu.kr` is: edit 6 files, push, hope you didn't miss one. The report should either drop the claim or someone should actually wire it. A 30-minute job to add a Vite plugin (`@rollup/plugin-replace` or a one-line `transformIndexHtml` hook) that swaps `__SITE_BASE_URL__` placeholders in static text files. **Recommendation: don't merge another SEO commit until this is wired or the doc is corrected.**
+
+#### R-08 — i18n debt got worse, not just bigger
+
+F-14 noted 70 JSX files inline Korean. The SEO pass adds Korean inside JSON-LD descriptions (`seo.js:122, 137-139`; `index.html:64-79`), FAQ arrays in `Home.jsx`/`Contact.jsx`, every `useSeo` call's description/keywords, and Korean-only `public/llms.txt` + `public/humans.txt`. JSON-LD `description` is **structured data** — English AI engines will translate it to broken English when summarizing. The right shape was a `t('seo.org.description')` extraction layer; the right time to add it was during this PR. **You can't reverse the SEO pass over this**, but the next `seo.js` touch should add a locale parameter.
+
+#### R-10 — Static title vs. SPA reality
+
+This is the one to internalize. SPA route changes update title via `useSeo` ON THE CLIENT. Crawlers vary:
+
+- **Google**: renders JS, sees the per-route title. Fine.
+- **Naver Yeti**: as of 2026, partially renders JS. The `<title>` from `useSeo` is hit-or-miss. The static index.html title is what Naver's "first pass" indexer reads.
+- **Perplexity, Bing Copilot, ChatGPT browsing**: snapshot static HTML, not JS-executed. The home page title and description show up against `/about`, `/service`, `/contact` URLs.
+- **Open Graph link previews (KakaoTalk, Slack)**: fetch static HTML. Same problem.
+
+So Perplexity asked "대무 service offerings" finds the `/service` URL with the home title, and quotes the home description. **The static title in index.html only covers the home page well; for every other route, non-rendering crawlers get the wrong meta.**
+
+This is the fundamental limitation of an SPA without SSR — it isn't a regression introduced by this PR, but the SEO pass surfaces it. Realistic fixes (in order of effort):
+
+1. **Pre-render static HTML for the 9 known routes** at build time (`vite-plugin-prerender-spa` or similar). 1 day of work, fixes Perplexity/Bing/Kakao for all marketing pages.
+2. Ship the same `useSeo` config as Vite-injected `<meta>` tags into per-route `dist/<route>/index.html`. Compatible with GitHub Pages.
+3. Migrate to Next.js. Out of scope.
+
+Without option 1, the "AEO/GEO" claim in `SEO_REPORT.md` is half-true — the static index has good Org/LocalBusiness/WebSite signals, but routes other than `/` are crawled with home metadata.
+
+#### R-17 — Three sources of FAQ truth
+
+`HOME_FAQS` array drives both the visible `<dl>` and `faqLd(HOME_FAQS)` JSON-LD — those stay in sync. But `public/llms.txt:24-48` is an independent Korean copy of the same Q&A. Update "1-2 영업일" → "당일 회신" in `HOME_FAQS` and llms.txt goes stale. Solution: build llms.txt from `HOME_FAQS` at build time, or delete it (no engine actually requires it; it's a 2024-era proposal not yet a must-have).
+
+### Should anything be reversed?
+
+One mandatory reversal:
+
+- **R-01 (ErrorPage title race)** — the manual `useEffect` block at lines 23-27 should be deleted. It contradicts the `useSeo` it sits next to. 5-minute fix, ship before the next deploy.
+
+One conditional reversal:
+
+- **R-02 (duplicate JSON-LD)** — pick a side. If the team chooses static-only (option b in R-02), revert the `LOCAL_BUSINESS_LD` injection from `Home.jsx:23` and delete the `ORGANIZATION_LD`/`LOCAL_BUSINESS_LD`/`WEBSITE_LD` exports from `seo.js`. The dynamic-only path is technically possible but loses the static signal that helps with non-rendering crawlers — not recommended for a marketing site.
+
+One thing to delete (not reverse, just trim):
+
+- **R-19** — `humans.txt:13` listing the backend stack. Either drop the backend half ("Components: React 18, Vite") or delete the file. humans.txt is a 2010s tradition with negligible SEO value and the cost is information disclosure.
+
+### Engineering verdict
+
+| Axis | Direction |
+|---|---|
+| SEO/visibility (F-10) | **Better.** Closes most of F-10. |
+| Bundle size | **Equal-ish.** ~3 KB gzipped, no new deps, fine. |
+| Maintenance burden | **Worse.** Two copies of JSON-LD truth, six files with hardcoded base URL, three sources of FAQ truth, doc claims an env var that doesn't exist. |
+| i18n debt (F-14) | **Worse.** Korean is now in JSON-LD, FAQ arrays, llms.txt, humans.txt — more structured surfaces, no extraction layer. |
+| Accessibility | **Equal.** Hidden `<h2>` before `<h1>` is a minor ordering smell but most checkers won't flag it. |
+| Correctness | **Worse on error pages, equal elsewhere.** R-01 ships a real bug. WorkDetail (R-03) was already broken on this axis but the SEO pass made the bug visible by listing the URL in sitemap.xml. |
+| Documentation honesty | **Worse.** SEO_REPORT.md claims env-var wiring that isn't implemented. |
+
+**Net**: the project is better off with this pass than without it — F-10 was the highest-priority gap and is now mostly closed for the home route. But the pass shipped four small bugs (R-01, R-03, R-04, R-07) that any reviewer should have caught before merge, plus baked Korean text into more structural surfaces in a codebase that already had F-14 marked as a High finding. **Treat the items above as a release-blocker checklist, not an aspirational backlog. R-01 alone is 5 minutes and removes a contradiction from every error-page response.**
+
+The team is good at writing the visible 80% and tired by the time they get to the boring 20% (cleanup correctness, doc-vs-code drift, edge routes). That's the same pattern as v1. Same fix: a checklist that runs before "looks good, ship it" — and one of the checklist items must be "did you wire every URL in the sitemap?"

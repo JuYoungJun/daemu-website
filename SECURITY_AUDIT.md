@@ -807,3 +807,105 @@ Without those four items, the demo can host a maximum of approximately **5 concu
 - **required actions before approval (production):** the eight items in "Verdict (b)" above. Ship items 1, 2, 4, 6, 7 within the same release; items 3, 5, 8 within 14 days of cutover.
 - **decision:** `block` for production launch on `daemu.kr` with real customers; `allow with conditions` for continued demo traffic on the current Render URL provided N2-01 + N2-02 are patched within the week.
 - **residual risk after v3 actions land:** Low for demo; Medium for production until the auto-reply decoupling (N2-03) is verified under load test + the deletion cron (N2-17) has run its first cycle without dropping data.
+
+---
+
+## Re-Audit (2026-04-28, v4 — post-SEO)
+
+**Scope of this pass:** Only the SEO/GEO/AEO surface area added in commit `b9616c9`. Files in scope: `index.html` (global JSON-LD `@graph`), `public/robots.txt`, `public/sitemap.xml`, `public/llms.txt`, `public/.well-known/security.txt`, `src/lib/seo.js`, `src/hooks/useSeo.js`, the `useSeo({...})` call sites across all public pages, and the `.visually-hidden` AEO answer block in `src/pages/Home.jsx`. Backend, admin SPA, and PIPA flows are explicitly out of scope here — those are tracked under v1/v2/v3 findings and remain at the severity recorded there.
+
+**Control-tower classification:** `elevated` (not `critical`). The change is presentation-layer markup and static text. There is no new authentication, authorization, payment, upload, or schema surface. However, three properties of the change push it above `limited`: (a) it publishes contact PII (phone, email, postal address) in three additional machine-readable formats — JSON-LD, llms.txt, security.txt — multiplying the durable footprint in archives and LLM training corpora; (b) it introduces a new dynamic DOM-write helper (`setSeo` / `setJsonLd`) that future devs may misuse; (c) it deliberately enumerates the application's URL space for crawlers. Risk-tier `elevated` and the first-pass routing limits apply: control tower + `secure-code-review` + one domain skill (`input-output-boundary-review` for the JSON-LD sink, `data-lifecycle-and-privacy-review` for the PII publication pattern). No second skill triggered after first pass.
+
+### S — New attack surface introduced by SEO pass
+
+| ID | Severity | Title | Where |
+|----|----------|-------|-------|
+| S-01 | **Medium** | Permanent, machine-readable PII (phone + email + street address) published in three independent surfaces — JSON-LD `@graph`, `llms.txt`, `security.txt` — guaranteed to be archived by Wayback / Common Crawl / LLM training and not retractable | `index.html:53-116`, `public/llms.txt:11-14`, `public/.well-known/security.txt:4-5` |
+| S-02 | **Low** | `robots.txt` self-discloses `/admin/`, `/admin`, `/error/`, `/uploads/` — removes path-obscurity as a defense-in-depth layer | `public/robots.txt:7-10` |
+| S-03 | **Low** | `sitemap.xml` enumerates the full public URL space (10 routes), simplifying recon for scrapers and fuzzers | `public/sitemap.xml:6-67` |
+| S-04 | **Low** | `REPLACE_WITH_NAVER_TOKEN` / `REPLACE_WITH_GOOGLE_TOKEN` shipped to production HTML — no-op but a recon signal for incomplete onboarding | `index.html:18-19`, `dist/index.html:18-19` |
+| S-05 | **Medium (latent)** | `setJsonLd()` does `el.textContent = JSON.stringify(data)` with no `</script>` escape — `textContent` writes are safe today, but if a future maintainer changes this to `innerHTML`, OR adds an SSR path, an attacker-controlled JSON-LD field becomes a script-break-out XSS sink | `src/lib/seo.js:44-54` |
+| S-06 | **Info** | `useSeo()` JSON-stringifies cfg into a `useEffect` dep key — a non-serializable value (function, Symbol, circular ref) silently breaks dep tracking. Brittleness for future devs, not a security bug today | `src/hooks/useSeo.js:6-13` |
+| S-07 | **Low** | `setSeo()` mutates the first `[name=...]` / `[property=...]` match in `document.head`. A malicious extension that injects a colliding meta tag before our effect runs has its tag rewritten by us — low-impact, only changes attacker's own content | `src/lib/seo.js:29-42` |
+| S-08 | **Low** | `document.title = title` writes route-controlled text to the title bar. Hardcoded today; if a future per-inquiry admin tab title flows in, no XSS (title is text-only) but leakage to browser history / window manager / screen-reader is plausible | `src/lib/seo.js:82` |
+| S-09 | **Info** | `Disallow: /uploads/` in the SPA's `robots.txt` is misdirected — uploads are served from the Render backend (`https://daemu-py.onrender.com/uploads/...`), not from `juyoungjun.github.io/daemu-website/uploads/`. The directive is a no-op against indexing of the actual upload endpoint | `public/robots.txt:10`, `backend-py/main.py:74-89` |
+| S-10 | **Low** | Hidden answer-first AEO block (`.visually-hidden`) duplicates the visible Home content. Reviewed for cloaking risk: content is honest, factual, and matches visible copy (5-stage service, FAQ, contact info already shown elsewhere). **Not** a Google cloaking violation. Confirmed safe; flagged for ongoing review whenever the visible Home copy changes — the two must stay in sync or it becomes cloaking | `src/pages/Home.jsx:34-59` |
+| S-11 | **Low** | `SITE_BASE_URL = 'https://juyoungjun.github.io/daemu-website'` is hardcoded in `src/lib/seo.js`. Forgetting to update on `daemu.kr` migration breaks canonical/og:url/JSON-LD `@id` — purely SEO impact, but worth a migration runbook entry. Not a security finding; tracked here so the runbook owner sees it | `src/lib/seo.js:7` |
+| S-12 | **Medium (compliance)** | Phone/email published in 5+ static surfaces. Under PIPA Art. 36 / GDPR Art. 17, archived copies (Wayback, Common Crawl, LLM corpora) cannot be recalled. Mitigation must be at publication time — use only switchboard line + role-based mailbox, never personal mobile or named-individual mailbox | `index.html:68-69`, `src/lib/seo.js:127-128,150-151`, `public/llms.txt:12`, `public/.well-known/security.txt:4-5` |
+| S-13 | **Info** | Frontend (GitHub Pages) has no CSP. Inline `<script type="application/ld+json">` is unrestricted today. Backend CSP includes `'unsafe-inline'`, so JSON-LD also works there. **Note for Cafe24 transition:** if a future host enforces a strict CSP without `'unsafe-inline'`, every JSON-LD block currently emitted by `setJsonLd()` and the inline `@graph` block in `index.html` will be CSP-blocked. Plan a `nonce` or hashed-script strategy before that migration | `index.html:53-116`, `src/lib/seo.js:44-54` |
+| S-14 | **Info** | `security.txt` `Expires: 2027-04-28` is one year out — RFC 9116 §2.5.5 recommends updating before expiry. Add a calendar reminder; an expired `security.txt` invites researchers to assume the contact channel is unmaintained | `public/.well-known/security.txt:8` |
+| S-15 | **Info** | `security.txt` is reachable at `dist/.well-known/security.txt` (Vite emits the `public/.well-known/` tree to `dist/.well-known/`). GitHub Pages serves `.well-known` directories without special handling, so the RFC 9116 canonical path resolves correctly. Verified | `dist/.well-known/security.txt` |
+
+### Ten checks the user requested — point-by-point answers
+
+1. **Disclosure via `llms.txt`:** No internal-only data leaks. Brand info (founding year, address, switchboard phone, public email, hours, FAQ) only — same as JSON-LD and visible copy. No employee names (the line `담당 매니저가 회신` is a generic role), no financials, no internal route names beyond what is in `sitemap.xml`. Logged as S-01 because the *aggregation* into an LLM-ingestion-optimized structured format multiplies durability — not because any single field is novel.
+
+2. **Sitemap as recon:** Correctly excludes `/admin`, `/error/`, and unshipped `/work/<slug>`s. The 10 listed URLs are exactly the indexable public surface. Excluding `/admin` is the right call — sitemap is an indexing hint, not a security boundary. No change.
+
+3. **Robots.txt admin disclosure:** `Disallow: /admin/` does tell the world the admin path exists. Marginal recon benefit to an attacker is near zero (any wordlist scanner hits `/admin` in the first 50 requests). Cost of obfuscation (`/admin-9c8f-portal`) is operational confusion. **Demo verdict:** acceptable. **Production verdict:** acceptable provided `AdminGate` + JWT enforce auth (they do); for hardening, consider moving admin to a separate hostname (`admin.daemu.kr`) instead of co-locating under the marketing root. Logged as S-02.
+
+4. **`security.txt` deploy path:** Verified. `public/.well-known/security.txt` → `dist/.well-known/security.txt` → served at the RFC 9116 canonical path. RFC 9116 §3 also recommends a top-level `/security.txt` fallback; optional. Logged as S-15.
+
+5. **JSON-LD as CSP gotcha:** Logged as S-13. Today: works because no CSP on GitHub Pages and `'unsafe-inline'` on the backend. On Cafe24 with a strict CSP, the inline `@graph` and every `setJsonLd()`-injected script will be blocked unless a nonce or `'unsafe-inline'` is permitted. Migration runbook must include CSP planning.
+
+6. **Verification placeholders:** `REPLACE_WITH_NAVER_TOKEN` / `REPLACE_WITH_GOOGLE_TOKEN` shipped to production. Both are no-ops — verification meta tags only fire when the verifier matches the token. Not exploitable. Logged as S-04 — replace before custom-domain launch.
+
+7. **Hidden content as cloaking:** Reviewed `Home.jsx:34-59`. The `.visually-hidden` block matches visible content elsewhere (hero, About, Service, Contact). `.visually-hidden` is the standard A11y class explicitly recognized by Google as legitimate when content matches. Korean PIPA / KCC have no rule against it. **Risk only emerges if visible copy changes and the hidden block isn't kept in sync.** Logged as S-10 with an invariant: any edit to visible Home copy must also edit the hidden section.
+
+8. **`useSeo({jsonLd: faqLd(USER_INPUT)})` future XSS path:** Most important finding in this pass. Today all callers pass consts (`HOME_FAQS`, hardcoded breadcrumb arrays). The helper architecture invites a future maintainer to write `faqLd(inquiriesFromAdmin)`. **Current safety:** `el.textContent = JSON.stringify(data)` — `textContent` is text-only, so a string like `</script><script>alert(1)</script>` is not parsed as a tag. Safe today. **Latent risk:** if anyone ever changes line 53 to `el.innerHTML`, OR adds a server-side render path that emits the same JSON into raw HTML, it becomes a stored-XSS sink the moment user input flows in. **Recommend hardening now:** wrap with `JSON.stringify(data).replace(/</g, '\\u003c').replace(/-->/g, '--\\u003e')` — OWASP-recommended pattern for inline JSON, costs nothing. Also recommend a dev-mode `console.warn` if any string in `data` matches `/<\/script/i`. Logged as S-05.
+
+9. **`SITE_BASE_URL` hardcoded:** Logged as S-11. Not a security finding. Migration runbook: search-replace across six files (`src/lib/seo.js`, `index.html`, `public/sitemap.xml`, `public/llms.txt`, `public/.well-known/security.txt`, `public/robots.txt`). Recommend a `VITE_SITE_BASE_URL` env var so this becomes a one-place change.
+
+10. **Phone durability under right-to-erasure:** Logged as S-12. Published phone `+82-61-335-1239` is a Naju (061) landline — switchboard, not personal mobile. Published email `daemu_office@naver.com` is role-based (`_office`), not a named individual. Both correct under PIPA Art. 36 / GDPR Art. 17 framing — neither is a natural-person identifier, so deletion-right does not bind the company to recall archives. **Hardening:** never publish a personal mobile or `firstname.lastname@daemu.kr` in any crawled surface. Add to the marketing-content review checklist. Current code compliant; policy must persist.
+
+### Hardening recommendations specific to SEO content
+
+1. **Patch `setJsonLd()` defensively now, before any user-supplied data ever reaches it.** Two-line change in `src/lib/seo.js:53`:
+   ```js
+   const safe = JSON.stringify(data).replace(/</g, '\\u003c').replace(/-->/g, '--\\u003e');
+   el.textContent = safe;
+   ```
+   This is an industry-standard belt-and-braces technique (Next.js, Remix, Helmet do it). Today it is unnecessary; tomorrow it is the only thing standing between a careless `faqLd(adminInput)` call and stored XSS in every page that mounts the helper. (S-05.)
+2. **Add a `console.warn` (dev mode only) in `setJsonLd` when any string field matches `/<\/script/i` or contains ` `/` `** (the LSEP/PSEP characters that break JSON-in-script). Loud failure beats silent corruption. (S-05.)
+3. **Replace `REPLACE_WITH_NAVER_TOKEN` / `REPLACE_WITH_GOOGLE_TOKEN` before custom-domain launch.** Until then, leave a TODO comment block referencing this audit ID (S-04). Don't ship placeholder strings to a production hostname.
+4. **Add `public/security.txt` (top-level) as a duplicate of the well-known copy.** RFC 9116 §3 fallback. Defensive against scanners that don't probe `/.well-known/`. (S-15.)
+5. **Pin `Expires` renewal cadence** for `security.txt` (one-year cycle, tie to privacy-policy review). (S-14.)
+6. **Centralize `SITE_BASE_URL` as `VITE_SITE_BASE_URL`** with build-time templating across the six files that hardcode the URL. (S-11.)
+7. **Document the cloaking invariant** in `Home.jsx`: any edit to visible copy must also edit the `.visually-hidden` block. (S-10.)
+8. **Drop `Disallow: /uploads/` from the SPA `robots.txt`** — it targets the wrong host. Set `X-Robots-Tag: noindex` in the backend's `/uploads/*` response instead. (S-09.)
+9. **Cafe24 migration runbook — CSP:** plan a nonce for inline JSON-LD, or accept `'unsafe-inline'` and document residual risk. (S-13.)
+10. **PII publication policy:** only switchboard phone + role-based email in any crawled surface. Explicit ban on personal mobile / named-individual mailbox. (S-12.)
+
+### Did the SEO pass make security posture better, equal, or worse?
+
+**Slightly worse, on net — but with no new exploitable vulnerability today.**
+
+- **Better:** added `security.txt` (RFC 9116) gives researchers a clear disclosure channel, which is a measurable improvement over having none. Honest credit.
+- **Equal:** the `useSeo`/`setSeo` helper is well-written for a hand-rolled SEO manager — no `innerHTML`, no `eval`, no `dangerouslySetInnerHTML`, no string-concatenated `<script>` tags. The `textContent`-based JSON-LD writer is the safe choice. No new XSS sink today.
+- **Worse, in three ways:**
+  1. PII (phone, email, address) is now published in five durable surfaces (visible HTML, JSON-LD, llms.txt, security.txt, OG/Twitter tags) instead of one. The aggregation footprint matters even though every individual field was already public — LLM training, archive durability, scrape automation all become trivially easier. Reversibility is zero.
+  2. Recon surface widened: `robots.txt` self-discloses `/admin`, sitemap enumerates the full route set, llms.txt explicitly invites LLM crawlers. These are deliberate marketing/SEO choices, not bugs — but they trade one defense-in-depth layer (URL obscurity) for marketing visibility. The trade is correct for a B2B brand site; it must not be repeated for the admin SPA's own marketing.
+  3. A new dynamic-DOM-write helper (`setJsonLd`) exists and is called by every public page. Today it is safe; tomorrow it is one careless `el.innerHTML = ...` away from being a stored-XSS sink. The S-05 hardening (escape `<` and `-->`) costs two lines and removes that future risk permanently.
+
+The `block` decision from v3 stands for production launch on `daemu.kr` — it was driven by backend findings (N2-01 throttling bypass, N2-03 auto-reply blocking) which this SEO pass did not touch. The SEO pass on its own is shippable.
+
+### Output (control-tower contract, v4)
+
+- **risk tier:** `elevated` (this pass only; the production-launch tier remains `critical` from v3 unchanged).
+- **triggered skills:** `security-control-tower`, `secure-code-review`, `input-output-boundary-review`, `data-lifecycle-and-privacy-review`. (No `authn-authz-review`, `database-security-review`, or `secret-config-audit` — none of those surfaces were touched.)
+- **confirmed findings:** 15 new (S-01 .. S-15). One Medium-latent (S-05, JSON-LD escape hardening). Two Medium (S-01 PII durability, S-12 right-to-erasure non-revocability — both compliance/policy, not exploitable). The remaining 12 are Low or Info.
+- **open questions / missing evidence:**
+  - Will the team replace the verification placeholders before `daemu.kr` cutover, or is the plan to verify only after launch? (Affects S-04 timing.)
+  - Is there a designated owner for the marketing-content review checklist that enforces "no personal contact info in structured data"? (S-12.)
+  - Will the Cafe24 frontend be served behind Cloudflare with a strict CSP, or is `'unsafe-inline'` acceptable indefinitely? (S-13.)
+- **required actions before approval:**
+  - For the SEO pass alone: items 1, 3 from the hardening list (the two-line `setJsonLd` escape, and replace verification placeholders before custom-domain launch). Items 2, 4–10 are fast-follows.
+  - For overall production launch on `daemu.kr`: v3's eight items remain blocking. The SEO pass does not unblock them.
+- **decision:**
+  - SEO/AEO/GEO change set in isolation: `allow with conditions` — ship items 1 and 3 from the hardening list before the next public release.
+  - Production launch on `daemu.kr` with real customer traffic: **`block`** (carried over from v3 — backend N2-01/N2-02/N2-03 are still the gate).
+- **residual risk after v4 actions land:**
+  - SEO surface alone: Low. The `setJsonLd` hardening closes the only realistic XSS-pivot scenario. The compliance/durability findings (S-01, S-12) are policy-managed, not patchable.
+  - Overall site (combined v1+v2+v3+v4): Medium for demo, High for production until v3 backend actions ship.
+
+**One-line summary:** **Approved for demo with conditions** — ship the two-line `setJsonLd` escape hardening (S-05) and replace the Naver/Google verification placeholders (S-04) before the next release; the SEO pass introduces no new exploitable vulnerability today, but the production-launch `block` from v3 remains in force on the backend, not on the SEO change set.
