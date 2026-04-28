@@ -1,0 +1,74 @@
+name: Snyk dependency scan
+
+on:
+  pull_request:
+    branches: [main, demo, staging]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly Monday 09:00 KST = Sunday 00:00 UTC — catches newly disclosed CVEs.
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  snyk-npm:
+    name: Snyk · npm (frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Run Snyk test (npm)
+        uses: snyk/actions/node@master
+        continue-on-error: true   # don't block PR on findings — just report
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --sarif-file-output=snyk-npm.sarif
+
+      - name: Upload SARIF (npm)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-npm.sarif') != ''
+        with:
+          sarif_file: snyk-npm.sarif
+          category: snyk-npm
+
+  snyk-python:
+    name: Snyk · pip (backend-py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend deps
+        working-directory: backend-py
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Run Snyk test (python)
+        uses: snyk/actions/python@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --file=backend-py/requirements.txt --severity-threshold=high --sarif-file-output=snyk-py.sarif
+
+      - name: Upload SARIF (python)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-py.sarif') != ''
+        with:
+          sarif_file: snyk-py.sarif
+          category: snyk-python
