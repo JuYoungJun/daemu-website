@@ -1,7 +1,6 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 import { initAnalytics, trackPageview } from './lib/analytics.js';
-import { Auth } from './lib/auth.js';
 
 import PublicLayout from './components/PublicLayout.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
@@ -95,28 +94,14 @@ function AnalyticsBoot() {
   return null;
 }
 
-// Security: when the admin navigates away from /admin/*, wipe the session.
-// Combined with sessionStorage tokens, the user must re-login on every entry
-// to the admin area. Transitions between admin pages do NOT trigger logout.
-function AdminSessionGuard() {
-  const { pathname } = useLocation();
-  const prevAdmin = useRef(pathname.startsWith('/admin'));
-  useEffect(() => {
-    const nowAdmin = pathname.startsWith('/admin');
-    if (prevAdmin.current && !nowAdmin) {
-      Auth.logout();
-    }
-    prevAdmin.current = nowAdmin;
-  }, [pathname]);
-
-  // Tab close / hard reload — also clear the session.
-  useEffect(() => {
-    const onUnload = () => { Auth.logout(); };
-    window.addEventListener('beforeunload', onUnload);
-    return () => window.removeEventListener('beforeunload', onUnload);
-  }, []);
-  return null;
-}
+// Note: the previous build had an AdminSessionGuard that auto-logged-out on
+// every navigation away from /admin/* AND on `beforeunload`. That broke the
+// back button, page reload, and quick excursions to public pages. We rely
+// instead on:
+//   · 60-minute inactivity timeout in lib/auth.js
+//   · explicit logout button on the dashboard
+//   · backend JWT TTL (12h)
+// — which is the same posture used by most B2B admin panels.
 
 function PublicRoute({ children, pageKey }) {
   return <PublicLayout pageKey={pageKey}>{children}</PublicLayout>;
@@ -164,7 +149,6 @@ export default function App() {
     <ErrorBoundary>
       <ScrollToTop />
       <AnalyticsBoot />
-      <AdminSessionGuard />
       <LinkInterceptor />
       <DialogHost />
       <CookieConsent />

@@ -7,11 +7,12 @@ const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const TOKEN_KEY = 'daemu_admin_token';
 
 function authHeader() {
-  // Tokens live in sessionStorage now (see lib/auth.js). Every authenticated
-  // call also refreshes the activity timestamp used for the inactivity timeout.
-  const t = sessionStorage.getItem(TOKEN_KEY);
+  // Tokens live in localStorage (see lib/auth.js). Every authenticated call
+  // also refreshes the activity timestamp used for the 60-min inactivity
+  // timeout (so an actively-working admin never gets bounced).
+  const t = localStorage.getItem(TOKEN_KEY);
   if (!t) return {};
-  try { sessionStorage.setItem('daemu_admin_last_activity', String(Date.now())); }
+  try { localStorage.setItem('daemu_admin_last_activity', String(Date.now())); }
   catch { /* ignore */ }
   return { Authorization: `Bearer ${t}` };
 }
