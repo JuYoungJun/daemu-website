@@ -31,6 +31,7 @@ import WorkDetail from './pages/WorkDetail.jsx';
 import Contact from './pages/Contact.jsx';
 import Partners from './pages/Partners.jsx';
 import Privacy from './pages/Privacy.jsx';
+import Unsubscribe from './pages/Unsubscribe.jsx';
 
 // Admin pages — code-split via React.lazy. Public visitors never download
 // these chunks; each /admin/* route triggers its own JS request on first nav.
@@ -74,6 +75,7 @@ function isKnownPath(pathname) {
   if (PUBLIC_PAGE_KEYS[pathname]) return true;
   if (pathname.startsWith('/work/')) return true;
   if (pathname.startsWith('/sign/')) return true;
+  if (pathname === '/unsubscribe') return true;
   if (isAdminPath(pathname)) return true;
   return false;
 }
@@ -186,6 +188,7 @@ export default function App() {
         <Route path="/contact" element={<PublicRoute pageKey="contact"><Contact /></PublicRoute>} />
         <Route path="/partners" element={<PublicRoute pageKey="partners"><Partners /></PublicRoute>} />
         <Route path="/privacy" element={<PublicRoute pageKey="privacy"><Privacy /></PublicRoute>} />
+        <Route path="/unsubscribe" element={<Unsubscribe />} />
 
         <Route path="/admin" element={wrap(<AdminGate />)} />
         <Route path="/admin/works" element={wrap(<RequireAuth><AdminWorks /></RequireAuth>)} />

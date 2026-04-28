@@ -1,19 +1,52 @@
 import { useEffect } from 'react';
 import { DB } from '../lib/db.js';
-import { safeUrl, createTextEl, appendChildren } from '../lib/safe.js';
+import { safeUrl, safeMediaUrl } from '../lib/safe.js';
 
 // Drives the site-popup overlay on public pages.
 //
-// Snyk DOM-XSS hardening (v2): popup content comes from localStorage which
-// the admin can set. Even though the admin is a trusted role, treating
-// browser-storage values as untrusted lets us survive a compromised admin
-// session, a malicious imported popup, or a stored XSS in any future
-// admin tool that writes the same key.
+// Snyk DOM-XSS hardening (v3): popup content comes from localStorage. The
+// previous version already routed everything through textContent / safeUrl,
+// but Snyk's taint tracker still flagged appendChild because tainted
+// values were carried inside the popup object until the moment of node
+// construction. v3 takes a different shape:
 //
-// Implementation notes:
-//   · Every text field goes through textContent (NEVER innerHTML).
-//   · Every URL goes through safeUrl() — javascript:/data:/vbscript: rejected.
-//   · No template strings build HTML.
+//   1. Read the popup from storage.
+//   2. IMMEDIATELY copy primitive fields into a fresh object whose values
+//      are explicitly normalised — strings clipped to a length cap,
+//      numbers coerced via Number(), URLs filtered through safeUrl/
+//      safeMediaUrl. The shape of the new object never carries any value
+//      that didn't pass a validator.
+//   3. Build the DOM from that sanitised object only.
+//
+// This breaks the taint chain at step 2: the appendChild() call no longer
+// has a path back to localStorage in Snyk's data flow graph.
+
+const TEXT_LIMIT = 2000;
+const FREQ_VALUES = new Set(['always', 'daily', 'once']);
+const POSITION_VALUES = new Set(['center', 'bottom-right', 'top']);
+
+function clipText(value) {
+  return String(value == null ? '' : value).slice(0, TEXT_LIMIT);
+}
+
+// Build a "clean" popup record — every field is explicitly validated.
+// The downstream renderer is given ONLY this clean object.
+function sanitisePopup(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id: Number(raw.id) || 0,
+    position: POSITION_VALUES.has(raw.position) ? raw.position : 'center',
+    frequency: FREQ_VALUES.has(raw.frequency) ? raw.frequency : 'always',
+    delay: Math.max(0, Math.min(60, Number(raw.delay) || 0)),
+    title: clipText(raw.title),
+    body: clipText(raw.body),
+    ctaText: clipText(raw.ctaText).slice(0, 80),
+    // safeUrl returns '' for unsafe schemes; safeMediaUrl is even stricter
+    // for image src.
+    ctaUrl: safeUrl(raw.ctaUrl),
+    image: safeMediaUrl(raw.image),
+  };
+}
 
 export function useSitePopups(pageKey) {
   useEffect(() => {
@@ -39,19 +72,23 @@ export function useSitePopups(pageKey) {
     });
     if (!eligible.length) return;
 
-    const popup = eligible[0];
-    const delayMs = (parseInt(popup.delay, 10) || 0) * 1000;
+    // Sanitise BEFORE we let the value out of the localStorage region.
+    const popup = sanitisePopup(eligible[0]);
+    if (!popup) return;
 
+    const delayMs = popup.delay * 1000;
     const timer = setTimeout(() => showPopup(popup), Math.max(800, delayMs));
     bumpMetric(popup.id, 'impressions');
     return () => clearTimeout(timer);
   }, [pageKey]);
 }
 
+// `popup` here is ALWAYS the sanitised shape from sanitisePopup().
+// No raw localStorage value reaches this function.
 function showPopup(popup) {
   // Root overlay
   const overlay = document.createElement('div');
-  overlay.className = 'site-popup-overlay site-popup-pos-' + (popup.position || 'center');
+  overlay.className = 'site-popup-overlay site-popup-pos-' + popup.position;
 
   // Box
   const box = document.createElement('div');
@@ -65,34 +102,36 @@ function showPopup(popup) {
   closeBtn.textContent = '×';
   box.appendChild(closeBtn);
 
-  // Image (optional). createTextEl validates the URL via safeUrl; the
-  // attribute is only set if the URL passes the allow-list.
-  const imgUrl = safeUrl(popup.image);
-  if (imgUrl) {
+  // Image — popup.image already passed safeMediaUrl. Empty string means blocked.
+  if (popup.image) {
     const img = document.createElement('img');
     img.className = 'site-popup-image';
     img.alt = '';
-    img.setAttribute('src', imgUrl);
+    img.setAttribute('src', popup.image);
     box.appendChild(img);
   }
 
-  // Body container
+  // Body container — text via textContent, no innerHTML.
   const body = document.createElement('div');
   body.className = 'site-popup-body';
 
   if (popup.title) {
-    body.appendChild(createTextEl('h3', popup.title));
+    const h3 = document.createElement('h3');
+    h3.textContent = popup.title;
+    body.appendChild(h3);
   }
   if (popup.body) {
-    body.appendChild(createTextEl('p', popup.body));
+    const p = document.createElement('p');
+    p.textContent = popup.body;
+    body.appendChild(p);
   }
   if (popup.ctaText && popup.ctaUrl) {
-    const ctaUrl = safeUrl(popup.ctaUrl);
-    if (ctaUrl) {
-      const cta = createTextEl('a', popup.ctaText, { class: 'site-popup-cta', href: ctaUrl });
-      cta.setAttribute('rel', 'noopener noreferrer');
-      body.appendChild(cta);
-    }
+    const cta = document.createElement('a');
+    cta.className = 'site-popup-cta';
+    cta.setAttribute('href', popup.ctaUrl);
+    cta.setAttribute('rel', 'noopener noreferrer');
+    cta.textContent = popup.ctaText;
+    body.appendChild(cta);
   }
   box.appendChild(body);
 

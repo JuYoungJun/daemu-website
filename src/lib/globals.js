@@ -1,6 +1,7 @@
 // Side-effect: expose admin helpers on window so inlined admin page scripts work.
 import { DB, badgeStr, confirmDel } from './db.js';
 import { Auth } from './auth.js';
+import { api } from './api.js';
 import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabled } from './email.js';
 import { uploadImage, uploadVideo, uploadMedia } from './upload.js';
 import { downloadCSV } from './csv.js';

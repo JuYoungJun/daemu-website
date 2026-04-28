@@ -18,7 +18,7 @@
 import ReactDOM from 'react-dom/client';
 import { useState, useEffect, useMemo } from 'react';
 import { DB } from '../lib/db.js';
-import { safeUrl } from '../lib/safe.js';
+import { safeUrl, safeMediaUrl } from '../lib/safe.js';
 
 const STORAGE_KEY = 'media';
 
@@ -175,22 +175,31 @@ function MediaPickerDialog({ options, onSelect, onCancel }) {
         ) : (
           <div className="adm-media-grid" style={{ maxHeight: 480, overflowY: 'auto', padding: 4 }}>
             {filtered.map((d) => {
-              const safe = safeUrl(d.src) || (typeof d.src === 'string' && d.src.startsWith('data:') ? d.src : '');
+              // Snyk DOM-XSS hardening: safeMediaUrl() rejects everything
+              // except http(s), schemeless paths, and `data:image|video|audio/*;base64,...`
+              // — so localStorage entries can never put `javascript:` /
+              // unsafe `data:text/html` / etc. into an <img>/<video> src.
+              const safe = safeMediaUrl(d.src);
+              if (!safe) return null;
+              const kind = kindOf(d);
+              // alt is rendered into the DOM as text content by React; React
+              // already escapes it. We still cap it for sanity.
+              const safeName = String(d.name || '').slice(0, 200);
               return (
                 <button key={d.id} type="button"
-                  onClick={() => safe && onSelect(safe)}
+                  onClick={() => onSelect(safe)}
                   className="adm-media-item"
                   style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 0, textAlign: 'left', cursor: 'pointer' }}
-                  title={d.name}>
-                  {kindOf(d) === 'video' ? (
+                  title={safeName}>
+                  {kind === 'video' ? (
                     <video src={safe} muted playsInline preload="metadata"
                       style={{ width: '100%', height: 120, objectFit: 'cover', background: '#000' }} />
                   ) : (
-                    <img src={safe} alt={d.name || ''} loading="lazy"
+                    <img src={safe} alt={safeName} loading="lazy"
                       style={{ width: '100%', height: 120, objectFit: 'cover', background: '#f6f4f0' }} />
                   )}
                   <div style={{ padding: '6px 10px', fontSize: 11, color: '#5a534b', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || ''}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeName}</span>
                     <span style={{ color: '#8c867d', marginLeft: 6 }}>{fmtBytes(d.size)}</span>
                   </div>
                 </button>

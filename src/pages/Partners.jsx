@@ -271,6 +271,7 @@ function PartnerPortal({ partner, onLogout }) {
 function Shop({ partner, onSubmitted }) {
   const [cart, setCart] = useState({}); // sku → qty
   const [note, setNote] = useState('');
+  const [search, setSearch] = useState('');
 
   const addToCart = (sku, delta = 1) => {
     setCart((c) => {
@@ -320,12 +321,47 @@ function Shop({ partner, onSubmitted }) {
     onSubmitted && onSubmitted();
   };
 
+  // 검색어 필터 (상품명/SKU/단위)
+  const filteredCatalog = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return PRODUCT_CATALOG;
+    return PRODUCT_CATALOG
+      .map((cat) => ({
+        ...cat,
+        items: cat.items.filter((p) =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.sku || '').toLowerCase().includes(q) ||
+          (p.unit || '').toLowerCase().includes(q)
+        ),
+      }))
+      .filter((cat) => cat.items.length > 0);
+  }, [search]);
+
   return (
     <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:32,alignItems:'flex-start'}}>
       <div>
-        {PRODUCT_CATALOG.map((cat) => (
+        {/* 검색바 */}
+        <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:22}}>
+          <input type="search" placeholder="상품명·SKU·단위 검색" value={search} onChange={(e) => setSearch(e.target.value)}
+            style={{flex:1,padding:'10px 14px',border:'1px solid #d7d4cf',background:'#fff',fontSize:13,fontFamily:'inherit',boxSizing:'border-box'}} />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} className="adm-btn-sm"
+              style={{padding:'6px 12px',fontSize:11,border:'1px solid #b9b5ae',background:'transparent',cursor:'pointer'}}>
+              초기화
+            </button>
+          )}
+          <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.04em'}}>
+            {filteredCatalog.reduce((a, c) => a + c.items.length, 0)}개 품목
+          </span>
+        </div>
+
+        {!filteredCatalog.length ? (
+          <p style={{textAlign:'center',padding:'48px 0',color:'#8c867d',fontSize:13,background:'#fff',border:'1px dashed #d7d4cf'}}>
+            검색 결과가 없습니다. 다른 키워드로 시도해 주세요.
+          </p>
+        ) : filteredCatalog.map((cat) => (
           <div key={cat.category} style={{marginBottom:36}}>
-            <h3 style={{fontSize:11,letterSpacing:'.18em',textTransform:'uppercase',color:'#8c867d',margin:'0 0 14px',fontWeight:500}}>{cat.category}</h3>
+            <h3 style={{fontSize:11,letterSpacing:'.18em',textTransform:'uppercase',color:'#8c867d',margin:'0 0 14px',fontWeight:500}}>{cat.category} <span style={{color:'#b9b5ae',marginLeft:6}}>· {cat.items.length}개</span></h3>
             <div style={{borderTop:'1px solid #d7d4cf'}}>
               {cat.items.map((p) => (
                 <div key={p.sku} style={{display:'grid',gridTemplateColumns:'1fr 90px 110px 120px',gap:12,alignItems:'center',padding:'18px 0',borderBottom:'1px solid #e6e3dd'}}>
@@ -445,12 +481,29 @@ function History({ partner, onReorder }) {
     );
   }
 
+  // 추가 지표: 이번 달 발주 건수·금액, 평균 단가, 처리 중
+  const now = new Date();
+  const thisMonth = orders.filter((o) => {
+    if (!o.date) return false;
+    try {
+      const d = new Date(o.date);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    } catch { return false; }
+  });
+  const thisMonthAmt = thisMonth.reduce((a, o) => a + (Number(o.total || 0) || (Number(o.qty || 0) * Number(o.price || 0))), 0);
+  const inProgressCount = orders.filter((o) => o.status === '접수' || o.status === '처리중').length;
+  const avgPerOrder = orders.length > 0 ? Math.round(totalAmt / orders.length) : 0;
+
   return (
     <>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',borderTop:'1px solid #d7d4cf',borderBottom:'1px solid #d7d4cf',marginBottom:32}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))',borderTop:'1px solid #d7d4cf',borderBottom:'1px solid #d7d4cf',marginBottom:32}}>
         <KPI value={orders.length} label="전체 발주" />
+        <KPI value={inProgressCount} label="처리 중" />
         <KPI value={orders.filter(o => o.status === '출고완료').length} label="출고완료" />
+        <KPI value={thisMonth.length} label={`${now.getMonth() + 1}월 발주`} />
+        <KPI value={thisMonthAmt.toLocaleString('ko')} label={`${now.getMonth() + 1}월 금액 (원)`} />
         <KPI value={totalAmt.toLocaleString('ko')} label="누적 총액 (원)" />
+        <KPI value={avgPerOrder.toLocaleString('ko')} label="발주당 평균 (원)" />
       </div>
 
       {orders.map((o) => <OrderCard key={o.id} order={o} onReorder={() => reorder(o)} onCancel={() => cancelOrder(o)} />)}
@@ -705,6 +758,9 @@ function NewsletterCTA() {
             </p>
           )}
         </form>
+        <p style={{ textAlign: 'center', marginTop: 18, fontSize: 11.5, color: '#8c867d' }}>
+          이미 구독 중인데 더 받고 싶지 않으시다면 <a href="/unsubscribe" style={{ color: '#5a534b', textDecoration: 'underline' }}>구독 취소</a> 페이지에서 즉시 해제할 수 있습니다.
+        </p>
       </div>
     </section>
   );
