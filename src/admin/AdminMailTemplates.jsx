@@ -14,13 +14,14 @@
 // 실제 발송은 RESEND_API_KEY 가 백엔드에 등록된 후 활성화됩니다 — 그 전까지는
 // outbox simulation 으로만 기록됩니다.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { api } from '../lib/api.js';
 import { isEmailEnabled } from '../lib/email.js';
+import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -99,12 +100,13 @@ daemu_office@naver.com · 061-335-1239`,
 
 대무가 새로 큐레이션한 이번 시즌 메뉴를 소개드립니다.
 
+![](https://juyoungjun.github.io/daemu-website/assets/work-croissants.png)
+
   · 봄 시그니처 — 딸기 크렘 다누아즈
   · 한정 베이커리 — 무화과 크림 브리오슈
   · 시즌 음료 — 로즈 라떼
 
-자세한 레시피 노트와 도입 사례는 아래 링크에서 확인하실 수 있습니다.
-{{상세링크}}
+자세한 레시피 노트와 도입 사례는 [메뉴 상세 보기]({{상세링크}}) 에서 확인하실 수 있습니다.
 
 수신을 원치 않으시면 본 메일 하단의 수신거부 링크를 이용해 주세요.
 
@@ -164,20 +166,93 @@ function ensureSeedTemplates() {
   return next;
 }
 
-// {{var_name}} 자리표시자 추출.
+// {{var_name}} 자리표시자 추출. 한글 변수명도 허용.
+const VAR_RE = /\{\{\s*([^\s{}]+?)\s*\}\}/g;
 function extractVariables(text) {
   const set = new Set();
-  const re = /\{\{\s*([a-zA-Z0-9_\-]+)\s*\}\}/g;
   let m;
+  const re = new RegExp(VAR_RE.source, 'g');
   while ((m = re.exec(text || ''))) set.add(m[1]);
   return [...set];
 }
 function applyVars(text, vars) {
   if (!text) return '';
-  return String(text).replace(/\{\{\s*([a-zA-Z0-9_\-]+)\s*\}\}/g,
+  return String(text).replace(new RegExp(VAR_RE.source, 'g'),
     (_, name) => (vars && Object.prototype.hasOwnProperty.call(vars, name)
       ? String(vars[name])
       : '{{' + name + '}}'));
+}
+
+// Markdown 파서 — 이미지 ![alt](url) 와 링크 [text](url) 만 인식.
+// React 가 텍스트는 자동 escape, URL 은 safeMediaUrl/validateOutboundUrl 로
+// 검증된 결과만 element 에 바인딩하므로 XSS 안전.
+//
+// 다른 markdown(굵게, 헤딩 등)은 의도적으로 미지원 — 메일 본문에는 단순
+// 텍스트 + 이미지 + 링크 조합이면 충분, 추가 marker 는 발송 모드에 따라
+// 다르게 해석돼 일관성이 깨질 위험.
+const MD_TOKEN_RE = /(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
+
+function renderInlineMarkdown(text, keyPrefix = '') {
+  if (!text) return null;
+  const out = [];
+  const re = new RegExp(MD_TOKEN_RE.source, 'g');
+  let last = 0;
+  let m;
+  let i = 0;
+  const str = String(text);
+  while ((m = re.exec(str))) {
+    if (m.index > last) out.push(str.slice(last, m.index));
+    if (m[1]) {
+      // 이미지 — alt 는 단순 텍스트, src 는 safeMediaUrl 통과 후 String()
+      // primitive 로 재할당해 React 에 바인딩.
+      const candidate = safeMediaUrl(m[3]);
+      if (candidate) {
+        const verifiedSrc = String(candidate);
+        const safeAlt = String(m[2] || '').slice(0, 200);
+        out.push(
+          <img
+            key={`${keyPrefix}img-${i++}`}
+            src={verifiedSrc}
+            alt={safeAlt}
+            loading="lazy"
+            style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '12px auto' }}
+          />
+        );
+      }
+    } else if (m[4]) {
+      // 링크 — text 는 단순 텍스트, href 는 validateOutboundUrl + encodeURI.
+      const candidate = validateOutboundUrl(m[6]);
+      if (candidate) {
+        const verifiedHref = String(candidate);
+        const safeText = String(m[5] || '').slice(0, 200);
+        out.push(
+          <a
+            key={`${keyPrefix}lnk-${i++}`}
+            href={verifiedHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#1f5e7c', textDecoration: 'underline' }}
+          >{safeText}</a>
+        );
+      } else {
+        out.push(String(m[5] || ''));
+      }
+    }
+    last = re.lastIndex;
+  }
+  if (last < str.length) out.push(str.slice(last));
+  return out;
+}
+
+// 라인 단위로 분해해 줄바꿈 보존 + 빈 줄은 단락 간격으로.
+function renderMailBody(text) {
+  if (!text) return null;
+  const lines = String(text).split('\n');
+  return lines.map((line, idx) => (
+    <div key={`mb-${idx}`} style={{ minHeight: line.trim() ? undefined : '0.7em' }}>
+      {line.trim() ? renderInlineMarkdown(line, `mb-${idx}-`) : ' '}
+    </div>
+  ));
 }
 
 export default function AdminMailTemplates() {
@@ -345,8 +420,69 @@ function TemplateEditor({ data, onClose, onSave }) {
     body: data?.body || '',
     active: data?.active !== false,
   });
+  const [showLivePreview, setShowLivePreview] = useState(true);
+  const bodyRef = useRef(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const vars = extractVariables(form.subject + ' ' + form.body);
+
+  // 커서 위치에 마크다운 토큰 삽입.
+  const insertAtCursor = (insertion) => {
+    const ta = bodyRef.current;
+    if (!ta) {
+      setForm((f) => ({ ...f, body: (f.body || '') + insertion }));
+      return;
+    }
+    const start = ta.selectionStart || 0;
+    const end = ta.selectionEnd || 0;
+    const value = ta.value;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const newValue = before + insertion + after;
+    setForm((f) => ({ ...f, body: newValue }));
+    // 다음 tick 에 포커스/커서 위치 복원
+    setTimeout(() => {
+      try {
+        ta.focus();
+        const pos = start + insertion.length;
+        ta.setSelectionRange(pos, pos);
+      } catch { /* ignore */ }
+    }, 0);
+  };
+
+  const onInsertImage = async () => {
+    if (!window.openMediaPicker) {
+      alert('미디어 라이브러리를 사용할 수 없습니다.');
+      return;
+    }
+    const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+    if (!url) return;
+    const safe = safeMediaUrl(url);
+    if (!safe) {
+      alert('선택한 이미지 URL 이 안전하지 않아 삽입을 취소했습니다.');
+      return;
+    }
+    insertAtCursor(`\n![](${String(safe)})\n`);
+  };
+
+  const onInsertLink = () => {
+    const raw = prompt('링크 URL 을 입력하세요 (https://...)');
+    if (!raw) return;
+    const safe = validateOutboundUrl(raw);
+    if (!safe) {
+      alert('허용되지 않은 URL 입니다 (http/https/mailto/tel 만 가능).');
+      return;
+    }
+    const text = prompt('링크 텍스트 (눌렀을 때 보일 글자):', '자세히 보기') || '자세히 보기';
+    insertAtCursor(`[${text}](${String(safe)})`);
+  };
+
+  const onInsertVariable = () => {
+    const name = prompt('변수 이름 (예: 이름, 발주번호, 합계금액)');
+    if (!name) return;
+    const clean = String(name).trim().replace(/[\s{}]/g, '');
+    if (!clean) return;
+    insertAtCursor(`{{${clean}}}`);
+  };
 
   return (
     <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -369,11 +505,49 @@ function TemplateEditor({ data, onClose, onSave }) {
           <Field label="메일 제목">
             <input type="text" value={form.subject} onChange={set('subject')} placeholder="예: [대무] {{이름}}님께 신메뉴 소식" required />
           </Field>
-          <Field label="본문">
-            <textarea rows={12} value={form.body} onChange={set('body')}
-              placeholder={'안녕하세요 {{이름}}님,\n\n대무가 새로 출시한 봄 메뉴를 소개드립니다.\n...\n\n대무 드림'}
-              style={{ fontFamily: 'inherit', lineHeight: 1.7 }} />
-          </Field>
+          <div>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 6, flexWrap: 'wrap', gap: 6,
+            }}>
+              <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>본문</span>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                <button type="button" className="adm-btn-sm" onClick={onInsertImage}>+ 이미지</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertLink}>+ 링크</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertVariable}>+ 변수</button>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#5a534b', marginLeft: 8 }}>
+                  <input type="checkbox" checked={showLivePreview} onChange={(e) => setShowLivePreview(e.target.checked)} />
+                  실시간 미리보기
+                </label>
+              </div>
+            </div>
+            <textarea ref={bodyRef} rows={14} value={form.body} onChange={set('body')}
+              placeholder={'안녕하세요 {{이름}}님,\n\n대무가 새로 출시한 봄 메뉴를 소개드립니다.\n\n![](https://...)\n\n[자세히 보기](https://...)\n\n대무 드림'}
+              style={{ fontFamily: 'inherit', lineHeight: 1.7, width: '100%' }} />
+            <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
+              이미지 삽입: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>![](URL)</code>{' · '}
+              링크: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>[글자](URL)</code>{' · '}
+              변수: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>{`{{이름}}`}</code>
+            </div>
+          </div>
+
+          {showLivePreview && (
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 6 }}>
+                본문 미리보기 (변수는 자리표시자 그대로 표시)
+              </div>
+              <div style={{
+                background: '#fff', border: '1px solid #d7d4cf', padding: 18,
+                fontSize: 13.5, lineHeight: 1.85, color: '#2a2724',
+                maxHeight: 360, overflowY: 'auto',
+              }}>
+                {form.body.trim()
+                  ? renderMailBody(form.body)
+                  : <span style={{ color: '#b9b5ae', fontStyle: 'italic' }}>(본문이 비어있습니다)</span>}
+              </div>
+            </div>
+          )}
+
           {vars.length > 0 && (
             <div style={{ fontSize: 12, color: '#5a534b', background: '#fff8ec', padding: 10, borderLeft: '3px solid #c9a25a' }}>
               <strong style={{ marginRight: 6 }}>인식된 변수:</strong>
@@ -401,7 +575,7 @@ function TemplatePreviewModal({ template, onClose }) {
     return obj;
   });
   const renderedSubject = applyVars(template.subject, sample);
-  const renderedBody = applyVars(template.body, sample);
+  const renderedBodyText = applyVars(template.body, sample);
 
   return (
     <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -412,7 +586,7 @@ function TemplatePreviewModal({ template, onClose }) {
         </div>
         {vars.length > 0 && (
           <div style={{ background: '#fff8ec', padding: 12, borderLeft: '3px solid #c9a25a', marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>샘플 값</div>
+            <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>샘플 값 (수신자별로 치환될 자리)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
               {vars.map((v) => (
                 <label key={v} style={{ fontSize: 12, color: '#5a534b' }}>
@@ -425,12 +599,31 @@ function TemplatePreviewModal({ template, onClose }) {
             </div>
           </div>
         )}
-        <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 18 }}>
-          <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>제목</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#231815', marginBottom: 14 }}>{renderedSubject}</div>
-          <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>본문</div>
-          <pre style={{ margin: 0, fontFamily: 'inherit', fontSize: 13.5, color: '#2a2724', lineHeight: 1.85, whiteSpace: 'pre-wrap', wordBreak: 'keep-all' }}>{renderedBody}</pre>
+
+        {/* 메일 클라이언트와 비슷한 폭으로 frame 처리 — 실제 발송 시 대략 이렇게 보임 */}
+        <div style={{
+          background: '#f4f1ea', padding: 16, border: '1px solid #d7d4cf',
+          borderRadius: 4,
+        }}>
+          <div style={{
+            background: '#fff', border: '1px solid #e6e3dd',
+            maxWidth: 640, margin: '0 auto', padding: '24px 28px',
+            boxShadow: '0 1px 3px rgba(0,0,0,.04)',
+          }}>
+            <div style={{ fontSize: 10, color: '#8c867d', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 6 }}>From</div>
+            <div style={{ fontSize: 12, color: '#5a534b', marginBottom: 12 }}>대무 (DAEMU) &lt;noreply@daemu.kr&gt;</div>
+            <div style={{ fontSize: 10, color: '#8c867d', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 6 }}>제목</div>
+            <h3 style={{ fontSize: 16, color: '#231815', margin: '0 0 18px', fontWeight: 600 }}>{renderedSubject}</h3>
+            <div style={{ borderTop: '1px solid #e6e3dd', paddingTop: 16, fontSize: 13.5, color: '#2a2724', lineHeight: 1.85, wordBreak: 'keep-all' }}>
+              {renderedBodyText.trim()
+                ? renderMailBody(renderedBodyText)
+                : <span style={{ color: '#b9b5ae', fontStyle: 'italic' }}>(본문이 비어있습니다)</span>}
+            </div>
+          </div>
         </div>
+        <p style={{ fontSize: 11, color: '#8c867d', marginTop: 10, textAlign: 'center' }}>
+          실제 발송 시 수신자별 변수가 치환되며, 이미지·링크는 위와 같이 렌더링됩니다.
+        </p>
         <div className="adm-action-row">
           <button type="button" className="adm-btn-sm" onClick={onClose}>닫기</button>
         </div>
