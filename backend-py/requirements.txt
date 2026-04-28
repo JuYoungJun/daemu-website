@@ -1,8 +1,10 @@
 # ── Snyk CVE-2024-5569 fix (zipp infinite-loop DoS) ──
 # sqlalchemy → importlib-metadata → zipp 의존성 체인에서 zipp@<3.19.1 가 잡힙니다.
-# 이 두 줄을 sqlalchemy 위에 두어 pip이 transitive 풀링 전에 안전 버전을 잠그도록 합니다.
-zipp>=3.19.1
-importlib-metadata>=8.0.0
+# 이 라인들을 sqlalchemy 위에 두어 pip 이 transitive 풀링 전에 안전 버전을 잠그도록.
+# Snyk 정적 파서가 transitive lower-bound 를 재검출하지 않도록 floor 를
+# 3.20.2 로 올리고 upper bound 까지 명시(같은 메이저 안에서 패치만 허용).
+zipp>=3.20.2,<4.0.0
+importlib-metadata>=8.5.0,<9.0.0
 
 fastapi>=0.118.0
 uvicorn[standard]>=0.34.0

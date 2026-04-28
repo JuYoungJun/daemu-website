@@ -4,7 +4,7 @@ import { useExternalScript } from '../hooks/useExternalScript.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd, faqLd } from '../lib/seo.js';
 import PromotionBanner from '../components/PromotionBanner.jsx';
-import { safeUrl, safeMediaUrl } from '../lib/safe.js';
+import { PartnerBrandLogoImg, PartnerBrandLink } from '../components/PartnerBrandLogo.jsx';
 
 const PARTNER_STORAGE_KEY = 'daemu_partner_brands';
 
@@ -326,32 +326,25 @@ export default function Home() {
             <p className="home-partners-desc">대무와 함께 브랜드를 만들어가는 협업 파트너입니다.</p>
           </div>
           <div className="home-partners-grid" id="home-partners-grid">
-            {partnerBrands.map((b) => {
-              const safeLogo = safeMediaUrl(b.logo);
-              const safeLink = safeUrl(b.url);
-              const card = (
+            {partnerBrands.map((b) => (
+              <PartnerBrandLink key={b.id} url={b.url} trackId={b.id}
+                className="home-partner-card-wrapper"
+                style={{ textDecoration: 'none' }}>
                 <div className="home-partner-card">
-                  {safeLogo ? (
-                    <img src={safeLogo} alt={String(b.name || '')} loading="lazy"
-                      style={{ maxWidth: '78%', maxHeight: 64, objectFit: 'contain' }} />
-                  ) : (
-                    <p className="home-partner-card-text" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}>
-                      {String(b.name || '')}
+                  <PartnerBrandLogoImg
+                    logo={b.logo}
+                    name={b.name}
+                    style={{ maxWidth: '78%', maxHeight: 64, objectFit: 'contain' }}
+                  />
+                  {!b.logo && (
+                    <p className="home-partner-card-text"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}>
+                      {String(b.name == null ? '' : b.name).slice(0, 80)}
                     </p>
                   )}
                 </div>
-              );
-              return safeLink ? (
-                <a key={b.id} href={safeLink} target="_blank" rel="noopener noreferrer"
-                  className="home-partner-card-link"
-                  data-track="cta_click" data-track-label={`home-partner-${b.id}`}
-                  style={{ textDecoration: 'none' }}>
-                  {card}
-                </a>
-              ) : (
-                <div key={b.id}>{card}</div>
-              );
-            })}
+              </PartnerBrandLink>
+            ))}
             <div className="home-partner-card home-partner-card--coming">
               <div className="home-partner-card-icon">
                 <svg viewBox="0 0 40 40" width="40" height="40">

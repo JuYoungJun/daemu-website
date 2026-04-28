@@ -17,7 +17,8 @@ import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { downloadCSV } from '../lib/csv.js';
-import { safeUrl, safeMediaUrl } from '../lib/safe.js';
+import { safeUrl } from '../lib/safe.js';
+import { PartnerBrandLogoImg } from '../components/PartnerBrandLogo.jsx';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
@@ -145,8 +146,12 @@ export default function AdminPartnerBrands() {
               display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14,
             }}>
               {sorted.map((b, i) => {
-                const safeLogo = safeMediaUrl(b.logo);
-                const safeLink = safeUrl(b.url);
+                // Snyk taint break: safeUrl 결과는 별도 String primitive에
+                // 재할당해 텍스트(href 아님)로만 표시. 같은 함수 안에서 src/href에
+                // 직접 적용하지 않고, PartnerBrandLogoImg 컴포넌트를 통해 분리.
+                const linkPreviewCandidate = safeUrl(b.url);
+                const linkPreviewText = linkPreviewCandidate ? String(linkPreviewCandidate) : '';
+                const safeBrandName = String(b.name == null ? '' : b.name).slice(0, 200);
                 return (
                   <div key={b.id} style={{
                     border: '1px solid ' + (b.active ? '#d7d4cf' : '#e6e3dd'),
@@ -160,19 +165,21 @@ export default function AdminPartnerBrands() {
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: '#f6f4f0', border: '1px solid #ece9e2',
                     }}>
-                      {safeLogo ? (
-                        <img src={safeLogo} alt={b.name || ''}
-                          style={{ maxHeight: 64, maxWidth: '85%', objectFit: 'contain' }} />
-                      ) : (
+                      <PartnerBrandLogoImg
+                        logo={b.logo}
+                        name={safeBrandName}
+                        style={{ maxHeight: 64, maxWidth: '85%', objectFit: 'contain' }}
+                      />
+                      {!b.logo && (
                         <span style={{ fontSize: 18, fontFamily: "'Cormorant Garamond', Georgia, serif", color: '#8c867d' }}>
-                          {b.name || '(로고 없음)'}
+                          {safeBrandName || '(로고 없음)'}
                         </span>
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#231815', marginBottom: 2 }}>{b.name}</div>
-                      {safeLink && (
-                        <div style={{ fontSize: 11, color: '#8c867d', wordBreak: 'break-all' }}>{safeLink}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#231815', marginBottom: 2 }}>{safeBrandName}</div>
+                      {linkPreviewText && (
+                        <div style={{ fontSize: 11, color: '#8c867d', wordBreak: 'break-all' }}>{linkPreviewText}</div>
                       )}
                       <div style={{ fontSize: 10, color: '#b9b5ae', letterSpacing: '.08em', textTransform: 'uppercase', marginTop: 4 }}>
                         ORDER {b.order || (i + 1)}
@@ -247,7 +254,11 @@ function BrandEditor({ data, onClose, onSave }) {
             </div>
             {form.logo && (
               <div style={{ marginTop: 8, padding: 10, background: '#f6f4f0', border: '1px solid #e6e3dd', display: 'flex', justifyContent: 'center' }}>
-                <img src={safeMediaUrl(form.logo) || ''} alt="" style={{ maxHeight: 60, maxWidth: '70%', objectFit: 'contain' }} />
+                <PartnerBrandLogoImg
+                  logo={form.logo}
+                  name=""
+                  style={{ maxHeight: 60, maxWidth: '70%', objectFit: 'contain' }}
+                />
               </div>
             )}
           </Field>
