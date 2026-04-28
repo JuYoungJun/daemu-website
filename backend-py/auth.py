@@ -452,6 +452,26 @@ async def me(user: AdminUser = Depends(require_user)):
     )
 
 
+class UnlockIn(BaseModel):
+    ip: str | None = None  # 비우면 본인이 호출한 IP(=어드민 자신) 해제
+
+
+@router.post("/unlock")
+async def admin_unlock_throttle(
+    payload: UnlockIn,
+    request: Request,
+    _u: AdminUser = Depends(require_admin),
+):
+    """Admin-only: 특정 IP의 로그인 throttle을 즉시 해제합니다.
+    비밀번호를 잊어 락에 걸린 다른 관리자 계정을 풀어주거나,
+    QA 도중 락 걸린 IP를 즉시 풀 때 사용합니다.
+
+    payload.ip 가 비어 있으면 어드민이 현재 호출하고 있는 IP를 풉니다."""
+    target_ip = (payload.ip or _client_ip(request)).strip()
+    _login_throttle.reset(target_ip)
+    return {"ok": True, "ip": target_ip}
+
+
 @router.post("/change-password")
 async def change_password(
     payload: ChangePasswordIn,
@@ -487,6 +507,10 @@ class UserCreateIn(BaseModel):
     password: str
     name: str = ""
     role: str  # admin | tester | developer
+    # When true (default), the new user is forced to change the password on
+    # first login. Set to false for short-lived test/QA accounts that the
+    # super-admin will tear down later anyway.
+    must_change_password: bool = True
 
 
 class UserUpdateIn(BaseModel):
@@ -494,6 +518,9 @@ class UserUpdateIn(BaseModel):
     role: str | None = None
     active: bool | None = None
     password: str | None = None
+    # Allow super-admin to clear/set the must_change_password flag without
+    # going through the full password reset flow (useful for QA accounts).
+    must_change_password: bool | None = None
 
 
 users_router = APIRouter(prefix="/api/users", tags=["users"])
@@ -507,6 +534,8 @@ async def list_users(session: AsyncSession = Depends(get_session), _u: AdminUser
         "ok": True,
         "items": [
             {"id": r.id, "email": r.email, "name": r.name, "role": r.role, "active": r.active,
+             "must_change_password": bool(r.must_change_password),
+             "last_login_at": r.last_login_at.isoformat() if r.last_login_at else None,
              "created_at": r.created_at.isoformat() if r.created_at else None}
             for r in rows
         ],
@@ -529,12 +558,16 @@ async def create_user(payload: UserCreateIn, session: AsyncSession = Depends(get
         name=payload.name or "",
         role=payload.role,
         active=True,
-        # Admin issued the password — force the new user to change it on first login.
-        must_change_password=True,
+        # Default forces a password change on first login. The caller may
+        # opt out for short-lived test accounts.
+        must_change_password=bool(payload.must_change_password),
     )
     session.add(user)
     await session.flush()
-    return {"ok": True, "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "active": user.active}}
+    return {"ok": True, "user": {
+        "id": user.id, "email": user.email, "name": user.name, "role": user.role,
+        "active": user.active, "must_change_password": user.must_change_password,
+    }}
 
 
 @users_router.patch("/{user_id}")
@@ -565,13 +598,22 @@ async def update_user(user_id: int, payload: UserUpdateIn, session: AsyncSession
             raise HTTPException(400, detail=err)
         target.password_hash = hash_password(payload.password)
         target.password_changed_at = datetime.now(timezone.utc)
-        # Admin reset → force the target user to change at next login.
-        if target.id != me_user.id:
+        # Admin reset → force the target user to change at next login,
+        # unless the caller explicitly opts out via must_change_password=false.
+        if payload.must_change_password is not None:
+            target.must_change_password = bool(payload.must_change_password)
+        elif target.id != me_user.id:
             target.must_change_password = True
         else:
             target.must_change_password = False
+    elif payload.must_change_password is not None:
+        # Standalone toggle of the flag (no password change).
+        target.must_change_password = bool(payload.must_change_password)
     await session.flush()
-    return {"ok": True, "user": {"id": target.id, "email": target.email, "name": target.name, "role": target.role, "active": target.active}}
+    return {"ok": True, "user": {
+        "id": target.id, "email": target.email, "name": target.name, "role": target.role,
+        "active": target.active, "must_change_password": target.must_change_password,
+    }}
 
 
 @users_router.delete("/{user_id}", status_code=204)

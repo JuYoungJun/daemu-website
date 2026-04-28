@@ -680,3 +680,254 @@
   .adm-table tbody td{display:flex;justify-content:space-between;border-bottom:none;padding:6px 4px}
   .adm-table tbody td::before{content:attr(data-label);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8c867d}
 }
+
+/* ===== UX polish 2026-04: dashboard cards + contracts module ===== */
+
+/* Dashboard menu cards — subtle lift on hover for "this is clickable" affordance */
+.admin-menu-card{
+  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+.admin-menu-card:hover{
+  border-color: #2a2724;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(35,24,21,.08);
+}
+.admin-menu-btn{
+  transition: background .18s ease, color .18s ease;
+}
+
+/* Dashboard stat cards — number gets a serif accent, label tightens */
+.admin-stat-card{
+  border: 1px solid transparent;
+  transition: border-color .2s ease, background .2s ease;
+}
+.admin-stat-card:hover{
+  border-color: #d7d4cf;
+  background: #fff;
+}
+.admin-stat-number{
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+
+/* AdminHelp guidance box — softer, integrated with admin pages */
+.adm-help-box{
+  position: relative;
+}
+.adm-help-box ul li{
+  word-break: keep-all;
+}
+
+/* Contracts module — status pill + card system */
+.adm-doc-grid{
+  display: grid;
+  gap: 12px;
+}
+.adm-doc-row{
+  background: #fff;
+  border: 1px solid #d7d4cf;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  cursor: pointer;
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.adm-doc-row:hover{
+  border-color: #2a2724;
+  transform: translateX(2px);
+  box-shadow: 0 4px 14px rgba(35,24,21,.06);
+}
+.adm-doc-row__title{
+  font-size: 14px;
+  font-weight: 500;
+  color: #2a2724;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+.adm-doc-row__meta{
+  font-size: 12px;
+  color: #6f6b68;
+  margin-top: 2px;
+}
+.adm-doc-pill{
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.adm-doc-pill[data-status="draft"]{ color: #6f6b68; }
+.adm-doc-pill[data-status="sent"]{ color: #2e7d32; }
+.adm-doc-pill[data-status="viewed"]{ color: #b87333; }
+.adm-doc-pill[data-status="signed"]{ color: #1f5e7c; background: #f0f6fa; }
+.adm-doc-pill[data-status="canceled"]{ color: #c0392b; }
+
+.adm-doc-empty{
+  text-align: center;
+  padding: 64px 24px;
+  background: #fff;
+  border: 1px dashed #d7d4cf;
+  color: #8c867d;
+  font-size: 13px;
+}
+.adm-doc-empty strong{
+  display: block;
+  font-size: 15px;
+  color: #2a2724;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+/* Tabs */
+.adm-tabs{
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #d7d4cf;
+  margin-bottom: 22px;
+}
+.adm-tabs button{
+  padding: 12px 22px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: #8c867d;
+  cursor: pointer;
+  letter-spacing: .02em;
+  transition: color .18s ease, border-color .18s ease;
+}
+.adm-tabs button:hover{ color: #2a2724; }
+.adm-tabs button.is-active{
+  color: #111;
+  border-bottom-color: #111;
+  font-weight: 500;
+}
+
+/* Modal — DAEMU brand */
+.adm-modal-overlay{
+  position: fixed; inset: 0;
+  background: rgba(35,24,21,.55);
+  z-index: 9000;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 28px;
+  overflow-y: auto;
+  animation: admModalIn .18s ease;
+}
+.adm-modal-box{
+  background: #f6f4f0;
+  border: 1px solid #d7d4cf;
+  width: 100%;
+  padding: 28px;
+  box-shadow: 0 22px 56px rgba(35,24,21,.18);
+  animation: admModalPop .22s cubic-bezier(.4,1.4,.5,1);
+}
+.adm-modal-box.is-wide{ max-width: 980px; }
+.adm-modal-box.is-narrow{ max-width: 560px; }
+.adm-modal-head{
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e6e3dd;
+}
+.adm-modal-head h2{
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: #2a2724;
+}
+.adm-modal-close{
+  background: none; border: none; font-size: 24px;
+  color: #6f6b68; cursor: pointer; line-height: 1;
+  padding: 0 4px;
+  transition: color .15s ease;
+}
+.adm-modal-close:hover{ color: #c0392b; }
+@keyframes admModalIn{ from{opacity:0} to{opacity:1} }
+@keyframes admModalPop{ from{opacity:0;transform:translateY(8px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+/* Document body preview — paper card */
+.adm-doc-preview{
+  background: #fff;
+  border: 1px solid #d7d4cf;
+  padding: 26px 30px;
+  font-size: 14px;
+  line-height: 1.85;
+  color: #2a2724;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  max-height: 600px;
+  overflow-y: auto;
+}
+.adm-doc-preview h2.adm-doc-title{
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #2a2724;
+}
+.adm-doc-preview .adm-doc-subject{
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #8c867d;
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Sign URL display chip */
+.adm-sign-link{
+  background: #fff8ec;
+  border: 1px solid #f0e3c4;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  word-break: break-all;
+}
+.adm-sign-link code{
+  background: rgba(0,0,0,.04);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11.5px;
+}
+
+/* Variable hint chips */
+.adm-var-chip{
+  display: inline-block;
+  font-size: 11px;
+  background: #f6f4f0;
+  border: 1px solid #d7d4cf;
+  padding: 3px 8px;
+  margin: 2px 4px 2px 0;
+  cursor: pointer;
+  font-family: 'SF Mono', Menlo, monospace;
+  transition: background .15s ease, color .15s ease;
+}
+.adm-var-chip:hover{
+  background: #2a2724;
+  color: #f6f4f0;
+}
+
+/* Action button row */
+.adm-action-row{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  margin-top: 18px;
+  border-top: 1px solid #e6e3dd;
+}
+.adm-action-row .btn{ min-width: 110px; }
+

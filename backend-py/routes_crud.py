@@ -190,39 +190,28 @@ async def _send_auto_reply_inline(
     body = _apply_vars(body_tpl, vars_)
     html_body = _wrap_html(body)
 
+    # Use the unified send_email() from main.py so auto-reply also benefits
+    # from the SMTP fallback (Gmail App Password) when RESEND_API_KEY is not
+    # configured. Imported lazily to avoid a circular import at module load.
+    from main import send_email, email_provider, SMTP_FROM
     status = "simulated"
     error = ""
     rid = None
-    if RESEND_API_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                http_res = await client.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {RESEND_API_KEY}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "from": FROM_EMAIL,
-                        "to": [to_email],
-                        "reply_to": DEFAULT_REPLY_TO,
-                        "subject": subject,
-                        "text": body,
-                        "html": html_body,
-                    },
-                )
-            if http_res.status_code >= 400:
-                status = "failed"
-                error = f"HTTP {http_res.status_code}"
-            else:
-                status = "sent"
-                try:
-                    rid = http_res.json().get("id")
-                except Exception:
-                    pass
-        except Exception as e:  # noqa: BLE001
+    if email_provider() != "none":
+        result = await send_email({
+            "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+            "to": [to_email],
+            "reply_to": DEFAULT_REPLY_TO,
+            "subject": subject,
+            "text": body,
+            **({"html": html_body} if RESEND_API_KEY else {}),
+        })
+        if result.get("ok"):
+            status = "sent"
+            rid = result.get("id")
+        else:
             status = "failed"
-            error = str(e)[:200]
+            error = str(result.get("error", "send failed"))[:200]
 
     session.add(Outbox(
         type="auto-reply",

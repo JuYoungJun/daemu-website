@@ -141,9 +141,13 @@ export default function AdminContracts() {
             '본 시스템은 결제/대금 수납을 다루지 않습니다. 금액 변수는 명세 표기일 뿐 실제 청구·수납 처리와 연결되지 않습니다.',
           ]} />
 
-          <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #d7d4cf', marginBottom: 22 }}>
-            <TabBtn active={tab === 'documents'} onClick={() => setTab('documents')}>문서 ({documents.length})</TabBtn>
-            <TabBtn active={tab === 'templates'} onClick={() => setTab('templates')}>템플릿 ({templates.length})</TabBtn>
+          <div className="adm-tabs">
+            <button type="button" className={tab === 'documents' ? 'is-active' : ''} onClick={() => setTab('documents')}>
+              문서 <span style={{ color: '#b9b5ae', fontWeight: 400 }}>{documents.length}</span>
+            </button>
+            <button type="button" className={tab === 'templates' ? 'is-active' : ''} onClick={() => setTab('templates')}>
+              템플릿 <span style={{ color: '#b9b5ae', fontWeight: 400 }}>{templates.length}</span>
+            </button>
           </div>
 
           {error && <p style={{ color: '#c0392b', fontSize: 12, marginBottom: 14 }}>{error}</p>}
@@ -179,17 +183,6 @@ export default function AdminContracts() {
         </section>
       </main>
     </AdminShell>
-  );
-}
-
-function TabBtn({ active, onClick, children }) {
-  return (
-    <button type="button" onClick={onClick} style={{
-      padding: '10px 18px', background: 'none', border: 'none',
-      borderBottom: active ? '2px solid #111' : '2px solid transparent',
-      cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
-      color: active ? '#111' : '#8c867d',
-    }}>{children}</button>
   );
 }
 
@@ -310,13 +303,16 @@ function TemplateEditor({ template, onClose, onSaved }) {
             style={{ fontFamily: 'monospace', fontSize: 13 }} />
         </Field>
         <div style={{ fontSize: 12, color: '#6f6b68' }}>
-          <strong>사용 가능한 변수:</strong>{' '}
-          {VARIABLE_HINTS.map((v) => (
-            <button key={v.key} type="button" onClick={() => setT({ ...t, body: t.body + ' {{' + v.key + '}}' })}
-              style={{ background: '#f6f4f0', border: '1px solid #d7d4cf', padding: '2px 6px', margin: '2px 4px 2px 0', cursor: 'pointer', fontSize: 11 }}>
-              {`{{${v.key}}}`} <span style={{ color: '#8c867d' }}>{v.label}</span>
-            </button>
-          ))}
+          <strong style={{ color: '#2a2724', letterSpacing: '.06em', textTransform: 'uppercase', fontSize: 11 }}>사용 가능한 변수</strong>{' '}
+          (클릭해서 본문에 삽입)
+          <div style={{ marginTop: 6 }}>
+            {VARIABLE_HINTS.map((v) => (
+              <button key={v.key} type="button" className="adm-var-chip"
+                onClick={() => setT({ ...t, body: t.body + ' {{' + v.key + '}}' })}>
+                {`{{${v.key}}}`} <span style={{ color: '#8c867d', marginLeft: 4 }}>{v.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
           <input type="checkbox" checked={t.active} onChange={(e) => setT({ ...t, active: e.target.checked })} />
@@ -358,28 +354,26 @@ function DocumentsPane({ documents, templates, onChange, isAdmin, loading, onOpe
       {loading && <p style={{ color: '#8c867d', fontSize: 12 }}>불러오는 중…</p>}
 
       {!filtered.length && !loading && (
-        <EmptyState text="문서가 없습니다. 위 + 새 문서 버튼으로 첫 문서를 만들어 보세요." />
+        <div className="adm-doc-empty">
+          <strong>문서가 없습니다</strong>
+          상단 <em>+ 새 문서</em> 버튼으로 첫 계약서·발주서를 작성하세요.
+        </div>
       )}
 
-      <div>
+      <div className="adm-doc-grid">
         {filtered.map((d) => (
-          <div key={d.id} onClick={() => onOpen(d.id)} style={{
-            background: '#fff', border: '1px solid #d7d4cf', padding: '14px 18px',
-            marginBottom: 10, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center',
-          }}>
+          <div key={d.id} className="adm-doc-row" onClick={() => onOpen(d.id)}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 11, padding: '2px 8px', border: '1px solid ' + STATUS_COLOR[d.status], color: STATUS_COLOR[d.status], textTransform: 'uppercase', letterSpacing: '.08em' }}>
-                  {STATUS_LABEL[d.status] || d.status}
-                </span>
-                <span style={{ fontSize: 11, color: '#8c867d' }}>{KIND_LABEL[d.kind] || d.kind}</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                <span className="adm-doc-pill" data-status={d.status}>{STATUS_LABEL[d.status] || d.status}</span>
+                <span style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase' }}>{KIND_LABEL[d.kind] || d.kind}</span>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
-              <div style={{ fontSize: 12, color: '#6f6b68', marginTop: 2 }}>
+              <p className="adm-doc-row__title">{d.title}</p>
+              <div className="adm-doc-row__meta">
                 수신자 {(d.recipients || []).length}명 · {new Date(d.created_at).toLocaleString('ko')}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: '#8c867d' }}>→</div>
+            <div style={{ fontSize: 18, color: '#b9b5ae', fontWeight: 300 }}>→</div>
           </div>
         ))}
       </div>
@@ -707,28 +701,35 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
 
   return (
     <Modal onClose={onClose} title={doc.title} wide>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, padding: '3px 8px', border: '1px solid ' + STATUS_COLOR[doc.status], color: STATUS_COLOR[doc.status], textTransform: 'uppercase', letterSpacing: '.08em' }}>
-          {STATUS_LABEL[doc.status]}
-        </span>
-        <span style={{ fontSize: 11, color: '#8c867d' }}>{KIND_LABEL[doc.kind]} · 작성 {new Date(doc.created_at).toLocaleString('ko')}</span>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span className="adm-doc-pill" data-status={doc.status}>{STATUS_LABEL[doc.status]}</span>
+        <span style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.06em', textTransform: 'uppercase' }}>{KIND_LABEL[doc.kind]}</span>
+        <span style={{ fontSize: 11, color: '#b9b5ae' }}>· 작성 {new Date(doc.created_at).toLocaleString('ko')}</span>
       </div>
 
-      <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 22, marginBottom: 18 }}>
-        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.75, margin: 0 }}>
-          {doc.body}
-        </pre>
+      <div className="adm-doc-preview" style={{ marginBottom: 18 }}>
+        <span className="adm-doc-subject">{doc.subject || '(제목 없음)'}</span>
+        <h2 className="adm-doc-title">{doc.title}</h2>
+        {doc.body}
       </div>
 
       {(doc.recipients || []).length > 0 && (
         <div style={{ marginBottom: 14, fontSize: 12, color: '#6f6b68' }}>
-          <strong>수신자:</strong> {(doc.recipients || []).map((r) => `${r.name || ''} <${r.email}>`).join(', ')}
+          <strong style={{ color: '#2a2724', letterSpacing: '.06em', textTransform: 'uppercase', fontSize: 11 }}>수신자</strong>{' '}
+          {(doc.recipients || []).map((r) => `${r.name || ''} <${r.email}>`).join(', ')}
         </div>
       )}
 
       {doc.sign_token && (
-        <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: 12, marginBottom: 14, fontSize: 12 }}>
-          🔗 서명 링크: <code style={{ wordBreak: 'break-all' }}>{window.location.origin}/sign/{doc.sign_token}</code>
+        <div className="adm-sign-link" style={{ marginBottom: 14 }}>
+          <span style={{ fontSize: 16 }}>🔗</span>
+          <span style={{ flex: 1 }}>
+            <strong style={{ display: 'block', marginBottom: 4, fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: '#5a4a2a' }}>서명 링크</strong>
+            <code>{window.location.origin}/sign/{doc.sign_token}</code>
+          </span>
+          <button type="button" className="adm-btn-sm" onClick={() => {
+            navigator.clipboard?.writeText(`${window.location.origin}/sign/${doc.sign_token}`);
+          }}>복사</button>
         </div>
       )}
 
@@ -755,7 +756,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="adm-action-row">
         {isAdmin && doc.status === 'draft' && (
           <button className="btn" type="button" onClick={send}>📤 발송</button>
         )}
@@ -778,14 +779,11 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
 
 function Modal({ children, onClose, title, wide }) {
   return (
-    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
-      position: 'fixed', inset: 0, background: 'rgba(35,24,21,.55)', zIndex: 9000,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto',
-    }}>
-      <div style={{ background: '#f6f4f0', maxWidth: wide ? 980 : 560, width: '100%', padding: 22, border: '1px solid #d7d4cf' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#6f6b68' }}>×</button>
+    <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`adm-modal-box ${wide ? 'is-wide' : 'is-narrow'}`}>
+        <div className="adm-modal-head">
+          <h2>{title}</h2>
+          <button type="button" className="adm-modal-close" onClick={onClose} aria-label="닫기">×</button>
         </div>
         {children}
       </div>
