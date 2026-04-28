@@ -87,7 +87,12 @@ export default function Home() {
 
           <div className="hero-visual-wrap">
             <div className="hero-visual-frame">
-              <img src={import.meta.env.BASE_URL + 'assets/home-hero-flower.png'} alt="still life with white rose" className="hero-visual-img" />
+              <img src={import.meta.env.BASE_URL + 'assets/home-hero-flower.png'}
+                alt="흰 장미 정물 — 대무 브랜드 비주얼"
+                className="hero-visual-img"
+                width="800" height="600"
+                fetchPriority="high"
+                decoding="async" />
               <div className="hero-visual-grain"></div>
             </div>
             <div className="hero-caption">

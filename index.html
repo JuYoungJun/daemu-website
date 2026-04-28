@@ -45,10 +45,13 @@
 
     <link rel="canonical" href="https://juyoungjun.github.io/daemu-website/" />
 
-    <!-- Performance: preconnect to font / CDN origins -->
+    <!-- Performance: preconnect + preload critical resources.
+         LCP candidate is the hero image on / — preload it so mobile
+         doesn't wait for HTML parse → CSS → JS → image discovery. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="preload" as="image" href="%BASE_URL%assets/home-hero-flower.png" fetchpriority="high" />
 
     <link rel="stylesheet" href="%BASE_URL%style.css" />
     <link rel="stylesheet" href="%BASE_URL%home.css" />

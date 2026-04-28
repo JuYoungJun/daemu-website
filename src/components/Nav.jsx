@@ -84,7 +84,11 @@ export default function Nav() {
         ref={drawerRef}
         className={'site-drawer' + (open ? ' is-open' : '')}
         aria-label="모바일 메뉴"
-        aria-hidden={!open}>
+        // `inert` removes focusable descendants from the tab order AND
+        // hides them from accessibility tree when the drawer is closed.
+        // Replaces aria-hidden which Lighthouse flags when it contains
+        // focusable children. Modern equivalent: WCAG 4.1.2 compliant.
+        {...(open ? {} : { inert: '' })}>
         <div className="site-drawer-head">
           <span className="site-drawer-title">MENU</span>
           <button className="site-drawer-close" type="button" aria-label="메뉴 닫기" onClick={() => setOpen(false)}>
