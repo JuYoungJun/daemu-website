@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# DAEMU repository policy: commits must NOT include AI assistant attribution.
+# Rejects "Co-Authored-By: Claude", "Anthropic" footer URLs, etc.
+# Activated via:  git config core.hooksPath .githooks
+set -e
+
+MSG_FILE="$1"
+[ -z "$MSG_FILE" ] && exit 0
+
+REJECT_PATTERNS=(
+  "Co-Authored-By:.*[Cc]laude"
+  "Co-Authored-By:.*Anthropic"
+  "noreply@anthropic\.com"
+  "🤖 Generated with"
+  "Generated with \[Claude"
+  "claude\.com/claude-code"
+)
+
+for pat in "${REJECT_PATTERNS[@]}"; do
+  if grep -qE "$pat" "$MSG_FILE"; then
+    echo ""
+    echo "✗ commit rejected: AI attribution detected ('$pat')."
+    echo "  본 저장소 정책상 커밋 메시지에 AI 보조자 표기를 포함할 수 없습니다."
+    echo "  Strip the offending line(s) and commit again."
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0
