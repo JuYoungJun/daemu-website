@@ -11,10 +11,10 @@ httpx>=0.28.1
 python-dotenv>=1.0.1
 pydantic>=2.11.0
 email-validator>=2.2.0      # required by pydantic.EmailStr
-# SQLAlchemy 2.0.50+ 에서 importlib-metadata 의존성을 더 깨끗이 정리.
-# 이 floor 를 올림으로써 Snyk 정적 파서가 옛 importlib-metadata@6.7.0
-# 트랜시티브 경로를 다시 잡지 않게 함.
-sqlalchemy[asyncio]>=2.0.50
+# SQLAlchemy 2.0.x — 2.0.50 floor 는 PyPI 최신(2.0.49)이라 잡을 수 없어
+# 2.0.49 로 핀. Python 3.10+ 환경에서는 stdlib importlib.metadata 사용
+# (외부 importlib-metadata 트랜시티브 미설치).
+sqlalchemy[asyncio]>=2.0.49
 aiosqlite>=0.20.0          # SQLite async driver (default for dev / Render demo)
 asyncmy>=0.2.10            # MySQL async driver (used when DATABASE_URL=mysql+asyncmy://...)
 pyjwt>=2.10.0
