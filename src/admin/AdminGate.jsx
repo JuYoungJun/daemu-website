@@ -204,6 +204,7 @@ export default function AdminGate() {
     'monitoring':    ['admin', 'developer'],
     'contracts':     ['admin', 'tester'],
     'products':      ['admin', 'tester'],
+    'analytics':     ['admin', 'tester', 'developer'],
     'users':         ['admin'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
@@ -258,6 +259,7 @@ export default function AdminGate() {
               {can('orders')    && <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','정산 내역 관리','출고/배송 추적']} />}
               {can('products')  && <MenuCard to="/admin/products" title="발주 상품 관리" desc="파트너 포털에 노출되는 발주 카탈로그(카테고리·상품·가격·이미지)를 관리합니다." items={['카테고리 추가/수정/삭제','상품 등록·가격·재고','이미지·이모지 설정','즉시 파트너 포털 반영']} />}
               {can('stats')     && <MenuCard to="/admin/stats" title="통계 및 리포트" desc="방문자, 문의, 발주 등 주요 지표를 확인합니다." items={['방문자 통계','문의 유입 분석','발주 현황 리포트','월별 매출 추이']} />}
+              {can('analytics') && <MenuCard to="/admin/analytics" title="마케팅 분석" desc="페이지뷰·체류시간·UTM·기기별 분포를 자동 집계합니다." items={['일자별 방문 추이','UTM 캠페인 추적','유입 채널 분석 (검색/SNS/직접)','CTA 클릭·폼 제출 카운트','CSV 내보내기 (마케팅 보고서)']} />}
               {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
               {can('mail')      && <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />}
             </div>

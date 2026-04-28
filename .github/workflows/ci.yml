@@ -1,13 +1,14 @@
-name: CI build check
+name: CI
 
 on:
   push:
-    branches: [main, staging]
+    branches: [main, staging, demo]
   pull_request:
     branches: [main, staging]
 
 jobs:
-  build:
+  frontend:
+    name: Frontend (build + audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,4 +17,63 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm run build
+      - name: Build
+        run: npm run build
+      - name: npm audit (high+critical only)
+        run: npm audit --audit-level=high
+        continue-on-error: true   # 결과는 보지만 실패시키지는 않음
+      - name: Bundle size sanity check
+        run: |
+          MAIN_KB=$(ls -l dist/assets/index-*.js | awk '{print int($5/1024)}')
+          echo "main bundle: ${MAIN_KB} KB"
+          if [ "$MAIN_KB" -gt 600 ]; then
+            echo "::warning::Main bundle exceeds 600 KB; consider code-splitting."
+          fi
+
+  backend:
+    name: Backend (Python syntax + import)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend-py/requirements.txt
+      - name: Install backend deps
+        working-directory: backend-py
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validate Python syntax
+        run: |
+          python -c "
+          import ast, glob
+          for f in glob.glob('backend-py/*.py'):
+              ast.parse(open(f).read())
+              print(f, 'OK')
+          "
+      - name: Smoke import (no runtime)
+        working-directory: backend-py
+        run: |
+          python -c "
+          import importlib, sys
+          sys.path.insert(0, '.')
+          for m in ['models', 'auth', 'db', 'audit', 'routes_crud', 'routes_documents', 'seeds', 'main']:
+              importlib.import_module(m)
+              print(m, 'OK')
+          "
+
+  snyk:
+    name: Snyk security scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: snyk/actions/node@master
+        continue-on-error: true   # 보고는 받되 빌드는 막지 않음
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+          args: --all-projects --policy-path=.snyk

@@ -308,7 +308,8 @@ export default function Home() {
                 </svg>
               </div>
               <p className="home-partner-card-text">협업 파트너를<br />모집하고 있습니다</p>
-              <Link to="/contact" className="home-partner-card-link">문의하기 →</Link>
+              <Link to="/contact" className="home-partner-card-link"
+                data-track="cta_click" data-track-label="home-partner-card">문의하기 →</Link>
             </div>
           </div>
         </div>
@@ -329,7 +330,8 @@ export default function Home() {
             첫 미팅부터 운영까지, 대무가 함께합니다.
           </p>
           <div className="cta-actions">
-            <Link to="/contact" className="cta-btn cta-btn--primary">
+            <Link to="/contact" className="cta-btn cta-btn--primary"
+              data-track="cta_click" data-track-label="home-cta-primary">
               <span>프로젝트 문의하기</span>
               <svg viewBox="0 0 30 10" width="30" height="10" aria-hidden="true">
                 <path d="M0 5 L28 5 M23 1 L28 5 L23 9" stroke="currentColor" strokeWidth="1" fill="none" />

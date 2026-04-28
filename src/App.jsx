@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
 import { initAnalytics, trackPageview } from './lib/analytics.js';
+import { installMarketingAnalytics } from './lib/marketingAnalytics.js';
 import { Auth } from './lib/auth.js';
 
 import PublicLayout from './components/PublicLayout.jsx';
@@ -52,6 +53,7 @@ const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
 const AdminMonitoring = lazy(() => import('./admin/AdminMonitoring.jsx'));
 const AdminContracts = lazy(() => import('./admin/AdminContracts.jsx'));
 const AdminProducts = lazy(() => import('./admin/AdminProducts.jsx'));
+const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics.jsx'));
 const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
 const SignDocument = lazy(() => import('./pages/SignDocument.jsx'));
 
@@ -93,7 +95,13 @@ function ScrollToTop() {
 
 function AnalyticsBoot() {
   const { pathname } = useLocation();
-  useEffect(() => { initAnalytics(); }, []);
+  useEffect(() => {
+    initAnalytics();
+    // admin 영역에서는 자체 마케팅 분석 비활성화 (관리 행동 노이즈 방지)
+    if (!pathname.startsWith('/admin') && !pathname.startsWith('/sign')) {
+      installMarketingAnalytics();
+    }
+  }, []);
   useEffect(() => { trackPageview(); }, [pathname]);
   return null;
 }
@@ -208,6 +216,7 @@ export default function App() {
         <Route path="/admin/monitoring" element={wrap(<RequireAuth><AdminMonitoring /></RequireAuth>)} />
         <Route path="/admin/contracts" element={wrap(<RequireAuth><AdminContracts /></RequireAuth>)} />
         <Route path="/admin/products" element={wrap(<RequireAuth><AdminProducts /></RequireAuth>)} />
+        <Route path="/admin/analytics" element={wrap(<RequireAuth><AdminAnalytics /></RequireAuth>)} />
         <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
 
         {/* Public e-sign page — no auth, sign_token in path. */}
