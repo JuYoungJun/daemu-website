@@ -192,6 +192,14 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
 async def lifespan(_app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 기존 테이블에 새 컬럼을 추가하는 idempotent 마이그레이션.
+        # create_all 은 새 테이블만 만들고 기존 테이블의 컬럼은 건드리지
+        # 않으므로, 모델에 컬럼을 추가한 뒤에는 이 단계가 필요합니다.
+        try:
+            from migrations import install_migrations_sync
+            await conn.run_sync(install_migrations_sync)
+        except Exception as e:  # noqa: BLE001
+            print(f"[migration] failed: {e!r}")
     async with SessionLocal() as session:
         await ensure_default_users(session)
         # 표준 계약서/발주서 템플릿 자동 시드 (idempotent — 이미 있으면 skip)
