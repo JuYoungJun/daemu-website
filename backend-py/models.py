@@ -241,7 +241,7 @@ class ContentBlock(Base):
 
 
 class AuditLog(Base):
-    """접속기록 / 권한변경 / 인증이력 — PIPA §29 §6 (안전성 확보 조치) 준수.
+    """접속기록 / 권한변경 / 인증이력 — 개인정보 보호법 제29조 안전성 확보 조치 준수.
     Retain ≥ 1년. The retention cron in main.py keeps these untouched so they
     survive the inquiry/outbox sweeps. Restrict deletes to a separate cron
     with its own retention setting (default 5y).

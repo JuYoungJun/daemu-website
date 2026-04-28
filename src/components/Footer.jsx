@@ -56,7 +56,7 @@ export default function Footer() {
         <div className="footer-bottom">
           <p>© <span>{year}</span> DAEMU. All Rights Reserved.</p>
           <div className="footer-bottom-links">
-            <Link to="/privacy">개인정보처리방침</Link>
+            <Link to="/privacy">Privacy Policy</Link>
           </div>
         </div>
       </div>

@@ -119,7 +119,7 @@ if not RESEND_API_KEY:
 # Lifespan: create tables + seed default admin
 
 async def _retention_cron(stop_event: asyncio.Event) -> None:
-    """N2-06 / N2-17 / PIPA §21 fix: periodically delete personal data past
+    """N2-06 / N2-17 / Privacy Act art.21 fix: periodically delete personal data past
     the retention window declared in /privacy.
 
     - inquiries older than INQUIRY_RETENTION_DAYS (default 1095 = 3y)
@@ -129,7 +129,7 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
     don't fire it instantly under load."""
     # V3-01 fix: must import datetime + timezone INTO this scope. Previously
     # the lambda-style `datetime.now(timezone.utc)` raised NameError every
-    # sweep, swallowed by the broad except, leaving PIPA §21 retention dead.
+    # sweep, swallowed by the broad except, leaving retention literally dead.
     from datetime import datetime, timedelta, timezone
     from sqlalchemy import delete
     from models import Inquiry, Outbox
@@ -171,7 +171,7 @@ async def lifespan(_app: FastAPI):
         await ensure_default_users(session)
     print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
 
-    # Background retention task — PIPA §21 compliance.
+    # Background retention task — Privacy Act art.21 compliance.
     stop_event = asyncio.Event()
     cron_task = asyncio.create_task(_retention_cron(stop_event))
     # V3-13: hold the reference so the task can't be garbage-collected mid-flight.
