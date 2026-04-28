@@ -127,7 +127,10 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
 
     Runs every 6h. First sweep happens 5 minutes after boot so cold-starts
     don't fire it instantly under load."""
-    from datetime import timedelta
+    # V3-01 fix: must import datetime + timezone INTO this scope. Previously
+    # the lambda-style `datetime.now(timezone.utc)` raised NameError every
+    # sweep, swallowed by the broad except, leaving PIPA §21 retention dead.
+    from datetime import datetime, timedelta, timezone
     from sqlalchemy import delete
     from models import Inquiry, Outbox
 
@@ -171,6 +174,8 @@ async def lifespan(_app: FastAPI):
     # Background retention task — PIPA §21 compliance.
     stop_event = asyncio.Event()
     cron_task = asyncio.create_task(_retention_cron(stop_event))
+    # V3-13: hold the reference so the task can't be garbage-collected mid-flight.
+    app.state.retention_task = cron_task
     yield
     stop_event.set()
     try:
@@ -413,7 +418,10 @@ async def upload(
     if not magic_byte_ok(buf, ext):
         raise HTTPException(415, detail="파일 내용이 이미지 형식과 일치하지 않습니다.")
 
-    file_id = format(int(time.time() * 1000), "x") + "-" + secrets.token_hex(4)
+    # F-33: token_hex(8) gives 32 bits of entropy + the timestamp prefix —
+    # collisions over the lifetime of the demo are now astronomically
+    # unlikely (vs token_hex(4)'s 16 bits which collide in ~64K uploads).
+    file_id = format(int(time.time() * 1000), "x") + "-" + secrets.token_hex(8)
     final_name = f"{file_id}{ext.lower()}"
     final_path = UPLOAD_DIR / final_name
     if UPLOAD_DIR.resolve() not in final_path.resolve().parents:

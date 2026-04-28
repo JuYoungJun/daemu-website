@@ -79,7 +79,10 @@ export default function Contact() {
       status: '신규'
     };
 
-    DB.add('inquiries', inquiry);
+    // V3-10: only mirror to localStorage if there's no backend (offline
+    // demo). When backend is configured, the API is the only writer so
+    // production inquiries don't leak into the visitor's browser storage.
+    if (!api.isConfigured()) DB.add('inquiries', inquiry);
 
     let mailNote = '';
     if (api.isConfigured()) {

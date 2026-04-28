@@ -68,11 +68,14 @@ export function installConsultFormHandler() {
       return;
     }
 
-    // Local mirror — keeps offline demo working + lets admin see new entry
-    // immediately. The backend (when configured) is the source of truth.
-    DB.add('inquiries', {
-      name, phone, email, type: finalCategory, msg: message, status: '신규'
-    });
+    // V3-10: only mirror to localStorage in offline demo mode. Otherwise
+    // the backend is the source of truth and the visitor's browser
+    // doesn't accumulate inquiry copies.
+    if (!api.isConfigured()) {
+      DB.add('inquiries', {
+        name, phone, email, type: finalCategory, msg: message, status: '신규'
+      });
+    }
 
     let mailNote = '';
     if (api.isConfigured()) {

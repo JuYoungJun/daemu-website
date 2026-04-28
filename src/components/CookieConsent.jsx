@@ -11,12 +11,24 @@ export default function CookieConsent() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (!isGa4Configured()) return;
+    if (!isGa4Configured()) return undefined;
     if (ga4ConsentStatus() === 'unknown') {
-      // delay banner so it doesn't fight with splash
       const t = setTimeout(() => setShow(true), 4000);
-      return () => clearTimeout(t);
+      // V3-05/V3-09: cross-tab consent sync. If another tab makes a choice,
+      // hide the banner here AND propagate the consent decision to the
+      // analytics module (so this tab stops/starts tracking accordingly).
+      const onStorage = (e) => {
+        if (e.key === 'daemu_ga_consent') {
+          setShow(false);
+          if (e.newValue === 'granted' || e.newValue === 'denied') {
+            setGa4Consent(e.newValue);
+          }
+        }
+      };
+      window.addEventListener('storage', onStorage);
+      return () => { clearTimeout(t); window.removeEventListener('storage', onStorage); };
     }
+    return undefined;
   }, []);
 
   if (!show) return null;

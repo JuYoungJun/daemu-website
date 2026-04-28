@@ -5,6 +5,11 @@ import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
+// V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
+// installed even when the user navigates *into* /admin via React Router
+// (no full reload). The dynamic import in main.jsx only catches direct
+// landings on admin URLs.
+import('../lib/globals.js');
 
 export default function AdminGate() {
   const [loggedIn, setLoggedIn] = useState(() => Auth.isLoggedIn());

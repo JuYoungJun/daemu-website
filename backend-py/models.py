@@ -238,3 +238,27 @@ class ContentBlock(Base):
     key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     value: Mapped[list | dict | None] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AuditLog(Base):
+    """접속기록 / 권한변경 / 인증이력 — PIPA §29 §6 (안전성 확보 조치) 준수.
+    Retain ≥ 1년. The retention cron in main.py keeps these untouched so they
+    survive the inquiry/outbox sweeps. Restrict deletes to a separate cron
+    with its own retention setting (default 5y).
+    """
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
+    actor_email: Mapped[str] = mapped_column(String(190), default="", index=True)
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    # login.success / login.failure / password.change / role.change /
+    # user.create / user.delete / inquiry.delete / inquiry.export /
+    # token.issue / endpoint.access ...
+    target_type: Mapped[str] = mapped_column(String(40), default="")
+    target_id: Mapped[str] = mapped_column(String(60), default="")
+    ip: Mapped[str] = mapped_column(String(45), default="", index=True)
+    user_agent: Mapped[str] = mapped_column(String(255), default="")
+    request_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    detail: Mapped[list | dict | None] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

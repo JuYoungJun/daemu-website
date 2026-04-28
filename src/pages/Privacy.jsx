@@ -45,12 +45,23 @@ export default function Privacy() {
             </ul>
           </Section>
 
-          <Section title="4. 제3자 제공 및 처리 위탁">
-            서비스 제공을 위해 다음 처리자를 이용합니다.
+          <Section title="4. 제3자 제공 및 처리 위탁 (개인정보 국외이전 포함)">
+            서비스 제공을 위해 다음 처리자를 이용합니다 (PIPA §28-8 국외이전 5요소 고지).
             <ul>
-              <li><strong>Resend (이메일 발송)</strong> · 미국 · 자동회신 / 관리자 회신 메일 처리 — 회사 도메인 인증 후에는 SPF/DKIM 정렬을 적용하여 발송됩니다.</li>
-              <li><strong>Render / 카페24 (서버 호스팅)</strong> · 데이터베이스 보관 및 API 호출 처리</li>
-              <li><strong>GitHub Pages</strong> · 정적 페이지 호스팅 (개인정보 저장 없음)</li>
+              <li>
+                <strong>Resend, Inc. (이메일 발송)</strong>
+                <ul style={{margin:'6px 0 0', paddingLeft:18, fontSize:13}}>
+                  <li>이전국가: 미국</li>
+                  <li>이전일시 및 방법: 회신 메일 발송 시점, HTTPS API 호출</li>
+                  <li>이전 항목: 수신자 이메일 주소, 회신 본문</li>
+                  <li>처리 목적: 자동회신 / 관리자 회신 메일 발송</li>
+                  <li>보유 기간: Resend 발송 로그 30일 / 본 서비스 Outbox 1년</li>
+                  <li>발송자 SPF/DKIM 정렬: 현재 onboarding@resend.dev (sandbox) 사용 중. 회사 도메인 발급 + DNS 인증 완료 후 회사 도메인으로 정렬됩니다.</li>
+                </ul>
+              </li>
+              <li><strong>Render Services, Inc. / Cafe24 (서버 호스팅)</strong> · 미국·한국 · 데이터베이스 보관 + API 호출 처리</li>
+              <li><strong>GitHub, Inc. (정적 페이지 호스팅)</strong> · 미국 · 정적 자산 배포 (개인정보 저장 없음)</li>
+              <li><strong>Google LLC (Google Analytics 4)</strong> · 미국 · 익명 사용 통계 (이용자가 동의한 경우에만)</li>
             </ul>
             그 외 어떠한 제3자에게도 개인정보를 제공하지 않으며, 광고/마케팅 목적으로 활용하지 않습니다.
           </Section>

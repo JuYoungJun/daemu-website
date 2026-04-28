@@ -322,18 +322,25 @@ ensure_default_admin = ensure_default_users
 
 @router.post("/login", response_model=LoginOut)
 async def login(payload: LoginIn, request: Request, session: AsyncSession = Depends(get_session)):
+    from audit import log_event  # local import to avoid circular at module load
     ip = _client_ip(request)
     if _login_throttle.is_locked(ip):
+        await log_event(session, request, action="login.throttled",
+                        actor_email=payload.email, detail={"ip": ip})
         raise HTTPException(429, detail="로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.")
 
     res = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
     user = res.scalar_one_or_none()
     if not user or not user.active or not verify_password(payload.password, user.password_hash):
         _login_throttle.record_failure(ip)
+        await log_event(session, request, action="login.failure",
+                        actor_email=payload.email,
+                        detail={"reason": "bad-credentials" if user else "no-such-user"})
         raise HTTPException(401, detail="invalid credentials")
 
     _login_throttle.reset(ip)
     user.last_login_at = datetime.now(timezone.utc)
+    await log_event(session, request, action="login.success", actor_user=user)
     await session.flush()
     return LoginOut(
         token=issue_token(user),
@@ -355,12 +362,16 @@ async def me(user: AdminUser = Depends(require_user)):
 @router.post("/change-password")
 async def change_password(
     payload: ChangePasswordIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: AdminUser = Depends(require_user),
 ):
     """Any logged-in user can change their own password. Requires current
     password (re-auth). Clears must_change_password after a successful change."""
+    from audit import log_event
     if not verify_password(payload.current_password, user.password_hash):
+        await log_event(session, request, action="password.change.failure",
+                        actor_user=user, detail={"reason": "wrong-current"})
         raise HTTPException(401, detail="현재 비밀번호가 일치하지 않습니다.")
     err = validate_password_strength(payload.new_password)
     if err:
@@ -370,6 +381,7 @@ async def change_password(
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     user.password_changed_at = datetime.now(timezone.utc)
+    await log_event(session, request, action="password.change.success", actor_user=user)
     await session.flush()
     return {"ok": True}
 

@@ -86,6 +86,10 @@ class RateLimiter:
 
 _inquiry_limiter = RateLimiter(max_calls=8, window_seconds=600)  # 8 req / 10 min / IP
 
+# V3-13: hold strong references to fire-and-forget background tasks so
+# they can't be garbage-collected mid-flight (Python docs explicitly warn).
+_PENDING_TASKS: set = set()
+
 
 def _client_ip(request: Request) -> str:
     """Re-uses the auth module's X-Forwarded-For policy so the rate-limit
@@ -234,9 +238,21 @@ async def _send_auto_reply_inline(
 # ---------------------------------------------------------------------------
 # Helpers
 
-def model_to_dict(obj) -> dict[str, Any]:
+# DB-06 fix: any column whose name appears here is dropped from API
+# responses across every CRUD model — e.g. the `password_hash` field
+# would leak if the AdminUser model were ever wired into the generic
+# CRUD factory. Centralized so the next maintainer can extend it.
+_SENSITIVE_COLUMNS = frozenset({
+    "password_hash", "password", "secret", "token", "api_key",
+})
+
+
+def model_to_dict(obj, *, exclude: frozenset | set | None = None) -> dict[str, Any]:
+    drop = _SENSITIVE_COLUMNS | (exclude or set())
     out: dict[str, Any] = {}
     for col in obj.__table__.columns:
+        if col.name in drop:
+            continue
         val = getattr(obj, col.name)
         if isinstance(val, datetime):
             out[col.name] = val.isoformat()
@@ -297,10 +313,12 @@ async def create_inquiry(
         message=inq.message or "",
     )
 
-    # N2-03: fire-and-forget so the public Contact endpoint isn't held by
-    # the (up to 15 s) Resend HTTP call. The background task uses its own
-    # DB session, so the request's WAL writer lock is released immediately.
-    asyncio.create_task(_send_auto_reply_async(**auto_args))
+    # N2-03 + V3-13: fire-and-forget so the public Contact endpoint isn't
+    # held by the (up to 15 s) Resend HTTP call. asyncio.create_task can be
+    # GC'd if the reference is dropped — keep them in module-level set.
+    task = asyncio.create_task(_send_auto_reply_async(**auto_args))
+    _PENDING_TASKS.add(task)
+    task.add_done_callback(_PENDING_TASKS.discard)
 
     return {"ok": True, "id": inq.id, "inquiry": inquiry_dict}
 
@@ -320,6 +338,9 @@ async def list_inquiries(
         stmt = stmt.where(Inquiry.status == status)
         count_stmt = count_stmt.where(Inquiry.status == status)
     if q:
+        # DB-08 DoS guard: bounded so an attacker can't force a
+        # gigabyte-scan via the LIKE %x...x% pattern.
+        q = q[:80]
         like = f"%{q}%"
         stmt = stmt.where(
             (Inquiry.name.ilike(like))

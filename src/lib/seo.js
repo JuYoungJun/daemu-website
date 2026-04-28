@@ -206,13 +206,15 @@ export function breadcrumbLd(items) {
 }
 
 export function faqLd(faqs) {
+  // V3-06 null-safety
+  const items = Array.isArray(faqs) ? faqs : [];
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: faqs.map((q) => ({
+    mainEntity: items.map((q) => ({
       '@type': 'Question',
-      name: q.q,
-      acceptedAnswer: { '@type': 'Answer', text: q.a },
+      name: (q && q.q) || '',
+      acceptedAnswer: { '@type': 'Answer', text: (q && q.a) || '' },
     })),
   };
 }
@@ -226,17 +228,19 @@ export function faqLd(faqs) {
  * @param {Array<{name: string, text: string}>} steps
  */
 export function howToLd(name, description, steps) {
+  // V3-06 null-safety
+  const safeSteps = Array.isArray(steps) ? steps : [];
   return {
     '@context': 'https://schema.org',
     '@type': 'HowTo',
-    name,
-    description,
+    name: name || '',
+    description: description || '',
     totalTime: 'P3M',
-    step: steps.map((s, i) => ({
+    step: safeSteps.map((s, i) => ({
       '@type': 'HowToStep',
       position: i + 1,
-      name: s.name,
-      text: s.text,
+      name: (s && s.name) || `Step ${i + 1}`,
+      text: (s && s.text) || '',
     })),
   };
 }
@@ -261,16 +265,18 @@ export function serviceLd(name, description, serviceType) {
 /**
  * Article / CreativeWork schema for individual case studies (work detail).
  */
-export function articleLd({ title, description, image, slug, datePublished }) {
+export function articleLd(opts = {}) {
+  // V3-06 null-safety
+  const { title, description, image, slug, datePublished } = opts || {};
   return {
     '@context': 'https://schema.org',
     '@type': 'Article',
-    headline: title,
-    description,
+    headline: title || '',
+    description: description || '',
     image: image || (SITE_BASE_URL + '/assets/logo.svg'),
     author: { '@id': SITE_BASE_URL + '/#organization' },
     publisher: { '@id': SITE_BASE_URL + '/#organization' },
-    mainEntityOfPage: SITE_BASE_URL + '/work/' + slug,
+    mainEntityOfPage: SITE_BASE_URL + '/work/' + (slug || ''),
     datePublished: datePublished || '2024-01-01',
     inLanguage: 'ko-KR',
   };
