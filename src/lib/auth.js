@@ -100,7 +100,7 @@ export const Auth = {
     if (!api.isConfigured()) {
       if (!email || !password) return { ok: false, error: 'enter credentials' };
       localStorage.setItem(LEGACY_KEY, '1');
-      localStorage.setItem(USER_KEY, JSON.stringify({ email, name: '데모 관리자', role: 'admin', must_change_password: false }));
+      localStorage.setItem(USER_KEY, JSON.stringify({ email, name: '데모 관리자', role: 'admin', must_change_password: false, email_verified_at: new Date().toISOString() }));
       this.touch();
       return { ok: true, simulated: true, mustChangePassword: false };
     }
@@ -149,6 +149,8 @@ export const Auth = {
       localStorage.setItem(USER_KEY, JSON.stringify({
         id: r.id, email: r.email, name: r.name, role: r.role,
         must_change_password: !!r.must_change_password,
+        email_verified_at: r.email_verified_at || null,
+        totp_enabled: !!r.totp_enabled,
       }));
       return r;
     }

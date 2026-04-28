@@ -426,6 +426,10 @@ app.include_router(crud_router)
 from routes_documents import router as documents_router
 app.include_router(documents_router)
 
+# 첫 접속 어드민 이메일 인증 (B1).
+from routes_email_verify import router as email_verify_router  # noqa: E402
+app.include_router(email_verify_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

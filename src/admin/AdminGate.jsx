@@ -6,6 +6,7 @@ import { DB } from '../lib/db.js';
 import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
 import TwoFactorPanel from './TwoFactorPanel.jsx';
+import EmailVerifyForm from './EmailVerifyForm.jsx';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -17,6 +18,9 @@ export default function AdminGate() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mustChange, setMustChange] = useState(() => !!Auth.user()?.must_change_password);
+  const [needsEmailVerify, setNeedsEmailVerify] = useState(
+    () => !!Auth.user() && Auth.user()?.email_verified_at == null,
+  );
   const [showChange, setShowChange] = useState(false);
   const [show2fa, setShow2fa] = useState(false);
   // 2FA login flow state — when backend says need_totp, we keep email/password
@@ -32,8 +36,10 @@ export default function AdminGate() {
   useEffect(() => {
     if (loggedIn && api.isConfigured()) {
       Auth.refreshMe().then((u) => {
-        if (u) setMustChange(!!u.must_change_password);
-        else { Auth.logout(); setLoggedIn(false); }
+        if (u) {
+          setMustChange(!!u.must_change_password);
+          setNeedsEmailVerify(u.email_verified_at == null);
+        } else { Auth.logout(); setLoggedIn(false); }
       });
     }
   }, [loggedIn]);
@@ -91,6 +97,24 @@ export default function AdminGate() {
     setMustChange(false);
     setShowChange(false);
   };
+
+  // 첫 접속 어드민 — 이메일 인증을 가장 먼저 요구.
+  if (loggedIn && needsEmailVerify) {
+    return (
+      <AdminShell>
+        <main className="page">
+          <section className="wide admin-page">
+            <h1 className="page-title">Admin</h1>
+            <EmailVerifyForm
+              email={Auth.user()?.email || ''}
+              onVerified={() => setNeedsEmailVerify(false)}
+              onLogout={onLogout}
+            />
+          </section>
+        </main>
+      </AdminShell>
+    );
+  }
 
   if (loggedIn && (mustChange || showChange)) {
     return (
@@ -197,6 +221,7 @@ export default function AdminGate() {
     'stats':         ['admin', 'tester', 'developer'],
     'media':         ['admin', 'developer'],
     'mail':          ['admin', 'developer', 'tester'],
+    'mail-templates':['admin', 'developer'],
     'crm':           ['admin'],
     'campaign':      ['admin'],
     'promotion':     ['admin'],
@@ -264,6 +289,7 @@ export default function AdminGate() {
               {can('analytics') && <MenuCard to="/admin/analytics" title="마케팅 분석" desc="페이지뷰·체류시간·UTM·기기별 분포를 자동 집계합니다." items={['일자별 방문 추이','UTM 캠페인 추적','유입 채널 분석 (검색/SNS/직접)','CTA 클릭·폼 제출 카운트','CSV 내보내기 (마케팅 보고서)']} />}
               {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
               {can('mail')      && <MenuCard to="/admin/mail" title="메일 자동회신 설정" desc="상담 문의 접수 시 자동으로 발송되는 회신 메일을 관리합니다." items={['자동회신 템플릿 편집','카테고리별 회신 설정','발송 이력 확인','자동회신 ON/OFF']} />}
+              {can('mail-templates') && <MenuCard to="/admin/mail-templates" title="메일 템플릿 라이브러리" desc="여러 개의 메일 템플릿을 저장·재사용하고, 단체 메일을 발송합니다." items={['템플릿 CRUD + 카테고리 분류','{{변수}} 자리표시자','템플릿별 미리보기','단체 발송 (BCC 아닌 1:1 N건)','Resend 연결 시 실발송, 미연결 시 simulated']} />}
             </div>
 
             <h3 className="admin-section-title" style={{marginTop:'48px'}}>마케팅 / CRM</h3>

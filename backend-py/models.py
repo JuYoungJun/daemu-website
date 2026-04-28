@@ -44,6 +44,10 @@ class AdminUser(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # 첫 접속 시 이메일 인증 강제. 관리자가 만들어준 신규 계정은 NULL 로
+    # 시작해 frontend AdminGate 가 인증 step → 비밀번호 변경 step 순서로 안내.
+    # 인증 완료 시점이 기록되며, 한 번 검증된 후 다시 변경되지 않습니다.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     # 2FA / TOTP — opt-in. Once totp_enabled is True, login requires a valid
     # 6-digit code from the user's authenticator app. recovery_codes is a JSON
     # array of bcrypt-hashed single-use backup codes.
@@ -330,20 +334,29 @@ class NewsletterSubscriber(Base):
 
 
 class AdminEmailOtp(Base):
-    """6-digit email OTP for admin login (B1 scaffolding).
+    """6-digit email OTP for admin login + first-login email verification.
 
-    Issued only when AUTH_EMAIL_OTP_ENABLED=true and RESEND_API_KEY is set.
-    The hash is sha256 of the cleartext code; never log or store cleartext.
-    Cleanup cron prunes rows older than 1h.
+    purpose: "login_otp" | "email_verify"
+      · login_otp    — 2FA-style step after password (B1 활성화 후)
+      · email_verify — 신규 어드민 계정 첫 접속 이메일 검증
+
+    Issued only when (RESEND_API_KEY is set OR simulated mode is permitted).
+    code_hash 는 sha256 of cleartext; cleartext 는 절대 로깅/저장하지 않음.
+    Cleanup cron 이 detected_at 1h 초과 row 제거.
+    last_sent_at / locked_until 은 발송 쿨다운(60초)·연속 실패 잠금(15분)
+    정책 강제용 (security-advisor F2 권고).
     """
     __tablename__ = "admin_email_otp"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20), default="login_otp", index=True)
     code_hash: Mapped[str] = mapped_column(String(128))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ip: Mapped[str] = mapped_column(String(45), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 

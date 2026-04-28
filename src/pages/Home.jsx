@@ -5,6 +5,7 @@ import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd, faqLd } from '../lib/seo.js';
 import PromotionBanner from '../components/PromotionBanner.jsx';
 import { PartnerBrandLogoImg, PartnerBrandLink } from '../components/PartnerBrandLogo.jsx';
+import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 
 const PARTNER_STORAGE_KEY = 'daemu_partner_brands';
 
@@ -326,25 +327,33 @@ export default function Home() {
             <p className="home-partners-desc">대무와 함께 브랜드를 만들어가는 협업 파트너입니다.</p>
           </div>
           <div className="home-partners-grid" id="home-partners-grid">
-            {partnerBrands.map((b) => (
-              <PartnerBrandLink key={b.id} url={b.url} trackId={b.id}
-                className="home-partner-card-wrapper"
-                style={{ textDecoration: 'none' }}>
-                <div className="home-partner-card">
-                  <PartnerBrandLogoImg
-                    logo={b.logo}
-                    name={b.name}
-                    style={{ maxWidth: '78%', maxHeight: 64, objectFit: 'contain' }}
-                  />
-                  {!b.logo && (
-                    <p className="home-partner-card-text"
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}>
-                      {String(b.name == null ? '' : b.name).slice(0, 80)}
-                    </p>
-                  )}
-                </div>
-              </PartnerBrandLink>
-            ))}
+            {partnerBrands.map((b) => {
+              // Snyk Open Redirect/XSS taint break — validate up front in
+              // the parent so the value passed across the JSX boundary is
+              // already a verified primitive (not a useState reference).
+              const verifiedLogo = b.logo ? String(safeMediaUrl(b.logo) || '') : '';
+              const verifiedHref = String(validateOutboundUrl(b.url) || '');
+              const safeName = String(b.name == null ? '' : b.name).slice(0, 80);
+              return (
+                <PartnerBrandLink key={b.id} verifiedHref={verifiedHref} trackId={b.id}
+                  className="home-partner-card-wrapper"
+                  style={{ textDecoration: 'none' }}>
+                  <div className="home-partner-card">
+                    <PartnerBrandLogoImg
+                      verifiedLogoSrc={verifiedLogo}
+                      name={safeName}
+                      style={{ maxWidth: '78%', maxHeight: 64, objectFit: 'contain' }}
+                    />
+                    {!verifiedLogo && (
+                      <p className="home-partner-card-text"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}>
+                        {safeName}
+                      </p>
+                    )}
+                  </div>
+                </PartnerBrandLink>
+              );
+            })}
             <div className="home-partner-card home-partner-card--coming">
               <div className="home-partner-card-icon">
                 <svg viewBox="0 0 40 40" width="40" height="40">

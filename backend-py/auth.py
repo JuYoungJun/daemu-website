@@ -206,6 +206,9 @@ class UserOut(BaseModel):
     role: str
     must_change_password: bool = False
     totp_enabled: bool = False
+    # 첫 접속 시 이메일 인증 필요 여부 — frontend 가 이 필드를 보고
+    # 인증 화면을 먼저 띄울지 결정. None 이면 미인증, 있으면 인증된 시각.
+    email_verified_at: datetime | None = None
 
 
 class LoginOut(BaseModel):
@@ -499,6 +502,7 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
             id=user.id, email=user.email, name=user.name, role=user.role,
             must_change_password=user.must_change_password,
             totp_enabled=user.totp_enabled,
+            email_verified_at=user.email_verified_at,
         ),
     )
 
@@ -509,6 +513,7 @@ async def me(user: AdminUser = Depends(require_user)):
         id=user.id, email=user.email, name=user.name, role=user.role,
         must_change_password=user.must_change_password,
         totp_enabled=user.totp_enabled,
+        email_verified_at=user.email_verified_at,
     )
 
 
