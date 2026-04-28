@@ -194,6 +194,12 @@ async def lifespan(_app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     async with SessionLocal() as session:
         await ensure_default_users(session)
+        # 표준 계약서/발주서 템플릿 자동 시드 (idempotent — 이미 있으면 skip)
+        try:
+            from seeds import ensure_default_templates
+            await ensure_default_templates(session)
+        except Exception as e:  # noqa: BLE001
+            print(f"[seeds] template seed failed: {e!r}")
     print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
 
     # Background retention task — Privacy Act art.21 compliance.
@@ -488,18 +494,121 @@ class CampaignIn(BaseModel):
 # ---------------------------------------------------------------------------
 # Health
 
+@app.get("/api/monitoring/summary")
+async def monitoring_summary(_user = Depends(require_perm("monitoring", "read"))):
+    """관리자/개발자만 조회 가능한 운영 요약 — 모니터링 페이지에서 1회/분 폴링.
+    DB 응답 시간, 최근 24h Outbox 통계, 최근 실패 발송 건수, 미답변 문의 등
+    한 호출에 모아 반환."""
+    from datetime import datetime, timedelta, timezone as _tz
+    from sqlalchemy import func as _func
+    from models import Inquiry, Outbox, AuditLog, Document, NewsletterSubscriber, Partner
+    cutoff = datetime.now(_tz.utc) - timedelta(hours=24)
+    out: dict[str, Any] = {"ok": True, "ts": datetime.now(_tz.utc).isoformat()}
+
+    # DB ping latency (단순 SELECT 1)
+    t0 = time.perf_counter()
+    try:
+        async with SessionLocal() as session:
+            await session.execute(select(_func.count()).select_from(Outbox))
+            db_ms = round((time.perf_counter() - t0) * 1000, 1)
+            out["dbLatencyMs"] = db_ms
+
+            # Outbox 24h
+            ob_24h = (await session.execute(
+                select(Outbox.status, _func.count())
+                .where(Outbox.created_at >= cutoff)
+                .group_by(Outbox.status)
+            )).all()
+            out["outbox24h"] = {row[0]: row[1] for row in ob_24h}
+
+            # Outbox 누적
+            ob_total = (await session.execute(select(_func.count()).select_from(Outbox))).scalar_one()
+            out["outboxTotal"] = ob_total
+
+            # 실패 최근 5건 (실패율 진단)
+            recent_failed = (await session.execute(
+                select(Outbox).where(Outbox.status.in_(["failed", "error"]))
+                .order_by(Outbox.created_at.desc()).limit(5)
+            )).scalars().all()
+            out["recentFailures"] = [
+                {"id": r.id, "type": r.type, "to": r.recipient, "subject": r.subject,
+                 "error": r.error[:200] if r.error else "",
+                 "ts": r.created_at.isoformat() if r.created_at else None}
+                for r in recent_failed
+            ]
+
+            # 문의 — 미답변 신규 건수
+            new_inq = (await session.execute(
+                select(_func.count()).select_from(Inquiry).where(Inquiry.status == "신규")
+            )).scalar_one()
+            out["newInquiries"] = new_inq
+
+            # 24h 신규 문의
+            inq_24h = (await session.execute(
+                select(_func.count()).select_from(Inquiry).where(Inquiry.created_at >= cutoff)
+            )).scalar_one()
+            out["inquiries24h"] = inq_24h
+
+            # 활성 파트너
+            active_partners = (await session.execute(
+                select(_func.count()).select_from(Partner).where(Partner.status == "활성")
+            )).scalar_one()
+            out["activePartners"] = active_partners
+
+            # 활성 뉴스레터 구독자
+            sub_active = (await session.execute(
+                select(_func.count()).select_from(NewsletterSubscriber)
+                .where(NewsletterSubscriber.status == "active")
+            )).scalar_one()
+            out["newsletterActive"] = sub_active
+
+            # 문서 (계약/PO) 상태 집계
+            doc_by_status = (await session.execute(
+                select(Document.status, _func.count()).group_by(Document.status)
+            )).all()
+            out["documentsByStatus"] = {row[0]: row[1] for row in doc_by_status}
+
+            # 최근 24h 보안 이벤트 (login.failure / login.totp.failure)
+            sec_events = (await session.execute(
+                select(AuditLog.action, _func.count())
+                .where(AuditLog.created_at >= cutoff)
+                .where(AuditLog.action.in_([
+                    "login.failure", "login.throttled",
+                    "login.totp.failure", "login.totp.required",
+                    "login.success", "password.change.failure", "totp.enabled", "totp.disabled",
+                ]))
+                .group_by(AuditLog.action)
+            )).all()
+            out["securityEvents24h"] = {row[0]: row[1] for row in sec_events}
+    except Exception as exc:  # noqa: BLE001
+        out["dbLatencyMs"] = None
+        out["error"] = str(exc)[:200]
+
+    out["emailProvider"] = email_provider()
+    return out
+
+
 @app.get("/api/health")
 async def health():
+    provider = email_provider()
     return {
         "ok": True,
         "runtime": "python-fastapi",
-        "version": "3.0",
+        "version": "3.1",
+        "emailProvider": provider,
         "resendConfigured": bool(RESEND_API_KEY),
+        "smtpConfigured": bool(SMTP_HOST and SMTP_USER),
+        "smtpHost": (SMTP_HOST or ""),
+        "smtpFrom": (SMTP_FROM or ""),
         "database": engine.url.render_as_string(hide_password=True),
         "from": FROM_EMAIL,
         "allowedOrigins": ALLOWED_ORIGINS,
         "uploadEndpoint": "/api/upload",
         "publicBase": PUBLIC_BASE or "(auto from request host)",
+        "warnings": (
+            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 Render env에 설정하세요."]
+            if provider == "none" else []
+        ),
     }
 
 

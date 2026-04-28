@@ -14,12 +14,57 @@ const CONTACT_FAQS = [
 ];
 
 function ConsentRow({ consent, setConsent }) {
+  // 별도 wrapper. .field/.full 그리드 셀의 input 전용 스타일과 분리해
+  // 체크박스+라벨이 한 줄에 깔끔하게 정렬되도록 함.
   return (
-    <div className="field full" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 0', borderTop: '1px solid #e6e3dd' }}>
-      <input id="privacy-consent" type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required
-        style={{ marginTop: 4, width: 18, height: 18, accentColor: '#2a2724', flexShrink: 0 }} />
-      <label htmlFor="privacy-consent" style={{ fontSize: 12, color: '#5f5b57', lineHeight: 1.6, cursor: 'pointer' }}>
-        <strong style={{ color: '#222' }}>(필수)</strong> 개인정보 수집·이용에 동의합니다. 수집 항목: 이름, 이메일, 연락처(선택), 문의 내용 / 보유 기간: 3년 / 자세한 내용은 <Link to="/privacy" style={{ textDecoration: 'underline' }}>개인정보처리방침</Link>을 확인해 주세요.
+    <div className="contact-consent-row" style={{
+      gridColumn: '1 / -1',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 12,
+      padding: '14px 16px',
+      marginTop: 8,
+      background: '#faf8f4',
+      border: '1px solid #e6e3dd',
+      borderRadius: 4,
+    }}>
+      <input
+        id="privacy-consent"
+        type="checkbox"
+        checked={consent}
+        onChange={(e) => setConsent(e.target.checked)}
+        required
+        style={{
+          flex: '0 0 auto',
+          margin: 0,
+          marginTop: 2,
+          width: 18,
+          height: 18,
+          accentColor: '#2a2724',
+          cursor: 'pointer',
+        }}
+      />
+      <label
+        htmlFor="privacy-consent"
+        style={{
+          fontSize: 12.5,
+          color: '#3a3733',
+          lineHeight: 1.65,
+          cursor: 'pointer',
+          flex: '1 1 auto',
+          margin: 0,
+          letterSpacing: 0,
+          textTransform: 'none',
+        }}
+      >
+        <strong style={{ color: '#231815', marginRight: 4 }}>(필수)</strong>
+        개인정보 수집·이용에 동의합니다. 수집 항목: 이름, 이메일, 연락처(선택), 문의 내용 / 보유 기간: 3년 / 자세한 내용은{' '}
+        <Link
+          to="/privacy"
+          onClick={(e) => e.stopPropagation()}
+          style={{ textDecoration: 'underline', color: '#231815' }}
+        >개인정보처리방침</Link>
+        을 확인해 주세요.
       </label>
     </div>
   );

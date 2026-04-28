@@ -24,29 +24,86 @@ const STATUS_COLOR = {
 };
 
 const VARIABLE_HINTS = [
-  { key: 'clientName', label: '고객/회사명' },
-  { key: 'clientAddress', label: '고객 주소' },
-  { key: 'clientCEO', label: '고객 대표자' },
-  { key: 'clientBizNo', label: '고객 사업자등록번호' },
-  { key: 'projectName', label: '프로젝트명' },
-  { key: 'amount', label: '금액(표기용)' },
-  { key: 'amountWithTax', label: '부가세 포함 금액' },
-  { key: 'startDate', label: '시작일' },
-  { key: 'endDate', label: '종료일' },
-  { key: 'deliveryDate', label: '납품/완료일' },
-  { key: 'companyName', label: '공급/발주사명 (당사)' },
-  { key: 'companyAddress', label: '당사 주소' },
-  { key: 'companyCEO', label: '당사 대표자' },
-  { key: 'companyBizNo', label: '당사 사업자등록번호' },
-  { key: 'managerName', label: '담당자' },
-  { key: 'managerEmail', label: '담당자 이메일' },
-  { key: 'managerPhone', label: '담당자 연락처' },
-  { key: 'scope', label: '업무 범위 / 발주 항목' },
-  { key: 'terms', label: '특약 조건' },
-  { key: 'paymentTerms', label: '대금 지급 조건 (참고)' },
-  { key: 'warrantyPeriod', label: '하자보수 기간' },
-  { key: 'today', label: '계약 체결일' },
+  { key: 'clientName', label: '고객/회사명', group: 'client', placeholder: '예: (주)카페 이음' },
+  { key: 'clientAddress', label: '고객 주소', group: 'client', placeholder: '예: 광주광역시 서구 ...' },
+  { key: 'clientCEO', label: '고객 대표자', group: 'client', placeholder: '예: 홍길동' },
+  { key: 'clientBizNo', label: '고객 사업자등록번호', group: 'client', placeholder: '예: 123-45-67890' },
+  { key: 'projectName', label: '프로젝트명', group: 'project', placeholder: '예: 비클래시 인천점 메뉴 R&D' },
+  { key: 'scope', label: '업무 범위 / 발주 항목', group: 'project', long: true, placeholder: '본 계약의 업무 내용을 항목별로 작성하세요.' },
+  { key: 'amount', label: '금액 (표기용)', group: 'money', placeholder: '예: 50,000,000' },
+  { key: 'amountWithTax', label: '부가세 포함 금액', group: 'money', placeholder: '예: 55,000,000' },
+  { key: 'paymentTerms', label: '대금 지급 조건 (참고)', group: 'money', long: true, placeholder: '예: 계약 시 30%, 중간 40%, 잔금 30%' },
+  { key: 'startDate', label: '시작일', group: 'schedule', placeholder: 'YYYY-MM-DD' },
+  { key: 'endDate', label: '종료일', group: 'schedule', placeholder: 'YYYY-MM-DD' },
+  { key: 'deliveryDate', label: '납품/완료일', group: 'schedule', placeholder: 'YYYY-MM-DD' },
+  { key: 'today', label: '계약 체결일', group: 'schedule', placeholder: 'YYYY-MM-DD' },
+  { key: 'warrantyPeriod', label: '하자보수 기간', group: 'schedule', placeholder: '예: 6개월' },
+  { key: 'companyName', label: '공급/발주사명 (당사)', group: 'company', placeholder: '대무 (DAEMU)' },
+  { key: 'companyAddress', label: '당사 주소', group: 'company', placeholder: '전라남도 나주시 황동 3길 8' },
+  { key: 'companyCEO', label: '당사 대표자', group: 'company', placeholder: '대표자명' },
+  { key: 'companyBizNo', label: '당사 사업자등록번호', group: 'company', placeholder: '예: 123-45-67890' },
+  { key: 'managerName', label: '담당자', group: 'company', placeholder: '예: 김담당' },
+  { key: 'managerEmail', label: '담당자 이메일', group: 'company', placeholder: 'daemu_office@naver.com' },
+  { key: 'managerPhone', label: '담당자 연락처', group: 'company', placeholder: '061-335-1239' },
+  { key: 'terms', label: '특약사항', group: 'misc', long: true, placeholder: '추가 특별 조항이나 합의사항을 작성하세요.' },
 ];
+
+const VARIABLE_GROUPS = [
+  { key: 'client',   label: '🧑 고객 정보',     desc: '계약/발주 상대방의 회사·대표자·연락 정보' },
+  { key: 'project',  label: '📋 프로젝트',      desc: '계약 대상 프로젝트와 업무 범위' },
+  { key: 'money',    label: '💴 금액·지급 조건', desc: '계약 금액 및 지급 조건 (표기 전용 — 실 결제는 별도)' },
+  { key: 'schedule', label: '📅 일정',          desc: '계약 기간과 납품·체결 일정' },
+  { key: 'company',  label: '🏢 당사 / 담당자', desc: '대무(공급사) 기본 정보 — 한 번 채워두면 재사용 가능' },
+  { key: 'misc',     label: '📝 특약사항',      desc: '기타 합의 조항' },
+];
+
+// 당사 정보 기본값 (대무 기본 정보) — 새 문서 생성 시 자동 prefill.
+const COMPANY_DEFAULTS = {
+  companyName: '대무 (DAEMU)',
+  companyAddress: '전라남도 나주시 황동 3길 8',
+  companyCEO: '',
+  companyBizNo: '',
+  managerName: '',
+  managerEmail: 'daemu_office@naver.com',
+  managerPhone: '061-335-1239',
+  warrantyPeriod: '6개월',
+  today: new Date().toISOString().slice(0, 10),
+};
+
+// 선택된 파트너 / CRM 데이터를 계약서 변수로 변환.
+// 파트너에 추가 필드(주소·사업자번호 등)가 등록되어 있으면 그것까지 채우고,
+// 없으면 비워둠. 빈 값은 변수 입력 폼에서 사용자가 직접 채울 수 있도록.
+function partnerToVariables(p) {
+  if (!p) return {};
+  return {
+    clientName:    p.name || p.company || '',
+    clientCEO:     p.ceo || p.person || '',           // 대표자 또는 담당자
+    clientAddress: p.addr || p.address || '',
+    clientBizNo:   p.bizNo || p.bizno || p.businessNumber || '',
+  };
+}
+function crmToVariables(c) {
+  if (!c) return {};
+  return {
+    clientName:    c.company || c.name || '',
+    clientCEO:     c.ceo || c.name || '',
+    clientAddress: c.addr || c.address || '',
+    clientBizNo:   c.bizNo || c.businessNumber || '',
+    projectName:   c.projectName || c.summary || '',
+  };
+}
+function orderToVariables(o, partnerLookup) {
+  if (!o) return {};
+  const partner = partnerLookup?.find?.((p) => p.id === o.partner_id || p.name === o.partner);
+  const base = partner ? partnerToVariables(partner) : {};
+  return {
+    ...base,
+    projectName:    o.title || o.product || '',
+    amount:         o.amount ? String(o.amount) : (o.qty && o.price ? String(Number(o.qty) * Number(o.price)) : ''),
+    deliveryDate:   o.due_date ? String(o.due_date).slice(0, 10) : '',
+    scope:          o.note || o.product || '',
+  };
+}
 
 // ----- 표준 템플릿 (Korean B2B + F&B 컨설팅 맥락) -----
 
@@ -685,16 +742,53 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
           </Field>
 
           <div>
-            <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', margin: '14px 0 8px' }}>변수값</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {VARIABLE_HINTS.map((v) => (
-                <label key={v.key} style={{ display: 'block' }}>
-                  <span style={{ fontSize: 11, color: '#6f6b68' }}>{v.label} (<code>{`{{${v.key}}}`}</code>)</span>
-                  <input type="text" value={d.variables[v.key] || ''} onChange={(e) => setVar(v.key, e.target.value)}
-                    style={{ width: '100%', padding: 6, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                </label>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '14px 0 8px' }}>
+              <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', margin: 0 }}>
+                변수값 입력
+              </h4>
+              <button type="button" className="adm-btn-sm" onClick={() => {
+                // 당사 기본 정보 자동 prefill — 매번 입력 안 해도 되도록.
+                setD((prev) => ({
+                  ...prev,
+                  variables: { ...COMPANY_DEFAULTS, ...prev.variables, today: COMPANY_DEFAULTS.today },
+                }));
+              }} title="대무(당사) 기본 정보를 자동으로 채웁니다.">
+                🏢 당사 정보 자동 입력
+              </button>
             </div>
+            {VARIABLE_GROUPS.map((g) => {
+              const items = VARIABLE_HINTS.filter((v) => v.group === g.key);
+              if (!items.length) return null;
+              return (
+                <fieldset key={g.key} style={{
+                  border: '1px solid #e6e3dd', padding: '12px 14px 10px', marginBottom: 10, background: '#fdfcfa',
+                }}>
+                  <legend style={{ padding: '0 8px', fontSize: 11.5, color: '#5a534b', letterSpacing: '.04em' }}>
+                    <strong>{g.label}</strong> · <span style={{ color: '#8c867d' }}>{g.desc}</span>
+                  </legend>
+                  <div style={{ display: 'grid', gridTemplateColumns: items.some((x) => x.long) ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    {items.map((v) => (
+                      <label key={v.key} style={{ display: 'block', gridColumn: v.long ? '1 / -1' : 'auto' }}>
+                        <span style={{ fontSize: 11, color: '#6f6b68', display: 'block', marginBottom: 2 }}>
+                          {v.label} <code style={{ color: '#b9b5ae', fontSize: 10 }}>{`{{${v.key}}}`}</code>
+                        </span>
+                        {v.long ? (
+                          <textarea rows={3} value={d.variables[v.key] || ''}
+                            onChange={(e) => setVar(v.key, e.target.value)}
+                            placeholder={v.placeholder || ''}
+                            style={{ width: '100%', padding: 8, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
+                        ) : (
+                          <input type="text" value={d.variables[v.key] || ''}
+                            onChange={(e) => setVar(v.key, e.target.value)}
+                            placeholder={v.placeholder || ''}
+                            style={{ width: '100%', padding: 8, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              );
+            })}
           </div>
 
           <div>
@@ -716,40 +810,74 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
             <button type="button" className="adm-btn-sm" onClick={addRecipient}>+ 수신자 추가</button>
           </div>
 
-          <details style={{ fontSize: 12, color: '#6f6b68' }}>
-            <summary style={{ cursor: 'pointer', padding: '6px 0' }}>📎 연결할 데이터 선택 (선택 사항)</summary>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
+          <details open style={{ fontSize: 12, color: '#6f6b68' }}>
+            <summary style={{ cursor: 'pointer', padding: '6px 0', fontWeight: 500 }}>📎 기존 데이터에서 자동 채우기 (CRM / 파트너 / 발주)</summary>
+            <p style={{ fontSize: 11, color: '#8c867d', margin: '4px 0 8px' }}>
+              선택한 항목의 회사명·대표자·주소·사업자번호 등 등록된 정보를 변수에 자동 채웁니다.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <Field label="CRM 고객">
-                <select value={d.crm_id || ''} onChange={(e) => setD({ ...d, crm_id: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">(선택 없음)</option>
-                  {crmList.map((c) => <option key={c.id} value={c.id}>{c.name}{c.company ? ` / ${c.company}` : ''}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select value={d.crm_id || ''} onChange={(e) => setD({ ...d, crm_id: e.target.value ? Number(e.target.value) : null })}
+                    style={{ flex: 1 }}>
+                    <option value="">(선택 없음)</option>
+                    {crmList.map((c) => <option key={c.id} value={c.id}>{c.name}{c.company ? ` / ${c.company}` : ''}</option>)}
+                  </select>
+                  <button type="button" className="adm-btn-sm" disabled={!d.crm_id}
+                    onClick={() => {
+                      const c = crmList.find((x) => x.id === d.crm_id);
+                      if (c) setD((prev) => ({ ...prev, variables: { ...prev.variables, ...crmToVariables(c) } }));
+                    }}
+                    title="이 고객의 정보를 변수에 채웁니다.">불러오기</button>
+                </div>
               </Field>
               <Field label="파트너">
-                <select value={d.partner_id || ''} onChange={(e) => setD({ ...d, partner_id: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">(선택 없음)</option>
-                  {partnerList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select value={d.partner_id || ''} onChange={(e) => setD({ ...d, partner_id: e.target.value ? Number(e.target.value) : null })}
+                    style={{ flex: 1 }}>
+                    <option value="">(선택 없음)</option>
+                    {partnerList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <button type="button" className="adm-btn-sm" disabled={!d.partner_id}
+                    onClick={() => {
+                      const p = partnerList.find((x) => x.id === d.partner_id);
+                      if (p) setD((prev) => ({ ...prev, variables: { ...prev.variables, ...partnerToVariables(p) } }));
+                    }}
+                    title="이 파트너의 회사명·연락처 등을 변수에 채웁니다.">불러오기</button>
+                </div>
               </Field>
               <Field label="발주">
-                <select value={d.order_id || ''} onChange={(e) => setD({ ...d, order_id: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">(선택 없음)</option>
-                  {orderList.map((o) => <option key={o.id} value={o.id}>#{String(o.id).slice(-6)} {o.partner}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select value={d.order_id || ''} onChange={(e) => setD({ ...d, order_id: e.target.value ? Number(e.target.value) : null })}
+                    style={{ flex: 1 }}>
+                    <option value="">(선택 없음)</option>
+                    {orderList.map((o) => <option key={o.id} value={o.id}>#{String(o.id).slice(-6)} {o.partner}</option>)}
+                  </select>
+                  <button type="button" className="adm-btn-sm" disabled={!d.order_id}
+                    onClick={() => {
+                      const o = orderList.find((x) => x.id === d.order_id);
+                      if (o) setD((prev) => ({ ...prev, variables: { ...prev.variables, ...orderToVariables(o, partnerList) } }));
+                    }}
+                    title="발주의 파트너·금액·납기를 변수에 채웁니다.">불러오기</button>
+                </div>
               </Field>
             </div>
           </details>
         </div>
 
         <div>
-          <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', margin: '0 0 8px' }}>미리보기</h4>
-          <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 22, minHeight: 400, overflow: 'auto', maxHeight: 600 }}>
-            <div style={{ fontSize: 11, color: '#8c867d', marginBottom: 6, letterSpacing: '.08em', textTransform: 'uppercase' }}>제목 · {previewSubject || '—'}</div>
-            <h2 style={{ fontSize: 18, marginTop: 0 }}>{d.title || '(문서 제목)'}</h2>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.7 }}>
-              {previewBody || '(미리보기가 비어있습니다 — 본문/변수값을 입력하세요)'}
-            </pre>
-          </div>
+          <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', margin: '0 0 8px' }}>
+            미리보기 (A4 PDF 형식)
+          </h4>
+          <DocPaperPreview
+            kind={d.kind}
+            title={d.title || '(문서 제목)'}
+            subject={previewSubject}
+            body={previewBody || '(미리보기가 비어있습니다 — 본문/변수값을 입력하세요)'}
+            recipients={d.recipients || []}
+            status="draft"
+            createdAt={null}
+          />
           <LegalDisclaimer style={{ marginTop: 12 }} />
         </div>
       </div>
@@ -854,8 +982,12 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
     // Snyk DOMXSS hardening: build the print window with document.createElement
     // + textContent only — no document.write, no innerHTML, no template-string
     // HTML. The window's print is triggered after onload.
+    //
+    // 사용 안내: 인쇄 다이얼로그에서 "대상" 또는 "프린터"를
+    // **"PDF로 저장"** (또는 "Save as PDF")로 선택하면 실제 PDF 파일이
+    // 다운로드됩니다. 한국어 OS는 보통 "PDF로 저장"이라고 표기됩니다.
     const w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) { alert('팝업 차단으로 PDF 창을 열 수 없습니다.'); return; }
+    if (!w) { alert('팝업 차단으로 PDF 창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도해 주세요.'); return; }
 
     const wDoc = w.document;
     wDoc.documentElement.lang = 'ko';
@@ -949,11 +1081,16 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         <span style={{ fontSize: 11, color: '#b9b5ae' }}>· 작성 {new Date(doc.created_at).toLocaleString('ko')}</span>
       </div>
 
-      <div className="adm-doc-preview" style={{ marginBottom: 18 }}>
-        <span className="adm-doc-subject">{doc.subject || '(제목 없음)'}</span>
-        <h2 className="adm-doc-title">{doc.title}</h2>
-        {doc.body}
-      </div>
+      <DocPaperPreview
+        kind={doc.kind}
+        title={doc.title}
+        subject={doc.subject || ''}
+        body={doc.body || ''}
+        recipients={doc.recipients || []}
+        status={doc.status}
+        createdAt={doc.created_at}
+        signatures={signatures}
+      />
 
       {(doc.recipients || []).length > 0 && (
         <div style={{ marginBottom: 14, fontSize: 12, color: '#6f6b68' }}>
@@ -1007,7 +1144,10 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         {isAdmin && doc.status !== 'signed' && doc.status !== 'canceled' && (
           <button className="adm-btn-sm" type="button" onClick={() => setEditing(true)}>수정</button>
         )}
-        <button className="adm-btn-sm" type="button" onClick={exportPdf}>📄 PDF 출력</button>
+        <button className="adm-btn-sm" type="button" onClick={exportPdf}
+          title="새 창에서 인쇄 다이얼로그를 열고, '대상'을 'PDF로 저장'으로 선택하면 PDF 파일이 다운로드됩니다.">
+          📄 PDF로 저장 / 인쇄
+        </button>
         {isAdmin && doc.status !== 'canceled' && doc.status !== 'signed' && (
           <button className="adm-btn-sm danger" type="button" onClick={cancel}>취소 처리</button>
         )}
@@ -1048,6 +1188,59 @@ function EmptyState({ text }) {
   return (
     <div style={{ textAlign: 'center', padding: '60px 0', color: '#8c867d', background: '#fff', border: '1px dashed #d7d4cf' }}>
       <p>{text}</p>
+    </div>
+  );
+}
+
+// A4 PDF 모양으로 문서 본문을 렌더링하는 페이퍼 미리보기.
+// 실제 인쇄/PDF 출력 시 보일 모양과 거의 동일하게 표시되어, 운영자가
+// "어떤 식으로 PDF가 나올지" 미리 확인할 수 있습니다.
+function DocPaperPreview({ kind, title, subject, body, recipients, status, createdAt, signatures }) {
+  const draft = status === 'draft' || status === 'sent' || status === 'viewed';
+  return (
+    <div className="adm-paper-stage">
+      <div className="adm-paper-sheet">
+        {draft && <div className="adm-paper-watermark">{status === 'draft' ? 'DRAFT' : ''}</div>}
+        <header className="adm-paper-head">
+          <div className="adm-paper-brand">
+            <strong>대무 (DAEMU)</strong>
+            <span>BAKERY · CAFE BUSINESS PARTNER</span>
+          </div>
+          <div className="adm-paper-doctype">
+            {KIND_LABEL[kind] || kind}
+          </div>
+        </header>
+        <div className="adm-paper-meta">
+          {subject && <div className="adm-paper-subject">{subject}</div>}
+          {createdAt && <div className="adm-paper-date">작성일 · {new Date(createdAt).toLocaleString('ko')}</div>}
+        </div>
+        <h1 className="adm-paper-title">{title}</h1>
+        <div className="adm-paper-divider" />
+        <pre className="adm-paper-body">{body}</pre>
+        {(recipients || []).length > 0 && (
+          <div className="adm-paper-recipients">
+            <span>수신자</span>
+            {(recipients || []).map((r, i) => (
+              <div key={i}>{r.name || ''} {r.email ? `<${r.email}>` : ''} {r.role === 'cc' ? '(참조)' : ''}</div>
+            ))}
+          </div>
+        )}
+        {(signatures || []).length > 0 && (
+          <div className="adm-paper-signatures">
+            <h4>서명 기록</h4>
+            {signatures.map((s) => (
+              <div key={s.id} className="adm-paper-sig">
+                <strong>{s.signer_name}</strong> · {s.signer_email} · {s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : ''}
+                <span className="adm-paper-sig-meta">IP {s.ip || '-'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <footer className="adm-paper-foot">
+          <div>대무 (DAEMU) · 전라남도 나주시 황동 3길 8</div>
+          <div>daemu_office@naver.com · 061-335-1239</div>
+        </footer>
+      </div>
     </div>
   );
 }

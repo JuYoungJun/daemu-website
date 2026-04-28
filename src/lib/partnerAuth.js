@@ -6,6 +6,32 @@ import { DB } from './db.js';
 
 const SESSION_KEY = 'daemu_partner_session';
 
+// 데모/QA 편의를 위해 첫 방문 시 테스트 파트너 계정을 1회만 시드합니다.
+// 본 시드는 idempotent — 같은 이메일이 이미 있으면 다시 만들지 않음.
+// 운영 환경에서는 시드된 계정을 admin /admin/partners 에서 삭제하거나
+// 비활성으로 두면 됩니다.
+function ensureTestPartner() {
+  try {
+    const partners = DB.get('partners') || [];
+    const TEST_EMAIL = 'testpartner@daemu.kr';
+    if (partners.some((p) => (p.email || '').toLowerCase() === TEST_EMAIL)) return;
+    DB.add('partners', {
+      name: '테스트 파트너',
+      person: '테스트 담당자',
+      phone: '010-1234-5678',
+      email: TEST_EMAIL,
+      type: '원두 납품',
+      role: '발주 전용',
+      active: 'active',                           // 즉시 로그인 가능
+      note: '테스트용 임시 파트너 계정 — 운영 시 /admin/partners 에서 비활성화/삭제하세요.',
+      password: 'daemu1234',                      // QA 편의를 위한 명시 비번
+      passwordChanged: true,                      // 첫 로그인 강제 변경 화면 우회
+      passwordUpdatedAt: new Date().toISOString(),
+    });
+  } catch (e) { /* ignore — DB 미설정 환경 */ }
+}
+ensureTestPartner();
+
 // Default password is phone last 4 digits — fallback "daemu" if no phone.
 function defaultPasswordOf(p) {
   if (!p) return 'daemu';

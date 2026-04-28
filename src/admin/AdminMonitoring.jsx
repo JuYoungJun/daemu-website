@@ -66,6 +66,7 @@ export default function AdminMonitoring() {
   const [outbox, setOutbox] = useState(() => loadOutbox());
   const [errors, setErrors] = useState(() => loadRuntimeErrors());
   const [health, setHealth] = useState(null);
+  const [summary, setSummary] = useState(null);
 
   useEffect(() => {
     installRuntimeListeners();
@@ -90,8 +91,13 @@ export default function AdminMonitoring() {
         if (alive) setHealth({ ok: false, demo: true });
         return;
       }
-      const r = await api.get('/api/health');
-      if (alive) setHealth({ ok: !!r.ok, ...r });
+      const [h, s] = await Promise.all([
+        api.get('/api/health'),
+        api.get('/api/monitoring/summary'),
+      ]);
+      if (!alive) return;
+      setHealth({ ok: !!h.ok, ...h });
+      if (s.ok) setSummary(s);
     };
     probe();
     const id = setInterval(probe, 60_000);
@@ -110,22 +116,104 @@ export default function AdminMonitoring() {
           <h1 className="page-title">유지보수 모니터링</h1>
 
           <AdminHelp title="모니터링 사용 안내" items={[
-            '이 페이지는 운영 중 발생한 오류를 빠르게 찾기 위한 도구입니다. 실제 사용자에게 영향을 준 오류는 "발송 실패"와 "API 호출 오류"에 모입니다.',
-            '백엔드 헬스: 1분마다 /api/health를 조회합니다. 빨간색이면 사이트 → 백엔드 연결이 끊어진 상태입니다.',
-            '브라우저 런타임 에러는 본 탭이 열려있는 동안만 수집됩니다. 장기 모니터링은 Sentry 등 외부 도구 권장.',
-            '오류가 있는 항목은 Outbox에서도 동일하게 확인할 수 있습니다.',
+            '백엔드 운영 요약 카드들은 1분 주기로 새로고침되며 실제 backend DB 통계를 보여줍니다.',
+            'DB 응답시간이 100ms 미만이면 정상, 500ms 초과는 콜드 스타트 또는 트래픽 과부하 신호입니다.',
+            '24시간 발송 실패가 있다면 RESEND_API_KEY/SMTP_HOST 환경변수 또는 Resend 도메인 인증을 점검하세요.',
+            '보안 이벤트(login.failure, login.totp.failure 등)는 비정상 시도가 있는지 추적합니다.',
+            '오류가 있는 항목은 Outbox에서도 동일하게 확인할 수 있습니다. 브라우저 런타임 에러는 본 탭이 열려있는 동안만 수집.',
           ]} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 26 }}>
+          {/* 1행 — 인프라/시스템 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
             <Card label="백엔드 상태"
               value={health?.demo ? '데모(미연결)' : (health?.ok ? '정상' : '오류')}
               color={health?.demo ? '#6f6b68' : (health?.ok ? '#2e7d32' : '#c0392b')} />
-            <Card label="24시간 실패 발송" value={String(failedCount24h)}
-              color={failedCount24h > 0 ? '#c0392b' : '#2e7d32'} />
-            <Card label="누적 발송 이력" value={String(outbox.length)} color="#6f6b68" />
+            <Card label="버전" value={String(health?.version || '—')} color="#6f6b68" />
+            <Card label="DB 응답"
+              value={summary?.dbLatencyMs != null ? `${summary.dbLatencyMs} ms` : '—'}
+              color={(summary?.dbLatencyMs ?? 9999) < 100 ? '#2e7d32' : (summary?.dbLatencyMs ?? 9999) < 500 ? '#b87333' : '#c0392b'} />
+            <Card label="이메일 발송"
+              value={
+                health?.emailProvider === 'resend' ? 'Resend' :
+                health?.emailProvider === 'smtp' ? 'SMTP' :
+                '미설정 (시뮬)'
+              }
+              color={health?.emailProvider === 'none' ? '#c0392b' : '#2e7d32'} />
+          </div>
+
+          {(health?.warnings || []).length > 0 && (
+            <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '12px 16px', marginBottom: 14, fontSize: 12.5, color: '#5a4a2a', borderRadius: 4 }}>
+              {health.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+            </div>
+          )}
+
+          {/* 2행 — 24시간 운영 통계 */}
+          <h3 className="admin-section-title" style={{ marginTop: 14 }}>최근 24시간</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
+            <Card label="이메일 발송 (24h)"
+              value={
+                summary ? Object.entries(summary.outbox24h || {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '0' : '—'
+              }
+              color="#6f6b68" />
+            <Card label="발송 실패 (24h)"
+              value={String((summary?.outbox24h || {}).failed || (summary?.outbox24h || {}).error || 0)}
+              color={((summary?.outbox24h || {}).failed || 0) > 0 ? '#c0392b' : '#2e7d32'} />
+            <Card label="신규 문의 (24h)"
+              value={String(summary?.inquiries24h ?? '—')}
+              color="#1f5e7c" />
+            <Card label="미답변 문의 (전체)"
+              value={String(summary?.newInquiries ?? '—')}
+              color={(summary?.newInquiries ?? 0) > 5 ? '#c0392b' : '#6f6b68'} />
+          </div>
+
+          {/* 3행 — 비즈니스 데이터 */}
+          <h3 className="admin-section-title">비즈니스 데이터</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
+            <Card label="활성 파트너" value={String(summary?.activePartners ?? '—')} color="#1f5e7c" />
+            <Card label="뉴스레터 활성 구독자" value={String(summary?.newsletterActive ?? '—')} color="#1f5e7c" />
+            <Card label="누적 발송 이력" value={String(summary?.outboxTotal ?? outbox.length)} color="#6f6b68" />
             <Card label="런타임 에러(현 세션)" value={String(errors.length)}
               color={errors.length > 0 ? '#b87333' : '#6f6b68'} />
           </div>
+
+          {summary?.documentsByStatus && Object.keys(summary.documentsByStatus).length > 0 && (
+            <>
+              <h3 className="admin-section-title">계약/PO 문서 상태</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
+                {Object.entries(summary.documentsByStatus).map(([k, v]) => (
+                  <Card key={k} label={k} value={String(v)} color="#5a534b" />
+                ))}
+              </div>
+            </>
+          )}
+
+          {summary?.securityEvents24h && Object.keys(summary.securityEvents24h).length > 0 && (
+            <>
+              <h3 className="admin-section-title">보안 이벤트 (24h)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 14 }}>
+                {Object.entries(summary.securityEvents24h).map(([k, v]) => (
+                  <Card key={k} label={k} value={String(v)}
+                    color={k.includes('failure') || k.includes('throttled') ? '#c0392b' :
+                           k.includes('success') ? '#2e7d32' : '#6f6b68'} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {summary?.recentFailures?.length > 0 && (
+            <>
+              <h3 className="admin-section-title">최근 발송 실패 (백엔드 기록)</h3>
+              <div style={{ marginBottom: 14 }}>
+                {summary.recentFailures.map((f) => (
+                  <div key={f.id} style={{ background: '#fff', border: '1px solid #f0d6d2', padding: '10px 14px', marginBottom: 8, fontSize: 12 }}>
+                    <span style={{ color: '#c0392b', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', marginRight: 8 }}>{f.type}</span>
+                    {f.to} · {f.subject || '(제목 없음)'}<br />
+                    <span style={{ color: '#8c867d', fontSize: 11 }}>{new Date(f.ts).toLocaleString('ko')} · {f.error}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <h3 className="admin-section-title">최근 운영 오류</h3>
           {!recentFailures.length ? (
