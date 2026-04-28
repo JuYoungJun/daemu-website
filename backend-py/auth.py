@@ -187,6 +187,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class LoginIn(BaseModel):
     email: str
     password: str
+    # 2FA가 활성화된 사용자면 첫 호출에선 401 + need_totp:true 응답.
+    # 사용자가 인증 앱 코드를 입력해 다시 호출할 때 totp_code 채워서 보냄.
+    totp_code: str | None = None
 
 
 class UserOut(BaseModel):
@@ -195,6 +198,7 @@ class UserOut(BaseModel):
     name: str
     role: str
     must_change_password: bool = False
+    totp_enabled: bool = False
 
 
 class LoginOut(BaseModel):
@@ -413,6 +417,31 @@ async def ensure_default_users(session: AsyncSession) -> None:
 ensure_default_admin = ensure_default_users
 
 
+def _verify_totp_or_recovery(user: AdminUser, code: str) -> tuple[bool, str | None]:
+    """returns (ok, recovery_used_code). Lazy import pyotp so the module
+    keeps loading on environments where it's not yet installed."""
+    if not code:
+        return False, None
+    try:
+        import pyotp
+    except ImportError:
+        return False, None
+    code_clean = code.strip().replace(' ', '')
+    # Try the live TOTP first
+    if user.totp_secret:
+        try:
+            if pyotp.TOTP(user.totp_secret).verify(code_clean, valid_window=1):
+                return True, None
+        except Exception:
+            pass
+    # Fall back to recovery codes (single-use, hashed in DB)
+    rcs = list(user.recovery_codes or [])
+    for h in rcs:
+        if isinstance(h, str) and verify_password(code_clean, h):
+            return True, h
+    return False, None
+
+
 @router.post("/login", response_model=LoginOut)
 async def login(payload: LoginIn, request: Request, session: AsyncSession = Depends(get_session)):
     from audit import log_event  # local import to avoid circular at module load
@@ -431,6 +460,28 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
                         detail={"reason": "bad-credentials" if user else "no-such-user"})
         raise HTTPException(401, detail="invalid credentials")
 
+    # 2FA gate — only if the user opted in.
+    if user.totp_enabled:
+        if not payload.totp_code:
+            # 비밀번호는 정확하므로 throttle 카운터는 올리지 않음.
+            await log_event(session, request, action="login.totp.required", actor_user=user)
+            raise HTTPException(
+                status_code=401,
+                detail={"need_totp": True, "message": "인증 앱의 6자리 코드를 입력해 주세요."},
+            )
+        ok, used_recovery_hash = _verify_totp_or_recovery(user, payload.totp_code)
+        if not ok:
+            _login_throttle.record_failure(ip)
+            await log_event(session, request, action="login.totp.failure", actor_user=user)
+            raise HTTPException(
+                status_code=401,
+                detail={"need_totp": True, "message": "잘못된 인증 코드입니다."},
+            )
+        if used_recovery_hash:
+            # Burn the used recovery code so it can't be replayed.
+            user.recovery_codes = [h for h in (user.recovery_codes or []) if h != used_recovery_hash]
+            await log_event(session, request, action="login.totp.recovery_used", actor_user=user)
+
     _login_throttle.reset(ip)
     user.last_login_at = datetime.now(timezone.utc)
     await log_event(session, request, action="login.success", actor_user=user)
@@ -440,6 +491,7 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
         user=UserOut(
             id=user.id, email=user.email, name=user.name, role=user.role,
             must_change_password=user.must_change_password,
+            totp_enabled=user.totp_enabled,
         ),
     )
 
@@ -449,7 +501,88 @@ async def me(user: AdminUser = Depends(require_user)):
     return UserOut(
         id=user.id, email=user.email, name=user.name, role=user.role,
         must_change_password=user.must_change_password,
+        totp_enabled=user.totp_enabled,
     )
+
+
+# ---------------------------------------------------------------------------
+# 2FA / TOTP setup endpoints (admin enables it for their own account)
+
+class TotpEnableIn(BaseModel):
+    code: str  # 6-digit code from authenticator app to verify the secret
+
+
+class TotpDisableIn(BaseModel):
+    password: str  # re-auth before turning off the second factor
+
+
+@router.post("/totp/setup")
+async def totp_setup(user: AdminUser = Depends(require_user), session: AsyncSession = Depends(get_session)):
+    """Generate a fresh secret + provisioning URI (for the QR code).
+    The secret is stored as totp_secret but totp_enabled stays False until
+    /totp/enable is called with a valid code."""
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(500, detail="pyotp가 설치되지 않았습니다.")
+    secret = pyotp.random_base32()
+    user.totp_secret = secret
+    await session.flush()
+    issuer = "DAEMU Admin"
+    uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name=issuer)
+    return {"ok": True, "secret": secret, "otpauth_uri": uri, "issuer": issuer}
+
+
+@router.post("/totp/enable")
+async def totp_enable(
+    payload: TotpEnableIn,
+    user: AdminUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not user.totp_secret:
+        raise HTTPException(400, detail="먼저 /totp/setup 으로 시크릿을 발급받아 주세요.")
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(500, detail="pyotp가 설치되지 않았습니다.")
+    code = (payload.code or '').strip().replace(' ', '')
+    if not pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
+        raise HTTPException(401, detail="인증 코드가 일치하지 않습니다.")
+    user.totp_enabled = True
+
+    # Generate 8 single-use recovery codes (returned to caller ONCE; stored
+    # hashed). Format: XXXX-XXXX (uppercase alphanumeric, easy to type).
+    import secrets as _secrets
+    raw_codes = []
+    hashed = []
+    for _ in range(8):
+        code_raw = _secrets.token_hex(4).upper()
+        formatted = code_raw[:4] + '-' + code_raw[4:]
+        raw_codes.append(formatted)
+        hashed.append(hash_password(formatted))
+    user.recovery_codes = hashed
+    await session.flush()
+
+    from audit import log_event
+    await log_event(session, None, action="totp.enabled", actor_user=user)
+    return {"ok": True, "recovery_codes": raw_codes}
+
+
+@router.post("/totp/disable")
+async def totp_disable(
+    payload: TotpDisableIn,
+    user: AdminUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, detail="비밀번호가 일치하지 않습니다.")
+    user.totp_enabled = False
+    user.totp_secret = ""
+    user.recovery_codes = []
+    await session.flush()
+    from audit import log_event
+    await log_event(session, None, action="totp.disabled", actor_user=user)
+    return {"ok": True}
 
 
 class UnlockIn(BaseModel):

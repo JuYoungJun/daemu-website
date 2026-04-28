@@ -1,13 +1,13 @@
 (function() {
   'use strict';
-const KEY = "partners";
+const STORAGE_KEY = "partners";
 let editingId = null;
 
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fr = document.getElementById("filter-role").value;
   const fa = document.getElementById("filter-active").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.name+" "+(d.person||"")).toLowerCase().includes(q)) &&
     (!fr || d.role === fr) &&
     (!fa || (d.active||"active") === fa)
@@ -46,7 +46,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -81,20 +81,20 @@ function save() {
     active: document.getElementById("f-active").value,
     note: document.getElementById("f-note").value
   };
-  if (editingId !== null) DB.update(KEY, editingId, payload);
-  else DB.add(KEY, payload);
+  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
+  else DB.add(STORAGE_KEY, payload);
   resetForm();
   render();
 }
 
 function toggleActive(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
-  DB.update(KEY, id, { active: (d.active === "inactive" ? "active" : "inactive") });
+  DB.update(STORAGE_KEY, id, { active: (d.active === "inactive" ? "active" : "inactive") });
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 render();
 
 

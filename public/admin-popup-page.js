@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "popups";
+const STORAGE_KEY = "popups";
 let editingId = null;
 let pendingImage = null;
 
@@ -8,8 +8,8 @@ const POSITION_LABEL = { center: "중앙", "bottom-right": "우하단", top: "�
 const FREQ_LABEL = { always: "매번", daily: "하루 1회", once: "영구 1회" };
 const PAGE_LABEL = { all:"전체", home:"메인", about:"About", service:"Service", team:"Team", process:"Process", work:"Work", contact:"Contact", partners:"Partners" };
 
-if (!DB.get(KEY).length) {
-  DB.add(KEY, {
+if (!DB.get(STORAGE_KEY).length) {
+  DB.add(STORAGE_KEY, {
     title: "2026 봄 시즌 안내",
     body: "비클래시 봄 시즌 한정 메뉴가 출시되었습니다.\n주요 매장에서 만나보세요.",
     image: "",
@@ -46,6 +46,19 @@ async function onImage(files) {
   }
   document.getElementById("f-image-file").value = "";
 }
+
+// 미디어 라이브러리에서 기존 자산 선택
+async function pickFromLibrary() {
+  if (!window.openMediaPicker) {
+    alert('미디어 라이브러리를 불러올 수 없습니다.');
+    return;
+  }
+  const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+  if (url) {
+    pendingImage = url;
+    renderThumb();
+  }
+}
 function renderThumb() {
   const wrap = document.getElementById("f-thumb");
   if (pendingImage) {
@@ -69,7 +82,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const fp = document.getElementById("filter-position").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.title||"").toLowerCase().includes(q)) &&
     (!fs || (d.status||"active") === fs) &&
     (!fp || d.position === fp)
@@ -77,7 +90,7 @@ function filtered() {
 }
 
 function renderKPI() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   const active = all.filter(d => (d.status||"active") === "active").length;
   const imps = all.reduce((a,d) => a + (d.impressions||0), 0);
   const clicks = all.reduce((a,d) => a + (d.clicks||0), 0);
@@ -132,7 +145,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   pendingImage = d.image || null;
@@ -181,25 +194,25 @@ function buildPayload() {
 function save() {
   const p = buildPayload();
   if (!p.title) { alert("제목을 입력하세요"); return; }
-  if (editingId !== null) DB.update(KEY, editingId, p);
-  else DB.add(KEY, { ...p, impressions: 0, clicks: 0 });
+  if (editingId !== null) DB.update(STORAGE_KEY, editingId, p);
+  else DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
   resetForm();
   render();
 }
 
 function toggleStatus(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
-  DB.update(KEY, id, { status: d.status === "paused" ? "active" : "paused" });
+  DB.update(STORAGE_KEY, id, { status: d.status === "paused" ? "active" : "paused" });
   render();
 }
 
-function del(id) { if (confirmDel("이 팝업을 삭제하시겠습니까?")) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel("이 팝업을 삭제하시겠습니까?")) { DB.del(STORAGE_KEY, id); render(); } }
 
 /* Preview — render the popup overlay using the same public-site CSS classes */
 function previewForm() { showPreview(buildPayload()); }
 function preview(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (d) showPreview(d);
 }
 function showPreview(popup) {
@@ -228,5 +241,5 @@ function showPreview(popup) {
 render();
 
 
-Object.assign(window, { getCheckedPages, setCheckedPages, onImage, renderThumb, removeImage, escapeHtml, fmtPeriod, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, toggleStatus, del, previewForm, preview, showPreview });
+Object.assign(window, { getCheckedPages, setCheckedPages, onImage, pickFromLibrary, renderThumb, removeImage, escapeHtml, fmtPeriod, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, toggleStatus, del, previewForm, preview, showPreview });
 })();

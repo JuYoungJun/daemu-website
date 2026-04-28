@@ -4,23 +4,19 @@ import { Auth } from './auth.js';
 import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabled } from './email.js';
 import { uploadImage, uploadVideo, uploadMedia } from './upload.js';
 import { downloadCSV } from './csv.js';
+import { escapeHtml, safeUrl as safeUrlBase } from './safe.js';
+// Side-effect import: registers window.openMediaPicker for raw admin scripts.
+import '../components/MediaPicker.jsx';
 
-// HTML / attribute / URL escapers — used in every admin innerHTML template
-// string to neutralize stored XSS via inquiry/popup/CRM fields.
-const HTML_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;', '`':'&#96;' };
-function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"'`]/g, (c) => HTML_MAP[c]); }
-function escUrl(s) {
-  const v = String(s == null ? '' : s).trim();
-  if (!v) return '';
-  if (v.startsWith('/') || v.startsWith('#') || v.startsWith('?')) return escHtml(v);
-  const m = /^([a-z][a-z0-9+.-]*):/i.exec(v);
-  if (!m) return escHtml(v);
-  const scheme = m[1].toLowerCase();
-  if (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel') {
-    return escHtml(v);
-  }
-  return '#'; // block javascript:, data:, vbscript:, file: etc.
-}
+// Wrappers that match the legacy admin-page contract:
+//   escHtml(x) → HTML-safe string for innerHTML interpolation
+//   escUrl(x)  → either the safe URL string or the literal "#" so href="#"
+//                degrades gracefully instead of dropping the link entirely
+const escHtml = (s) => escapeHtml(s);
+const escUrl = (s) => {
+  const safe = safeUrlBase(s);
+  return safe ? escHtml(safe) : '#';
+};
 
 if (typeof window !== 'undefined') {
   window.DB = DB;

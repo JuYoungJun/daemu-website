@@ -1,12 +1,12 @@
 (function() {
   'use strict';
-  const KEY = "projects";
+  const STORAGE_KEY = "projects";
   let editingId = null;
   let pendingImages = [];
   let pendingHero = null;
   let mode = 'structured'; // 'structured' | 'free'
 
-  if (!DB.get(KEY).length) {
+  if (!DB.get(STORAGE_KEY).length) {
     [
       {brand:"Beclassy", name:"나주점", slug:"beclassy-naju", size:"170평", year:"2018", status:"운영중", addr:"전라남도 나주시 노안면 건재로 524-11",
        brandLine:"BECLASSY · COFFEE & BAKERY", title:"Beclassy <em>나주점</em>",
@@ -31,7 +31,7 @@
       {brand:"Pumjang", name:"인천점", slug:"pumjang-incheon", size:"-", year:"2024", status:"NEW", addr:"인천광역시", hero:"/assets/work-beclassy-6.png", images:[]},
       {brand:"Morif", name:"상무점", slug:"morif-sangmu", size:"-", year:"2022", status:"운영중", addr:"광주광역시 서구", hero:"/assets/work-morif.png", images:[]},
       {brand:"Morif", name:"수완점", slug:"morif-suwan", size:"-", year:"2023", status:"운영중", addr:"광주광역시 광산구", hero:"/assets/work-beclassy-8.png", images:[]}
-    ].forEach(d => DB.add(KEY, d));
+    ].forEach(d => DB.add(STORAGE_KEY, d));
   }
 
   function setMode(m) {
@@ -71,7 +71,7 @@
     const q = (document.getElementById("q").value || "").toLowerCase();
     const fb = document.getElementById("filter-brand").value;
     const fs = document.getElementById("filter-status").value;
-    return DB.get(KEY).filter(d =>
+    return DB.get(STORAGE_KEY).filter(d =>
       (!q || (d.brand+" "+d.name+" "+(d.addr||"")).toLowerCase().includes(q)) &&
       (!fb || d.brand === fb) &&
       (!fs || d.status === fs)
@@ -167,7 +167,7 @@
   }
 
   function openEdit(id) {
-    const d = DB.get(KEY).find(x => x.id === id);
+    const d = DB.get(STORAGE_KEY).find(x => x.id === id);
     if (!d) return;
     editingId = id;
     pendingImages = (d.images || []).map(i => ({...i}));
@@ -253,10 +253,10 @@
     const p = collectPayload();
     if (!p.name) { alert("지점명을 입력하세요"); return; }
     // slug uniqueness check
-    const dup = DB.get(KEY).find(d => d.slug === p.slug && d.id !== editingId);
+    const dup = DB.get(STORAGE_KEY).find(d => d.slug === p.slug && d.id !== editingId);
     if (dup) { alert("이미 사용 중인 슬러그입니다: " + p.slug); return; }
-    if (editingId !== null) DB.update(KEY, editingId, p);
-    else DB.add(KEY, p);
+    if (editingId !== null) DB.update(STORAGE_KEY, editingId, p);
+    else DB.add(STORAGE_KEY, p);
     window.dispatchEvent(new Event('daemu-db-change'));
     resetForm();
     render();
@@ -275,7 +275,7 @@
 
   function del(id) {
     if (confirm('이 프로젝트를 삭제하시겠습니까?')) {
-      DB.del(KEY, id);
+      DB.del(STORAGE_KEY, id);
       window.dispatchEvent(new Event('daemu-db-change'));
       render();
     }

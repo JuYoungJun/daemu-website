@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "coupons";
+const STORAGE_KEY = "coupons";
 const EV_KEY = "events";
 let editingId = null;
 let evEditingId = null;
@@ -23,14 +23,14 @@ function effectiveStatus(c) {
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.code+" "+(d.desc||"")).toLowerCase().includes(q)) &&
     (!fs || effectiveStatus(d) === fs)
   );
 }
 
 function renderKPI() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   document.getElementById("k-active").textContent = all.filter(d => effectiveStatus(d) === "active").length;
   document.getElementById("k-uses").textContent = all.reduce((a,d) => a + (d.uses||0), 0);
   document.getElementById("k-events").textContent = DB.get(EV_KEY).length;
@@ -78,7 +78,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-code").value = d.code || "";
@@ -104,7 +104,7 @@ function resetForm() {
 function save() {
   const code = document.getElementById("f-code").value.trim().toUpperCase();
   if (!code) { alert("쿠폰 코드를 입력하세요"); return; }
-  const dup = DB.get(KEY).find(d => d.code === code && d.id !== editingId);
+  const dup = DB.get(STORAGE_KEY).find(d => d.code === code && d.id !== editingId);
   if (dup) { alert("이미 사용 중인 코드입니다."); return; }
   const payload = {
     code,
@@ -118,23 +118,23 @@ function save() {
     note: document.getElementById("f-note").value
   };
   if (editingId !== null) {
-    DB.update(KEY, editingId, payload);
+    DB.update(STORAGE_KEY, editingId, payload);
   } else {
-    DB.add(KEY, { ...payload, uses: 0 });
+    DB.add(STORAGE_KEY, { ...payload, uses: 0 });
   }
   resetForm();
   render();
 }
 
 function bumpUse(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   if (d.max && Number(d.uses||0) >= Number(d.max)) { alert("최대 사용 횟수에 도달했습니다."); return; }
-  DB.update(KEY, id, { uses: Number(d.uses||0) + 1 });
+  DB.update(STORAGE_KEY, id, { uses: Number(d.uses||0) + 1 });
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 
 /* Events / Notices */
 function renderEvents() {

@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "media";
+const STORAGE_KEY = "media";
 let filterKind = "all"; // all | image | video
 
 function fmtBytes(n) {
@@ -19,7 +19,7 @@ function kindOf(d) {
 }
 
 function renderStats() {
-  const data = DB.get(KEY);
+  const data = DB.get(STORAGE_KEY);
   let imgN = 0, vidN = 0, imgBytes = 0, vidBytes = 0;
   data.forEach(d => {
     const k = kindOf(d);
@@ -37,7 +37,7 @@ function renderStats() {
 }
 
 function renderGrid() {
-  const data = DB.get(KEY).filter(d => filterKind === "all" || kindOf(d) === filterKind);
+  const data = DB.get(STORAGE_KEY).filter(d => filterKind === "all" || kindOf(d) === filterKind);
   const grid = document.getElementById("media-grid");
   if (!grid) return;
   if (!data.length) {
@@ -72,7 +72,7 @@ async function uploadFilesAs(files, kind) {
     try {
       const fn = (kind === "video") ? window.uploadVideo : window.uploadImage;
       const r = await fn(file);
-      DB.add(KEY, {
+      DB.add(STORAGE_KEY, {
         name: r.name || file.name,
         src: r.url,
         size: r.size || file.size,
@@ -92,7 +92,7 @@ async function uploadFiles(files) { return uploadFilesAs(files, 'image'); }
 function setFilter(v) { filterKind = v; renderGrid(); }
 
 function copyUrl(id) {
-  const item = DB.get(KEY).find(d => d.id === id);
+  const item = DB.get(STORAGE_KEY).find(d => d.id === id);
   if (!item) return;
   const url = item.public_id || item.src;
   if (navigator.clipboard) {
@@ -107,7 +107,7 @@ function copyUrl(id) {
 
 function del(id) {
   if (confirmDel()) {
-    DB.del(KEY, id);
+    DB.del(STORAGE_KEY, id);
     render();
   }
 }

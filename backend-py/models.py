@@ -44,6 +44,12 @@ class AdminUser(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # 2FA / TOTP — opt-in. Once totp_enabled is True, login requires a valid
+    # 6-digit code from the user's authenticator app. recovery_codes is a JSON
+    # array of bcrypt-hashed single-use backup codes.
+    totp_secret: Mapped[str] = mapped_column(String(64), default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    recovery_codes: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

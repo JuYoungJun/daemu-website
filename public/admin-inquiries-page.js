@@ -1,13 +1,13 @@
 (function() {
   'use strict';
-const KEY = "inquiries";
+const STORAGE_KEY = "inquiries";
 let editingId = null;
 
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const ft = document.getElementById("filter-type").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.name+" "+(d.email||"")+" "+(d.msg||"")).toLowerCase().includes(q)) &&
     (!fs || d.status === fs) &&
     (!ft || d.type === ft)
@@ -15,7 +15,7 @@ function filtered() {
 }
 
 function render() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   document.getElementById("s-total").textContent = all.length;
   document.getElementById("s-new").textContent = all.filter(d=>d.status==="신규").length;
   document.getElementById("s-pending").textContent = all.filter(d=>d.status==="처리중").length;
@@ -54,7 +54,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -90,9 +90,9 @@ function save() {
     reply: document.getElementById("f-reply").value
   };
   if (editingId !== null) {
-    DB.update(KEY, editingId, payload);
+    DB.update(STORAGE_KEY, editingId, payload);
   } else {
-    DB.add(KEY, payload);
+    DB.add(STORAGE_KEY, payload);
     // Fire auto-reply for newly added inquiry (best-effort, non-blocking)
     if (payload.email && window.sendAutoReply && window.isEmailEnabled && window.isEmailEnabled()) {
       window.sendAutoReply({ to_email: payload.email, to_name: payload.name, category: payload.type, message: payload.msg })
@@ -104,10 +104,10 @@ function save() {
 }
 
 function updateStatus(id, status) {
-  DB.update(KEY, id, { status });
+  DB.update(STORAGE_KEY, id, { status });
   // When admin marks 답변완료, optionally send admin reply email if reply memo exists
   if (status === '답변완료' && window.sendAdminReply && window.isEmailEnabled && window.isEmailEnabled()) {
-    const d = DB.get(KEY).find(x => x.id === id);
+    const d = DB.get(STORAGE_KEY).find(x => x.id === id);
     if (d && d.email && d.reply && d.reply.trim()) {
       if (confirm('회신 메모 내용을 ' + d.email + ' 로 발송할까요?')) {
         window.sendAdminReply({ to_email: d.email, to_name: d.name, subject: '[대무] 문의 회신', body: d.reply })
@@ -118,7 +118,7 @@ function updateStatus(id, status) {
   }
   render();
 }
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 render();
 
 

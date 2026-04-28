@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "orders";
+const STORAGE_KEY = "orders";
 let editingId = null;
 let pendingAttachments = []; // [{ filename, content (base64), mimeType, previewUrl, isImage }]
 
@@ -20,14 +20,14 @@ function fmtMoney(n){ return Number(n||0).toLocaleString('ko'); }
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.partner+" "+d.product).toLowerCase().includes(q)) &&
     (!fs || d.status === fs)
   );
 }
 
 function render() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   document.getElementById("s-total").textContent = all.length;
   document.getElementById("s-new").textContent = all.filter(d=>d.status==="접수").length;
   document.getElementById("s-pending").textContent = all.filter(d=>d.status==="처리중").length;
@@ -80,7 +80,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   loadPartners();
@@ -125,15 +125,15 @@ function save() {
     purchaseOrder: pf ? pf.value : "",
     attachments: pendingAttachments
   };
-  if (editingId !== null) DB.update(KEY, editingId, payload);
-  else DB.add(KEY, payload);
+  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
+  else DB.add(STORAGE_KEY, payload);
   resetForm();
   render();
   if (window.siteToast) window.siteToast('저장 완료', { tone: 'success' });
 }
 
-function updateStatus(id, status) { DB.update(KEY, id, { status }); render(); }
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function updateStatus(id, status) { DB.update(STORAGE_KEY, id, { status }); render(); }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 
 /* Attachments */
 async function addOrderAttachments(files) {
@@ -186,7 +186,7 @@ function renderAttachments() {
 
 /* Document send (계약서 / 발주서) */
 async function sendDoc(id, kind) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   const partner = DB.get('partners').find(p => p.name === d.partner);
   const email = partner && partner.email;

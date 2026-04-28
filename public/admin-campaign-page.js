@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "campaigns";
+const STORAGE_KEY = "campaigns";
 const SUB_KEY = "subscribers";
 let editingId = null;
 
@@ -44,7 +44,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fc = document.getElementById("filter-channel").value;
   const fs = document.getElementById("filter-status").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.title||"").toLowerCase().includes(q)) &&
     (!fc || d.channel === fc) &&
     (!fs || d.status === fs)
@@ -52,7 +52,7 @@ function filtered() {
 }
 
 function renderKPI() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   const sent = all.filter(d => d.status === "sent");
   document.getElementById("k-total").textContent = all.length;
   document.getElementById("k-sent").textContent = sent.length;
@@ -100,7 +100,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-title").value = d.title || "";
@@ -155,8 +155,8 @@ async function save() {
     extra.scheduledFor = new Date(Date.now()+24*3600*1000).toLocaleDateString('ko');
   }
   const final = { ...p, status, ...extra };
-  if (editingId !== null) DB.update(KEY, editingId, final);
-  else DB.add(KEY, final);
+  if (editingId !== null) DB.update(STORAGE_KEY, editingId, final);
+  else DB.add(STORAGE_KEY, final);
   resetForm();
   render();
   if (status === "sent") {
@@ -192,7 +192,7 @@ async function dispatchCampaign(p) {
 }
 
 async function sendNow(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   if (!confirm("'"+d.title+"' 캠페인을 즉시 발송합니다. 진행할까요?")) return;
   const stats = await dispatchCampaign({
@@ -204,13 +204,13 @@ async function sendNow(id) {
     segStage: d.segStage,
     segTags: d.segTags
   });
-  DB.update(KEY, id, { status:"sent", opens: stats.opens, clicks: stats.clicks, sentReal: stats.real, sentDate: new Date().toLocaleDateString('ko') });
+  DB.update(STORAGE_KEY, id, { status:"sent", opens: stats.opens, clicks: stats.clicks, sentReal: stats.real, sentDate: new Date().toLocaleDateString('ko') });
   render();
   if (stats.real) alert("발송 완료 (전송 " + (stats.sent||0) + " · 실패 " + (stats.failed||0) + ")");
   else alert("발송 시뮬레이션 완료 (이메일 API 미설정)");
 }
 
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 
 /* Newsletter subscribers */
 function renderSubs() {

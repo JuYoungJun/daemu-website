@@ -99,10 +99,21 @@
     // Preview banner — make it obvious to admins that they are NOT looking
     // at a published page, even if the URL looks identical to live.
     if (isPreview && !document.getElementById('admin-preview-bar')) {
+      // Snyk DOMXSS hardening: build with DOM APIs, no innerHTML / no
+      // javascript: href.
       const bar = document.createElement('div');
       bar.id = 'admin-preview-bar';
       bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b87333;color:#fff;padding:8px 14px;font-size:13px;letter-spacing:.04em;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.2)';
-      bar.innerHTML = '🔎 미리보기 모드 — 본 화면은 실제 게시되지 않은 초안입니다. <a href="javascript:window.close()" style="color:#fff;margin-left:12px;text-decoration:underline">닫기</a>';
+      bar.appendChild(document.createTextNode('🔎 미리보기 모드 — 본 화면은 실제 게시되지 않은 초안입니다. '));
+      const closeLink = document.createElement('a');
+      closeLink.href = '#';
+      closeLink.style.cssText = 'color:#fff;margin-left:12px;text-decoration:underline';
+      closeLink.textContent = '닫기';
+      closeLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.close();
+      });
+      bar.appendChild(closeLink);
       document.body.appendChild(bar);
       document.body.style.paddingTop = '40px';
     }
@@ -143,25 +154,66 @@
     }
 
     if (!data) {
-      document.querySelector('.wd-page').innerHTML = '<div class="wide" style="padding:200px 0;text-align:center"><h2>프로젝트를 찾을 수 없습니다</h2><a href="/work" class="wd-back" style="margin-top:40px">← 돌아가기</a></div>';
+      // Snyk DOMXSS hardening: replace innerHTML with a DOM-built fallback.
+      const root = document.querySelector('.wd-page');
+      while (root.firstChild) root.removeChild(root.firstChild);
+      const wide = document.createElement('div');
+      wide.className = 'wide';
+      wide.style.cssText = 'padding:200px 0;text-align:center';
+      const h2 = document.createElement('h2');
+      h2.textContent = '프로젝트를 찾을 수 없습니다';
+      const back = document.createElement('a');
+      back.className = 'wd-back';
+      back.style.marginTop = '40px';
+      back.href = (window.DAEMU_BASE || '/') + 'work';
+      back.textContent = '← 돌아가기';
+      wide.appendChild(h2);
+      wide.appendChild(back);
+      root.appendChild(wide);
       return;
     }
 
-    // Snyk DOMXSS fix: data.title comes from URL slug → DB lookup. The
-    // title has long contained literal HTML (e.g. "Beclassy <em>나주점</em>"),
-    // which is why innerHTML was used. Switch to escHtml + a single allow-
-    // listed <em> tag so the visual flair survives but injection doesn't.
-    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"'`]/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' }[c]));
-    const escAllowEm = (s) => esc(s).replace(/&lt;em&gt;/g, '<em>').replace(/&lt;\/em&gt;/g, '</em>');
+    // Snyk DOMXSS hardening: title sometimes carries literal "<em>...</em>"
+    // markup (e.g. "Beclassy <em>나주점</em>"). Instead of innerHTML, parse
+    // the string and rebuild the title with explicit DOM nodes so only the
+    // single allow-listed <em> tag survives. Anything else is text only.
+    function buildTitleInto(host, raw) {
+      while (host.firstChild) host.removeChild(host.firstChild);
+      const text = String(raw == null ? '' : raw);
+      const parts = text.split(/(<em>[^<]*<\/em>)/g);
+      for (const part of parts) {
+        if (!part) continue;
+        const m = /^<em>([\s\S]*)<\/em>$/.exec(part);
+        if (m) {
+          const em = document.createElement('em');
+          em.textContent = m[1];
+          host.appendChild(em);
+        } else {
+          host.appendChild(document.createTextNode(part));
+        }
+      }
+    }
+    const stripTags = (s) => String(s == null ? '' : s).replace(/<[^>]+>/g, '');
 
-    document.title = String(data.title || '').replace(/<[^>]+>/g, '') + ' — DAEMU';
+    document.title = stripTags(data.title) + ' — DAEMU';
     document.getElementById('wd-brand').textContent = data.brand || '';
-    document.getElementById('wd-title').innerHTML = escAllowEm(data.title || '');
+    buildTitleInto(document.getElementById('wd-title'), data.title);
     document.getElementById('wd-addr').textContent = data.addr || '';
+    // Image src — only allow safe schemes (http(s)/data: image/relative).
+    function safeImageSrc(s) {
+      const v = String(s == null ? '' : s).trim();
+      if (!v) return '';
+      if (v.startsWith('/') || v.startsWith('?') || v.startsWith('#')) return v;
+      if (/^data:image\//i.test(v)) return v;
+      const m = /^(https?):/i.exec(v);
+      return m ? v : '';
+    }
     if (data.img) {
-      document.getElementById('wd-img').src = data.img;
-      document.getElementById('wd-img').alt = String(data.title || '').replace(/<[^>]+>/g, '');
+      const safeSrc = safeImageSrc(data.img);
+      if (safeSrc) {
+        document.getElementById('wd-img').src = safeSrc;
+        document.getElementById('wd-img').alt = stripTags(data.title);
+      }
     }
 
     const tagsEl = document.getElementById('wd-tags');
@@ -195,10 +247,11 @@
     const galleryEl = document.getElementById('wd-gallery');
     const galleryImgs = (data.gallery && data.gallery.length) ? data.gallery : [data.img, data.img, data.img];
     galleryImgs.forEach((src, i) => {
-      if (!src) return;
+      const safe = safeImageSrc(src);
+      if (!safe) return;
       const img = document.createElement('img');
-      img.src = src;
-      img.alt = `${(data.title || '').replace(/<[^>]+>/g, '')} 사진 ${i + 1}`;
+      img.src = safe;
+      img.alt = `${stripTags(data.title)} 사진 ${i + 1}`;
       galleryEl.appendChild(img);
     });
 

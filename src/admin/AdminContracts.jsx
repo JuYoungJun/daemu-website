@@ -25,53 +25,216 @@ const STATUS_COLOR = {
 
 const VARIABLE_HINTS = [
   { key: 'clientName', label: '고객/회사명' },
+  { key: 'clientAddress', label: '고객 주소' },
+  { key: 'clientCEO', label: '고객 대표자' },
+  { key: 'clientBizNo', label: '고객 사업자등록번호' },
   { key: 'projectName', label: '프로젝트명' },
   { key: 'amount', label: '금액(표기용)' },
+  { key: 'amountWithTax', label: '부가세 포함 금액' },
   { key: 'startDate', label: '시작일' },
   { key: 'endDate', label: '종료일' },
-  { key: 'companyName', label: '발주/공급사명' },
+  { key: 'deliveryDate', label: '납품/완료일' },
+  { key: 'companyName', label: '공급/발주사명 (당사)' },
+  { key: 'companyAddress', label: '당사 주소' },
+  { key: 'companyCEO', label: '당사 대표자' },
+  { key: 'companyBizNo', label: '당사 사업자등록번호' },
   { key: 'managerName', label: '담당자' },
-  { key: 'scope', label: '업무 범위' },
+  { key: 'managerEmail', label: '담당자 이메일' },
+  { key: 'managerPhone', label: '담당자 연락처' },
+  { key: 'scope', label: '업무 범위 / 발주 항목' },
   { key: 'terms', label: '특약 조건' },
+  { key: 'paymentTerms', label: '대금 지급 조건 (참고)' },
+  { key: 'warrantyPeriod', label: '하자보수 기간' },
+  { key: 'today', label: '계약 체결일' },
 ];
 
-const DEFAULT_CONTRACT_TEMPLATE = `용역 계약서
+// ----- 표준 템플릿 (Korean B2B + F&B 컨설팅 맥락) -----
 
-본 계약은 {{companyName}}(이하 "갑")과 {{clientName}}(이하 "을") 사이에 체결되며,
-"{{projectName}}" 프로젝트에 관한 사항을 다음과 같이 정한다.
+const TEMPLATE_SERVICE_CONTRACT = `용역 계약서 (Service Agreement)
 
-1. 용역 범위
+본 계약은 아래 당사자 간에 체결되며, "{{projectName}}" 프로젝트에 관한
+용역 제공 및 그에 따른 권리·의무를 다음과 같이 정한다.
+
+────────────────────────────────────────────
+■ 갑 (의뢰인 / 고객)
+  · 회사명: {{clientName}}
+  · 주    소: {{clientAddress}}
+  · 대 표 자: {{clientCEO}}
+  · 사업자등록번호: {{clientBizNo}}
+
+■ 을 (수임인 / 공급사)
+  · 회사명: {{companyName}}
+  · 주    소: {{companyAddress}}
+  · 대 표 자: {{companyCEO}}
+  · 사업자등록번호: {{companyBizNo}}
+────────────────────────────────────────────
+
+제 1 조 (계약 목적)
+본 계약은 갑이 을에게 "{{projectName}}" 용역을 의뢰하고, 을이 이를 성실히
+수행함으로써 갑의 사업 목적 달성에 기여함을 목적으로 한다.
+
+제 2 조 (용역 범위)
 {{scope}}
 
-2. 계약 기간
-{{startDate}} ~ {{endDate}}
+제 3 조 (계약 기간)
+{{startDate}} 부터 {{endDate}} 까지로 하되, 양 당사자 합의에 따라 연장할 수 있다.
 
-3. 금액 (표기)
-{{amount}} (실제 대금 수납·청구 처리는 본 문서 시스템과 별도로 진행됨)
+제 4 조 (계약 금액 — 표기)
+계약 금액은 금 {{amount}} 원으로 표기하며, 부가가치세 포함 금액은 {{amountWithTax}} 원이다.
+다만, 본 문서는 대금 수납·청구를 위한 시스템이 아니며, 실제 대금 정산은
+별도 합의된 절차(세금계산서 발행 등)에 따라 진행된다.
 
-4. 특약사항
+제 5 조 (대금 지급 조건 — 참고)
+{{paymentTerms}}
+
+제 6 조 (산출물의 인도)
+을은 약정된 산출물을 {{deliveryDate}} 까지 갑에게 인도하며, 갑은 산출물 검수 후
+30일 이내에 이의가 없을 경우 검수 완료된 것으로 본다.
+
+제 7 조 (하자보수)
+산출물의 하자에 대해 을은 인도일로부터 {{warrantyPeriod}} 동안 무상 보수의 의무를 진다.
+
+제 8 조 (비밀유지)
+양 당사자는 본 계약과 관련하여 알게 된 상대방의 영업비밀·기술정보·고객정보를
+계약 종료 후 3년간 제3자에게 누설하거나 본 계약 목적 외로 사용해서는 아니 된다.
+
+제 9 조 (지식재산권)
+본 계약 수행 과정에서 도출된 산출물의 저작권 및 지식재산권은 잔금 지급 완료 시
+갑에게 이전되며, 그 전까지는 을의 소유로 한다.
+
+제 10 조 (계약 해지)
+어느 일방이 본 계약상의 의무를 중대하게 위반하고 30일의 시정 통지에도 시정하지
+아니할 경우, 상대방은 본 계약을 서면 통지로 해지할 수 있다.
+
+제 11 조 (분쟁 해결)
+본 계약과 관련된 분쟁은 양 당사자가 우선 협의하여 해결하며, 협의가 불성립할 경우
+대한상사중재원의 중재 규칙에 따른다.
+
+제 12 조 (특약사항)
 {{terms}}
 
-위 내용에 따라 본 계약을 체결하며, 양 당사자는 서명을 통해 이를 확인한다.
+본 계약의 성립을 증명하기 위하여 본 계약서를 2부 작성하여 각 당사자가
+서명·날인 후 각 1부씩 보관한다.
 
-— {{managerName}} 드림`;
+계약 체결일: {{today}}
 
-const DEFAULT_PO_TEMPLATE = `발주서 (Purchase Order)
+담당자: {{managerName}} ({{managerEmail}} · {{managerPhone}})`;
 
-발주처: {{companyName}}
-공급처: {{clientName}}
-프로젝트: {{projectName}}
+const TEMPLATE_NDA = `비밀유지 계약서 (Non-Disclosure Agreement)
 
-납기: {{endDate}}
-금액(표기): {{amount}}
+본 계약은 아래 당사자 간 "{{projectName}}" 검토·협의 과정에서 교환되는
+비밀 정보의 보호에 관한 사항을 정한다.
 
-발주 항목 / 조건:
+당사자
+  · 갑: {{clientName}} (대표자 {{clientCEO}})
+  · 을: {{companyName}} (대표자 {{companyCEO}})
+
+제 1 조 (비밀정보의 정의)
+본 계약에서 "비밀정보"란 일방 당사자가 상대방에게 서면·구두·전자적 방법으로
+공개한 모든 기술·영업·재무·고객 정보 중 비밀로 표시되었거나 그 성질상 비밀로
+간주되어야 하는 정보를 말한다.
+
+제 2 조 (비밀유지 의무)
+양 당사자는 비밀정보를 본 계약 목적 외로 사용하지 아니하며, 사전 서면 동의 없이
+제3자에게 누설하지 아니한다.
+
+제 3 조 (유지 기간)
+비밀유지 의무는 본 계약 체결일부터 {{warrantyPeriod}} 또는 {{endDate}}까지로 한다.
+
+제 4 조 (반환 및 폐기)
+계약 종료 또는 일방의 요청 시, 수령자는 보유 중인 비밀정보 일체를 즉시 반환하거나
+검증 가능한 방법으로 폐기한다.
+
+제 5 조 (특약사항)
+{{terms}}
+
+계약 체결일: {{today}}`;
+
+const TEMPLATE_SUPPLY_CONTRACT = `공급 계약서 (Supply Agreement)
+
+본 계약은 갑 {{clientName}} (이하 "발주처")이 을 {{companyName}} (이하 "공급사")
+로부터 "{{projectName}}" 관련 물품·서비스를 공급받음에 있어 그 거래 조건을
+다음과 같이 정한다.
+
+제 1 조 (공급 품목)
 {{scope}}
 
-비고:
+제 2 조 (공급 기간)
+{{startDate}} ~ {{endDate}}, 정기 공급의 경우 자동 갱신 조항 적용 가능.
+
+제 3 조 (납품 / 검수)
+공급사는 약정된 일정({{deliveryDate}})에 따라 발주처가 지정한 장소로 납품하며,
+발주처는 납품 후 7일 이내 검수를 완료한다.
+
+제 4 조 (단가 및 정산 — 표기)
+계약 단가는 별첨 명세서에 따르며, 누계 금액 표기 {{amount}} 원
+(부가세 포함 {{amountWithTax}} 원). 실제 대금 정산 절차는 별도 합의에 따른다.
+
+제 5 조 (품질 보증)
+공급사는 납품 물품의 품질 불량에 대해 인도일로부터 {{warrantyPeriod}} 동안
+무상 교환 또는 보수의 의무를 진다.
+
+제 6 조 (특약사항)
 {{terms}}
 
-— {{managerName}}`;
+계약 체결일: {{today}}
+당사 담당자: {{managerName}} ({{managerEmail}})`;
+
+const TEMPLATE_PO = `발주서 (Purchase Order)
+
+발 주 일: {{today}}
+발주번호: PO-자동발급
+
+발주처 (당사)
+  · 회사명: {{companyName}}
+  · 사업자등록번호: {{companyBizNo}}
+  · 담당자: {{managerName}} ({{managerEmail}} · {{managerPhone}})
+
+공급처
+  · 회사명: {{clientName}}
+  · 대표자: {{clientCEO}}
+  · 사업자등록번호: {{clientBizNo}}
+  · 주    소: {{clientAddress}}
+
+────────────────────────────────────────────
+프로젝트 : {{projectName}}
+납    기 : {{deliveryDate}}
+계약 기간: {{startDate}} ~ {{endDate}}
+
+발주 항목 / 사양:
+{{scope}}
+
+총 금액 (표기): {{amount}} 원 (부가세 포함 {{amountWithTax}} 원)
+※ 실제 대금 정산·세금계산서 발행은 별도 절차로 진행됩니다.
+
+대금 지급 조건 (참고): {{paymentTerms}}
+하자/품질 보증 기간: {{warrantyPeriod}}
+────────────────────────────────────────────
+
+특약사항:
+{{terms}}
+
+수령 확인 시 본 발주서 하단에 서명하여 회신해 주시기 바랍니다.
+
+발주처 담당자: {{managerName}}`;
+
+// 종류 → (라벨, 기본 템플릿) 매핑
+const TEMPLATE_PRESETS = [
+  { id: 'service-contract',  label: '용역 계약서 (표준)',  kind: 'contract',        body: TEMPLATE_SERVICE_CONTRACT },
+  { id: 'supply-contract',   label: '공급 계약서 (표준)',  kind: 'contract',        body: TEMPLATE_SUPPLY_CONTRACT },
+  { id: 'nda',               label: '비밀유지 계약서(NDA)',kind: 'contract',        body: TEMPLATE_NDA },
+  { id: 'purchase-order',    label: '발주서 (표준)',       kind: 'purchase_order',  body: TEMPLATE_PO },
+];
+
+const DEFAULT_CONTRACT_TEMPLATE = TEMPLATE_SERVICE_CONTRACT;
+const DEFAULT_PO_TEMPLATE = TEMPLATE_PO;
+
+// 법적 효력 안내문 — 모든 계약/PO 화면에서 동일한 톤으로 노출.
+const LEGAL_DISCLAIMER_LINES = [
+  '⚖️ 법적 효력 안내 — 본 e-Sign은 데모/내부 결재용입니다.',
+  '강한 법적 효력이 필요한 계약(공증·부동산·대출·행정 신고 등)은',
+  'DocuSign·Adobe Sign·KICA 인증서 + 신원확인·감사이력·위변조 방지가 별도로 필요합니다.',
+];
 
 function isoNow() { return new Date().toISOString(); }
 
@@ -137,9 +300,11 @@ export default function AdminContracts() {
             '2단계 — 문서 생성: "문서" 탭에서 템플릿을 고르고 변수값(고객명·프로젝트명·금액·기간 등)을 채워 최종 문서를 생성합니다.',
             '3단계 — 미리보기 → 발송: 문서를 열어 미리보기에서 확인 후 "발송"을 누르면 수신자에게 이메일이 나가며 서명 링크가 동봉됩니다.',
             '4단계 — 서명: 수신자가 서명 링크에서 캔버스 서명을 완료하면 상태가 자동으로 "서명완료"로 바뀝니다.',
-            '⚖️ 법적 효력 안내 — 본 e-Sign은 데모/내부 결재용입니다. 강한 법적 효력이 필요한 계약은 DocuSign·Adobe Sign·KICA 인증서 + 신원확인·감사이력·위변조 방지가 필요합니다.',
+            '준비된 표준 양식: 용역 계약서, 공급 계약서, 비밀유지 계약서(NDA), 발주서.',
             '본 시스템은 결제/대금 수납을 다루지 않습니다. 금액 변수는 명세 표기일 뿐 실제 청구·수납 처리와 연결되지 않습니다.',
           ]} />
+
+          <LegalDisclaimer style={{ marginBottom: 22 }} />
 
           <div className="adm-tabs">
             <button type="button" className={tab === 'documents' ? 'is-active' : ''} onClick={() => setTab('documents')}>
@@ -191,8 +356,18 @@ export default function AdminContracts() {
 function TemplatesPane({ templates, onChange, isAdmin }) {
   const [editing, setEditing] = useState(null);
 
-  const startNew = (kind) => setEditing({
-    name: kind === 'contract' ? '기본 계약서' : '기본 발주서',
+  const startFromPreset = (preset) => setEditing({
+    name: preset.label,
+    kind: preset.kind,
+    subject: preset.kind === 'contract'
+      ? '[대무] ' + preset.label + ' — {{projectName}}'
+      : '[대무] 발주서 — {{projectName}}',
+    body: preset.body,
+    variables: VARIABLE_HINTS.map((v) => v.key),
+    active: true,
+  });
+  const startBlank = (kind) => setEditing({
+    name: kind === 'contract' ? '새 계약서' : '새 발주서',
     kind,
     subject: kind === 'contract' ? '[대무] 계약서 — {{projectName}}' : '[대무] 발주서 — {{projectName}}',
     body: kind === 'contract' ? DEFAULT_CONTRACT_TEMPLATE : DEFAULT_PO_TEMPLATE,
@@ -203,9 +378,20 @@ function TemplatesPane({ templates, onChange, isAdmin }) {
   return (
     <div>
       {isAdmin && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          <button className="btn" type="button" onClick={() => startNew('contract')}>+ 계약서 템플릿</button>
-          <button className="btn" type="button" onClick={() => startNew('purchase_order')}>+ 발주서 템플릿</button>
+        <div style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>표준 양식에서 만들기</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {TEMPLATE_PRESETS.map((p) => (
+              <button key={p.id} type="button" className="adm-btn-sm" onClick={() => startFromPreset(p)}>
+                + {p.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginTop: 6 }}>또는 빈 템플릿으로 시작</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="adm-btn-sm" type="button" onClick={() => startBlank('contract')}>+ 빈 계약서</button>
+            <button className="adm-btn-sm" type="button" onClick={() => startBlank('purchase_order')}>+ 빈 발주서</button>
+          </div>
         </div>
       )}
 
@@ -564,6 +750,7 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
               {previewBody || '(미리보기가 비어있습니다 — 본문/변수값을 입력하세요)'}
             </pre>
           </div>
+          <LegalDisclaimer style={{ marginTop: 12 }} />
         </div>
       </div>
 
@@ -664,31 +851,86 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
   };
 
   const exportPdf = () => {
-    // Print-to-PDF via the browser's native print dialog. No extra deps.
+    // Snyk DOMXSS hardening: build the print window with document.createElement
+    // + textContent only — no document.write, no innerHTML, no template-string
+    // HTML. The window's print is triggered after onload.
     const w = window.open('', '_blank', 'noopener,noreferrer');
     if (!w) { alert('팝업 차단으로 PDF 창을 열 수 없습니다.'); return; }
-    const safe = (s) => String(s ?? '').replace(/[<>]/g, (c) => ({ '<': '&lt;', '>': '&gt;' }[c]));
-    const sigImgs = signatures.map((s) => `
-      <div style="margin-top:18px;padding-top:14px;border-top:1px solid #d7d4cf">
-        <div style="font-size:11px;color:#6f6b68">서명자: ${safe(s.signer_name)} (${safe(s.signer_email)}) · ${s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : ''}</div>
-      </div>`).join('');
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(doc.title)}</title>
-      <style>
-        @page { size: A4; margin: 22mm; }
-        body { font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; color:#231815; line-height:1.75; }
-        h1 { font-size: 20px; border-bottom: 2px solid #231815; padding-bottom: 8px; }
-        .meta { font-size: 11px; color: #8c867d; margin-bottom: 18px; letter-spacing:.04em }
-        pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; }
-        .brand { text-align: right; font-size: 12px; color: #8c867d; margin-top: 28px; border-top: 1px solid #d7d4cf; padding-top: 10px; letter-spacing:.08em }
-      </style></head><body>
-      <div class="meta">${safe(KIND_LABEL[doc.kind] || '')} · ${safe(STATUS_LABEL[doc.status] || '')} · ${doc.created_at ? new Date(doc.created_at).toLocaleString('ko') : ''}</div>
-      <h1>${safe(doc.title)}</h1>
-      <pre>${safe(doc.body)}</pre>
-      ${sigImgs}
-      <div class="brand">대무 (DAEMU) · daemu_office@naver.com · 061-335-1239</div>
-      <script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script>
-      </body></html>`);
-    w.document.close();
+
+    const wDoc = w.document;
+    wDoc.documentElement.lang = 'ko';
+
+    // <head>
+    const head = wDoc.head || wDoc.getElementsByTagName('head')[0];
+    while (head.firstChild) head.removeChild(head.firstChild);
+    const meta = wDoc.createElement('meta');
+    meta.setAttribute('charset', 'utf-8');
+    head.appendChild(meta);
+    const titleEl = wDoc.createElement('title');
+    titleEl.textContent = String(doc.title || '문서');
+    head.appendChild(titleEl);
+    const style = wDoc.createElement('style');
+    // Static stylesheet — no user input goes in here.
+    style.textContent = `
+      @page { size: A4; margin: 22mm; }
+      body { font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; color:#231815; line-height:1.75; }
+      h1 { font-size: 20px; border-bottom: 2px solid #231815; padding-bottom: 8px; }
+      .meta { font-size: 11px; color: #8c867d; margin-bottom: 18px; letter-spacing:.04em }
+      pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; }
+      .sig { margin-top: 18px; padding-top: 14px; border-top: 1px solid #d7d4cf; font-size: 11px; color:#6f6b68; }
+      .legal { margin-top: 28px; padding: 12px 14px; background:#fff8ec; border:1px solid #f0e3c4; font-size:11px; color:#5a4a2a; line-height:1.7 }
+      .brand { text-align: right; font-size: 12px; color: #8c867d; margin-top: 28px; border-top: 1px solid #d7d4cf; padding-top: 10px; letter-spacing:.08em }
+    `;
+    head.appendChild(style);
+
+    // <body>
+    const body = wDoc.body;
+    while (body.firstChild) body.removeChild(body.firstChild);
+
+    const metaDiv = wDoc.createElement('div');
+    metaDiv.className = 'meta';
+    metaDiv.textContent = [
+      KIND_LABEL[doc.kind] || '',
+      STATUS_LABEL[doc.status] || '',
+      doc.created_at ? new Date(doc.created_at).toLocaleString('ko') : '',
+    ].filter(Boolean).join(' · ');
+    body.appendChild(metaDiv);
+
+    const h1 = wDoc.createElement('h1');
+    h1.textContent = String(doc.title || '');
+    body.appendChild(h1);
+
+    const pre = wDoc.createElement('pre');
+    pre.textContent = String(doc.body || '');
+    body.appendChild(pre);
+
+    for (const s of signatures) {
+      const sig = wDoc.createElement('div');
+      sig.className = 'sig';
+      sig.textContent =
+        `서명자: ${s.signer_name || ''} (${s.signer_email || ''}) · ` +
+        (s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : '');
+      body.appendChild(sig);
+    }
+
+    // Legal note — kept consistent with the e-sign page.
+    const legal = wDoc.createElement('div');
+    legal.className = 'legal';
+    legal.textContent =
+      '⚖️ 본 e-Sign은 데모/내부 결재용 전자 서명입니다. 강한 법적 효력이 필요한 계약(공증·부동산·대출 등)은 ' +
+      'DocuSign·Adobe Sign·KICA 인증서 + 신원확인·감사이력·위변조 방지 PDF가 별도로 필요합니다.';
+    body.appendChild(legal);
+
+    const brand = wDoc.createElement('div');
+    brand.className = 'brand';
+    brand.textContent = '대무 (DAEMU) · daemu_office@naver.com · 061-335-1239';
+    body.appendChild(brand);
+
+    // Trigger print after layout settles. Hooked via the parent window so we
+    // never inject script text into the new window.
+    setTimeout(() => {
+      try { w.focus(); w.print(); } catch (e) { /* ignore */ }
+    }, 300);
   };
 
   if (loading || !doc) {
@@ -756,6 +998,8 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         ))}
       </div>
 
+      <LegalDisclaimer style={{ marginBottom: 14 }} />
+
       <div className="adm-action-row">
         {isAdmin && doc.status === 'draft' && (
           <button className="btn" type="button" onClick={send}>📤 발송</button>
@@ -804,6 +1048,28 @@ function EmptyState({ text }) {
   return (
     <div style={{ textAlign: 'center', padding: '60px 0', color: '#8c867d', background: '#fff', border: '1px dashed #d7d4cf' }}>
       <p>{text}</p>
+    </div>
+  );
+}
+
+// 본 컴포넌트는 모든 계약/PO 진입 지점에 동일한 톤으로 노출되어
+// 운영자가 "이 e-Sign이 어디까지 효력을 가지는지" 한눈에 알도록 합니다.
+function LegalDisclaimer({ style }) {
+  return (
+    <div role="note" style={{
+      background: '#fff8ec',
+      border: '1px solid #f0e3c4',
+      borderLeft: '3px solid #c9a25a',
+      padding: '14px 18px',
+      fontSize: 12.5,
+      lineHeight: 1.75,
+      color: '#5a4a2a',
+      borderRadius: 4,
+      ...(style || {}),
+    }}>
+      {LEGAL_DISCLAIMER_LINES.map((line, i) => (
+        <div key={i} style={{ fontWeight: i === 0 ? 600 : 400 }}>{line}</div>
+      ))}
     </div>
   );
 }

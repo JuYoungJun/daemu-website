@@ -81,8 +81,12 @@ export const Auth = {
     }
   },
 
-  // Backend login. Returns { ok, error?, mustChangePassword? }.
-  async login(email, password) {
+  // Backend login. Returns:
+  //   { ok: true, mustChangePassword }                       — success
+  //   { ok: false, needTotp: true, message }                 — 2FA required
+  //   { ok: false, error }                                   — other failure
+  // The caller can re-call login(email, password, totpCode) to satisfy 2FA.
+  async login(email, password, totpCode) {
     if (!api.isConfigured()) {
       if (!email || !password) return { ok: false, error: 'enter credentials' };
       localStorage.setItem(LEGACY_KEY, '1');
@@ -90,10 +94,16 @@ export const Auth = {
       this.touch();
       return { ok: true, simulated: true, mustChangePassword: false };
     }
-    const res = await api.post('/api/auth/login', { email, password });
+    const body = totpCode ? { email, password, totp_code: totpCode } : { email, password };
+    const res = await api.post('/api/auth/login', body);
     if (!res || !res.ok) {
       if (res?.status === 429) return { ok: false, error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.' };
-      return { ok: false, error: res?.error || '로그인 실패' };
+      // 2FA 필요 케이스: detail이 객체이고 need_totp:true
+      const detail = res?.detail || res?.error;
+      if (detail && typeof detail === 'object' && detail.need_totp) {
+        return { ok: false, needTotp: true, message: detail.message || '인증 코드를 입력해 주세요.' };
+      }
+      return { ok: false, error: typeof detail === 'string' ? detail : (detail?.message || res?.error || '로그인 실패') };
     }
     if (res.token) localStorage.setItem(TOKEN_KEY, res.token);
     if (res.user) localStorage.setItem(USER_KEY, JSON.stringify(res.user));

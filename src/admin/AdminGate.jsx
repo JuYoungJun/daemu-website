@@ -5,6 +5,7 @@ import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
+import TwoFactorPanel from './TwoFactorPanel.jsx';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -17,6 +18,12 @@ export default function AdminGate() {
   const [error, setError] = useState('');
   const [mustChange, setMustChange] = useState(() => !!Auth.user()?.must_change_password);
   const [showChange, setShowChange] = useState(false);
+  const [show2fa, setShow2fa] = useState(false);
+  // 2FA login flow state — when backend says need_totp, we keep email/password
+  // around (NOT in storage) so the user can submit the 6-digit code without
+  // re-typing credentials.
+  const [pendingCreds, setPendingCreds] = useState(null);
+  const [totpCode, setTotpCode] = useState('');
 
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
 
@@ -41,11 +48,42 @@ export default function AdminGate() {
     const res = await Auth.login(email, password);
     setLoading(false);
     if (!res.ok) {
+      if (res.needTotp) {
+        setPendingCreds({ email, password });
+        setError(res.message || '2단계 인증 코드를 입력해 주세요.');
+        return;
+      }
       setError(res.error || '로그인 실패');
       return;
     }
     setMustChange(!!res.mustChangePassword);
     setLoggedIn(true);
+  };
+
+  const onTotpSubmit = async (e) => {
+    e.preventDefault();
+    if (!pendingCreds) return;
+    setError('');
+    setLoading(true);
+    const res = await Auth.login(pendingCreds.email, pendingCreds.password, totpCode.trim());
+    setLoading(false);
+    if (!res.ok) {
+      if (res.needTotp) {
+        setError(res.message || '잘못된 인증 코드입니다.');
+        return;
+      }
+      setError(res.error || '로그인 실패');
+      return;
+    }
+    setPendingCreds(null);
+    setTotpCode('');
+    setMustChange(!!res.mustChangePassword);
+    setLoggedIn(true);
+  };
+  const onTotpCancel = () => {
+    setPendingCreds(null);
+    setTotpCode('');
+    setError('');
   };
   const onLogout = () => {
     Auth.logout();
@@ -100,15 +138,36 @@ export default function AdminGate() {
             <h1 className="page-title">Admin</h1>
             <div className="admin-login-wrap">
               <div className="admin-login-box">
-                <h2>관리자 로그인</h2>
-                <p>대무 관리자 전용 페이지입니다.</p>
-                {!api.isConfigured() && <p style={{fontSize:11,color:'#a09a92',marginTop:-12}}>※ 백엔드 미연결 상태 — 데모 모드로 진행됩니다.</p>}
-                <form onSubmit={onLogin}>
-                  <div className="admin-login-field"><input type="text" name="admin_id" placeholder="관리자 아이디 (이메일)" autoComplete="username" required /></div>
-                  <div className="admin-login-field"><input type="password" name="admin_pw" placeholder="비밀번호" autoComplete="current-password" required /></div>
-                  {error && <div style={{color:'#b04a3b',fontSize:12,margin:'4px 0 8px'}}>{error}</div>}
-                  <button className="btn" type="submit" disabled={loading}>{loading ? '확인 중…' : '로그인'}</button>
-                </form>
+                {pendingCreds ? (
+                  <>
+                    <h2>2단계 인증</h2>
+                    <p>인증 앱(Google Authenticator, Authy 등)에 표시된 <strong>6자리 코드</strong>를 입력해 주세요.<br />
+                    백업 코드(XXXX-XXXX 형식)도 사용 가능합니다.</p>
+                    <form onSubmit={onTotpSubmit}>
+                      <div className="admin-login-field">
+                        <input type="text" inputMode="numeric" autoComplete="one-time-code"
+                          autoFocus pattern="[0-9A-Za-z\\-\\s]*" maxLength={20}
+                          value={totpCode} onChange={(e) => setTotpCode(e.target.value)}
+                          placeholder="123456 또는 ABCD-1234" required />
+                      </div>
+                      {error && <div style={{ color: '#b04a3b', fontSize: 12, margin: '4px 0 8px' }}>{error}</div>}
+                      <button className="btn" type="submit" disabled={loading}>{loading ? '확인 중…' : '확인'}</button>
+                      <button type="button" className="adm-btn-sm" style={{ marginTop: 8 }} onClick={onTotpCancel}>← 다시 로그인</button>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <h2>관리자 로그인</h2>
+                    <p>대무 관리자 전용 페이지입니다.</p>
+                    {!api.isConfigured() && <p style={{fontSize:11,color:'#a09a92',marginTop:-12}}>※ 백엔드 미연결 상태 — 데모 모드로 진행됩니다.</p>}
+                    <form onSubmit={onLogin}>
+                      <div className="admin-login-field"><input type="text" name="admin_id" placeholder="관리자 아이디 (이메일)" autoComplete="username" required /></div>
+                      <div className="admin-login-field"><input type="password" name="admin_pw" placeholder="비밀번호" autoComplete="current-password" required /></div>
+                      {error && <div style={{color:'#b04a3b',fontSize:12,margin:'4px 0 8px'}}>{error}</div>}
+                      <button className="btn" type="submit" disabled={loading}>{loading ? '확인 중…' : '로그인'}</button>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -170,8 +229,16 @@ export default function AdminGate() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn" type="button" onClick={() => setShowChange(true)}
                   style={{ minWidth: 120 }}>비밀번호 변경</button>
+                <button className="btn" type="button" onClick={() => setShow2fa(true)}
+                  style={{ minWidth: 120 }}>2단계 인증{me.totp_enabled ? ' ✓' : ''}</button>
                 <button className="btn admin-logout-btn" type="button" onClick={onLogout}>로그아웃</button>
               </div>
+              {show2fa && (
+                <TwoFactorPanel
+                  user={me}
+                  onClose={() => { setShow2fa(false); Auth.refreshMe(); }}
+                />
+              )}
             </div>
 
             <div className="admin-stats-grid">

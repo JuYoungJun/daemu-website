@@ -1,6 +1,6 @@
 (function() {
   'use strict';
-const KEY = "crm";
+const STORAGE_KEY = "crm";
 const STAGES = [
   {key:"lead",       label:"리드",     en:"Lead"},
   {key:"qualified",  label:"검토중",   en:"Qualified"},
@@ -14,7 +14,7 @@ let drawerId = null;
 
 function getAllTags() {
   const set = new Set();
-  DB.get(KEY).forEach(d => (d.tags||[]).forEach(t => set.add(t)));
+  DB.get(STORAGE_KEY).forEach(d => (d.tags||[]).forEach(t => set.add(t)));
   return Array.from(set).sort();
 }
 
@@ -31,7 +31,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const ft = document.getElementById("filter-tag").value;
-  return DB.get(KEY).filter(d =>
+  return DB.get(STORAGE_KEY).filter(d =>
     (!q || (d.name+" "+(d.company||"")+" "+(d.email||"")).toLowerCase().includes(q)) &&
     (!fs || d.status === fs) &&
     (!ft || (d.tags||[]).includes(ft))
@@ -41,7 +41,7 @@ function filtered() {
 function stageMeta(key){ return STAGES.find(s => s.key === key) || STAGES[0]; }
 
 function renderPipeline() {
-  const all = DB.get(KEY);
+  const all = DB.get(STORAGE_KEY);
   document.getElementById("pipeline").innerHTML = STAGES.map(s => {
     const items = all.filter(d => d.status === s.key);
     return `<div class="adm-pipe-col">
@@ -91,7 +91,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -129,17 +129,17 @@ function save() {
     tags,
     summary: document.getElementById("f-summary").value
   };
-  if (editingId !== null) DB.update(KEY, editingId, payload);
-  else DB.add(KEY, { ...payload, notes: [] });
+  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
+  else DB.add(STORAGE_KEY, { ...payload, notes: [] });
   resetForm();
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(KEY, id); render(); } }
+function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
 
 /* Drawer */
 function openDrawer(id) {
-  const d = DB.get(KEY).find(x => x.id === id);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
   drawerId = id;
   document.getElementById("d-stage").textContent = stageMeta(d.status).en;
@@ -178,22 +178,22 @@ function addNote() {
   if (!drawerId) return;
   const text = document.getElementById("note-text").value.trim();
   if (!text) return;
-  const d = DB.get(KEY).find(x => x.id === drawerId);
+  const d = DB.get(STORAGE_KEY).find(x => x.id === drawerId);
   if (!d) return;
   const notes = (d.notes || []).concat([{ ts: new Date().toLocaleString('ko'), text }]);
-  DB.update(KEY, drawerId, { notes });
+  DB.update(STORAGE_KEY, drawerId, { notes });
   document.getElementById("note-text").value = "";
   openDrawer(drawerId);
   render();
 }
 function changeStage(status) {
   if (!drawerId) return;
-  DB.update(KEY, drawerId, { status });
+  DB.update(STORAGE_KEY, drawerId, { status });
   openDrawer(drawerId);
   render();
 }
 function editFromDrawer() { const id = drawerId; closeDrawer(); openEdit(id); }
-function delFromDrawer() { const id = drawerId; if (confirmDel()) { closeDrawer(); DB.del(KEY, id); render(); } }
+function delFromDrawer() { const id = drawerId; if (confirmDel()) { closeDrawer(); DB.del(STORAGE_KEY, id); render(); } }
 
 render();
 
