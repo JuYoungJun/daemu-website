@@ -114,6 +114,20 @@ TESTER_PASSWORD = os.environ.get("TESTER_PASSWORD", "tester1234")
 DEVELOPER_EMAIL = os.environ.get("DEVELOPER_EMAIL", "dev@daemu.local")
 DEVELOPER_PASSWORD = os.environ.get("DEVELOPER_PASSWORD", "dev1234")
 
+# ⚠️ TEMPORARY TEST SUPER-ADMIN ⚠️
+# Created only when both TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD are set.
+# This account is admin-role + bypasses must_change_password so QA can run
+# end-to-end without going through the rotation flow on every fresh deploy.
+#
+# REMOVE AFTER TESTING:
+#   1) Render Dashboard → daemu-py → Environment → unset both vars
+#   2) Trigger redeploy. The DB row remains until explicitly deleted —
+#      log into the regular admin account and DELETE this user from
+#      /admin/users (or via DELETE /api/users/{id}).
+#   3) Confirm via /api/users (admin) that the row is gone.
+TEST_ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+TEST_ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
+
 ROLE_ADMIN = "admin"
 ROLE_TESTER = "tester"
 ROLE_DEVELOPER = "developer"
@@ -284,20 +298,40 @@ def require_perm(resource: str, action: str):
 
 
 async def ensure_default_users(session: AsyncSession) -> None:
-    """Seed one user per role on first boot if no admin exists.
-    Existing users are NEVER overwritten — env passwords only matter on the very
-    first deploy. Update credentials via /api/users (admin) afterwards."""
+    """Seed users on first boot.
+    - admin/tester/developer trio (force-change on first login).
+    - Optional test super-admin (no force-change) gated by TEST_ADMIN_*.
+
+    Existing users are NEVER overwritten — env passwords only matter on the
+    very first deploy. Update credentials via /api/users afterwards."""
     res = await session.execute(select(AdminUser).limit(1))
     if res.scalar_one_or_none():
+        # Existing DB. Check if we should append the test super-admin only.
+        if TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD:
+            existing = await session.execute(
+                select(AdminUser).where(AdminUser.email == TEST_ADMIN_EMAIL)
+            )
+            if not existing.scalar_one_or_none():
+                session.add(AdminUser(
+                    email=TEST_ADMIN_EMAIL,
+                    password_hash=hash_password(TEST_ADMIN_PASSWORD),
+                    name="Test Super-Admin (TEMPORARY — REMOVE AFTER TESTING)",
+                    role=ROLE_ADMIN,
+                    active=True,
+                    must_change_password=False,  # bypass rotation for QA
+                ))
+                await session.commit()
+                print(f"[auth] ⚠️ TEMPORARY test super-admin seeded: {TEST_ADMIN_EMAIL}")
+                print("[auth] ⚠️ REMOVE BEFORE GOING LIVE — see auth.py header comment.")
         return
 
     weak_defaults = {"daemu1234", "tester1234", "dev1234"}
     seeds = [
-        (ADMIN_EMAIL, ADMIN_PASSWORD, "Default Admin", ROLE_ADMIN),
-        (TESTER_EMAIL, TESTER_PASSWORD, "Tester", ROLE_TESTER),
-        (DEVELOPER_EMAIL, DEVELOPER_PASSWORD, "Developer", ROLE_DEVELOPER),
+        (ADMIN_EMAIL, ADMIN_PASSWORD, "Default Admin", ROLE_ADMIN, True),
+        (TESTER_EMAIL, TESTER_PASSWORD, "Tester", ROLE_TESTER, True),
+        (DEVELOPER_EMAIL, DEVELOPER_PASSWORD, "Developer", ROLE_DEVELOPER, True),
     ]
-    for email, password, name, role in seeds:
+    for email, password, name, role, force_change in seeds:
         if not email or not password:
             continue
         is_weak = password in weak_defaults
@@ -310,8 +344,23 @@ async def ensure_default_users(session: AsyncSession) -> None:
             name=name,
             role=role,
             active=True,
-            must_change_password=is_weak,
+            must_change_password=is_weak and force_change,
         ))
+
+    # ⚠️ TEMPORARY test super-admin — REMOVE BEFORE GOING LIVE.
+    # See header comment for cleanup procedure.
+    if TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD:
+        session.add(AdminUser(
+            email=TEST_ADMIN_EMAIL,
+            password_hash=hash_password(TEST_ADMIN_PASSWORD),
+            name="Test Super-Admin (TEMPORARY — REMOVE AFTER TESTING)",
+            role=ROLE_ADMIN,
+            active=True,
+            must_change_password=False,
+        ))
+        print(f"[auth] ⚠️ TEMPORARY test super-admin seeded: {TEST_ADMIN_EMAIL}")
+        print("[auth] ⚠️ REMOVE BEFORE GOING LIVE — see auth.py header comment.")
+
     await session.commit()
     print(f"[auth] seeded default users: {ADMIN_EMAIL}, {TESTER_EMAIL}, {DEVELOPER_EMAIL}")
 

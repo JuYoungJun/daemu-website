@@ -190,12 +190,116 @@ PROD = os.environ.get("ENV", "").lower() in {"prod", "production"}
 # Set ENV=prod in Render once a real domain + customer data are wired up.
 app = FastAPI(
     title="DAEMU API",
+    description=(
+        "**대무 (DAEMU)** — 베이커리 · 카페 비즈니스 파트너 백엔드 API.\n\n"
+        "📍 본사: 전라남도 나주시 황동 3길 8 · 📞 061-335-1239\n\n"
+        "### 인증\n"
+        "보호된 엔드포인트는 `Authorization: Bearer <jwt>` 헤더가 필요합니다. "
+        "`/api/auth/login` 으로 토큰을 발급받으세요.\n\n"
+        "### 역할\n"
+        "- **admin** — 전체 권한\n"
+        "- **tester** — 대부분 읽기 전용\n"
+        "- **developer** — 작업사례·콘텐츠·메일·팝업 관리"
+    ),
     version="3.1",
+    contact={"name": "대무 운영팀", "email": "daemu_office@naver.com"},
+    license_info={"name": "Proprietary", "url": "https://juyoungjun.github.io/daemu-website/privacy"},
+    openapi_tags=[
+        {"name": "auth", "description": "🔐 로그인 / 비밀번호 변경 / 현재 사용자 조회"},
+        {"name": "users", "description": "👥 사용자 관리 (관리자 전용)"},
+        {"name": "crud", "description": "📋 문의 · 파트너 · 발주 · 작업 · CRM · 캠페인 · 프로모션 · 팝업 · 메일 템플릿"},
+    ],
     lifespan=lifespan,
     docs_url=None if PROD else "/docs",
     redoc_url=None if PROD else "/redoc",
     openapi_url=None if PROD else "/openapi.json",
+    swagger_ui_parameters={
+        # Cleaner default — collapse model schemas, group operations by tag.
+        "defaultModelsExpandDepth": -1,
+        "defaultModelExpandDepth": 1,
+        "displayRequestDuration": True,
+        "filter": True,
+        "syntaxHighlight.theme": "monokai",
+        "tryItOutEnabled": True,
+        "persistAuthorization": True,
+        "docExpansion": "list",
+        "tagsSorter": "alpha",
+        "operationsSorter": "alpha",
+    },
 )
+
+
+# Custom branded /docs page that overrides Swagger UI's default styling.
+# Falls through to the auto-generated /docs in non-prod, but with our CSS.
+if not PROD:
+    from fastapi.responses import HTMLResponse
+    from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+
+    @app.get("/docs", include_in_schema=False)
+    async def custom_swagger_ui_html():
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title="DAEMU API · 문서",
+            swagger_favicon_url="https://juyoungjun.github.io/daemu-website/assets/logo.svg",
+            swagger_ui_parameters=app.swagger_ui_parameters,
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    async def custom_redoc_html():
+        return get_redoc_html(
+            openapi_url="/openapi.json",
+            title="DAEMU API · Reference",
+            redoc_favicon_url="https://juyoungjun.github.io/daemu-website/assets/logo.svg",
+        )
+
+    # Modern alternative: Scalar API Reference (https://scalar.com).
+    # No new Python dep — just an HTML shell that loads Scalar's CDN bundle
+    # and points it at our /openapi.json.
+    @app.get("/reference", include_in_schema=False, response_class=HTMLResponse)
+    async def scalar_reference():
+        return """<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>DAEMU API · Scalar Reference</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="https://juyoungjun.github.io/daemu-website/assets/logo.svg" />
+  <style>
+    body { margin: 0; font-family: 'Noto Sans KR', system-ui, sans-serif; }
+    .topbar { padding: 14px 24px; background: #2a2724; color: #f6f4f0;
+              font-size: 13px; letter-spacing: .04em; }
+    .topbar strong { font-family: 'Cormorant Garamond', serif; font-size: 17px;
+                      letter-spacing: .12em; margin-right: 12px; }
+    .topbar a { color: #ecc488; margin-left: 14px; text-decoration: none; }
+    .topbar a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <strong>DAEMU API</strong>
+    <span>대무 백엔드 API · v3.1</span>
+    <a href="/docs">Swagger UI</a>
+    <a href="/redoc">ReDoc</a>
+    <a href="/openapi.json">OpenAPI JSON</a>
+  </div>
+  <script id="api-reference" data-url="/openapi.json"></script>
+  <script>
+    window.addEventListener('load', () => {
+      // Scalar configuration — Korean default theme
+      const scalarConfig = {
+        theme: 'kepler',
+        layout: 'modern',
+        searchHotKey: 'k',
+        defaultOpenAllTags: false,
+        hideDownloadButton: false,
+      };
+      const el = document.getElementById('api-reference');
+      el.dataset.configuration = JSON.stringify(scalarConfig);
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+</body>
+</html>"""
 
 app.add_middleware(
     CORSMiddleware,
