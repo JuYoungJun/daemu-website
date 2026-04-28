@@ -153,6 +153,107 @@ daemu_office@naver.com · 061-335-1239`,
 대무 (DAEMU)`,
     active: true,
   },
+  // ── 운영 변동 대응용 템플릿 ───────────────────────────────────────
+  {
+    name: '발주 마감 시간 안내 (정기)',
+    category: 'partner',
+    subject: '[대무] {{이름}}님, 발주 마감 시간 안내',
+    body:
+`안녕하세요 {{이름}}님,
+
+대무 발주 운영 시간을 안내드립니다.
+
+  · 평일 발주 마감: 매일 {{마감시간}} (이후 접수분은 다음 영업일 처리)
+  · 주말·공휴일: 발주 접수 불가 → 다음 영업일 자동 처리
+  · 긴급 발주: {{긴급연락처}} 로 직접 연락 부탁드립니다
+
+마감 후 접수된 건은 자동으로 다음 영업일에 처리되어 출고일이 1일 미뤄질 수 있습니다.
+양해 부탁드립니다.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '공휴일·연휴 발주 휴무 안내',
+    category: 'partner',
+    subject: '[대무] {{이름}}님, {{휴무명}} 발주 휴무 안내',
+    body:
+`안녕하세요 {{이름}}님,
+
+{{휴무명}} 으로 인해 다음 기간 동안 발주 접수가 중단됩니다.
+
+  · 휴무 기간: {{시작일}} ~ {{종료일}}
+  · 정상 운영 재개: {{재개일}}
+  · 마지막 출고일: {{마지막출고일}}
+  · 첫 출고 재개일: {{첫출고일}}
+
+휴무 전 미리 발주가 필요하신 분은 {{사전마감일}} 까지 접수 부탁드립니다.
+긴급 사항은 {{긴급연락처}} 로 연락 부탁드립니다.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '택배사 사정 — 배송 지연 안내',
+    category: 'reply',
+    subject: '[대무] {{이름}}님 발주 {{발주번호}} — 택배사 사정으로 배송 지연',
+    body:
+`안녕하세요 {{이름}}님,
+
+{{발주번호}} 발주 건의 배송이 택배사 사정으로 지연되고 있어 안내드립니다.
+
+  · 사유: {{지연사유}}
+  · 영향 지역: {{영향지역}}
+  · 예상 지연 기간: {{예상지연}}
+  · 변경된 도착 예상일: {{변경도착예정일}}
+
+택배사 운영이 정상화되는 즉시 출고가 진행됩니다.
+긴급한 상품의 경우 {{긴급연락처}} 로 연락 부탁드리며, 가능한 범위 내에서 대안을 안내드리겠습니다.
+
+대무 (DAEMU)
+daemu_office@naver.com · 061-335-1239`,
+    active: true,
+  },
+  {
+    name: '발주 일시 중단 — 시스템·재고',
+    category: 'partner',
+    subject: '[대무] {{이름}}님, 발주 일시 중단 안내 ({{사유}})',
+    body:
+`안녕하세요 {{이름}}님,
+
+{{사유}} 으로 인해 발주 접수가 일시 중단됩니다.
+
+  · 중단 기간: {{시작일}} ~ {{종료일}}
+  · 영향 상품: {{영향상품}}
+  · 복구 예정 시점: {{복구예정}}
+  · 정상 처리 재개일: {{재개일}}
+
+이 기간 중 접수된 발주는 시스템상 처리가 지연될 수 있어 정상화 후 일괄 처리됩니다.
+이미 진행 중인 발주는 정상 출고됩니다.
+
+불편을 드려 죄송하며, 빠른 정상화를 위해 노력하겠습니다.
+
+대무 (DAEMU)`,
+    active: true,
+  },
+  {
+    name: '발주 정상 재개 안내',
+    category: 'partner',
+    subject: '[대무] {{이름}}님, 발주 정상 재개 — {{재개일}}',
+    body:
+`안녕하세요 {{이름}}님,
+
+{{사유}} 으로 일시 중단되었던 발주가 정상 재개됨을 안내드립니다.
+
+  · 재개일: {{재개일}}
+  · 첫 정상 출고일: {{첫출고일}}
+
+중단 기간 동안 미처리된 발주분은 {{재처리일}} 부터 순차적으로 처리됩니다.
+지속된 협조에 감사드리며, 빠른 정상 운영으로 보답하겠습니다.
+
+대무 (DAEMU)`,
+    active: true,
+  },
 ];
 
 function ensureSeedTemplates() {
@@ -417,26 +518,52 @@ export default function AdminMailTemplates() {
 // 메일 템플릿에서 자주 쓰이는 미리 정의된 변수 목록.
 // 운영자가 이 chip 을 누르면 본문 커서 위치에 {{변수명}} 이 자동 삽입됩니다.
 // 자동회신(/admin/mail) 의 변수 패널과 같은 사용성으로 통일.
+//
+// `group` 으로 분류해 chip 패널에서 시각적으로 그루핑됩니다 — 너무 많은
+// 변수가 한 줄에 흩어지면 운영자가 찾기 어렵기 때문.
 const COMMON_VARIABLES = [
-  { name: '이름',       label: '수신자 이름' },
-  { name: '이메일',     label: '수신자 이메일' },
-  { name: '전화',       label: '연락처' },
-  { name: '회사',       label: '회사/브랜드' },
-  { name: '발주번호',   label: '발주서/계약 번호' },
-  { name: '접수일',     label: '접수 일자' },
-  { name: '출고예정일', label: '출고 예정일' },
-  { name: '합계금액',   label: '합계 금액 (₩)' },
-  { name: '일시',       label: '미팅·이벤트 일시' },
-  { name: '장소',       label: '미팅·이벤트 장소' },
-  { name: '참석자',     label: '참석자 명단' },
-  { name: '안건',       label: '미팅 안건' },
-  { name: '이벤트명',   label: '이벤트/공지명' },
-  { name: '시작일',     label: '시작일' },
-  { name: '종료일',     label: '종료일' },
-  { name: '대상',       label: '대상 안내' },
-  { name: '혜택',       label: '혜택/내용' },
-  { name: '상세링크',   label: '상세 페이지 URL' },
+  // 수신자 정보
+  { name: '이름',       label: '수신자 이름',     group: '수신자' },
+  { name: '이메일',     label: '수신자 이메일',   group: '수신자' },
+  { name: '전화',       label: '연락처',          group: '수신자' },
+  { name: '회사',       label: '회사/브랜드',     group: '수신자' },
+  // 발주·배송
+  { name: '발주번호',   label: '발주/계약 번호',  group: '발주' },
+  { name: '접수일',     label: '접수 일자',       group: '발주' },
+  { name: '출고예정일', label: '출고 예정일',     group: '발주' },
+  { name: '합계금액',   label: '합계 금액',       group: '발주' },
+  { name: '마감시간',   label: '발주 마감 시간',  group: '발주' },
+  { name: '긴급연락처', label: '긴급 연락처',     group: '발주' },
+  // 일정·미팅
+  { name: '일시',       label: '미팅·이벤트 일시', group: '일정' },
+  { name: '장소',       label: '미팅 장소',       group: '일정' },
+  { name: '참석자',     label: '참석자',          group: '일정' },
+  { name: '안건',       label: '미팅 안건',       group: '일정' },
+  // 이벤트/공지
+  { name: '이벤트명',   label: '이벤트/공지명',   group: '이벤트' },
+  { name: '시작일',     label: '시작일',          group: '이벤트' },
+  { name: '종료일',     label: '종료일',          group: '이벤트' },
+  { name: '대상',       label: '대상',            group: '이벤트' },
+  { name: '혜택',       label: '혜택/내용',       group: '이벤트' },
+  // 운영 변동 (휴무·지연·중단 등)
+  { name: '휴무명',     label: '휴무명 (예: 추석)', group: '운영변동' },
+  { name: '재개일',     label: '운영 재개일',     group: '운영변동' },
+  { name: '마지막출고일', label: '휴무 전 마지막 출고일', group: '운영변동' },
+  { name: '첫출고일',   label: '재개 후 첫 출고일', group: '운영변동' },
+  { name: '사전마감일', label: '사전 발주 마감일', group: '운영변동' },
+  { name: '사유',       label: '중단/지연 사유',  group: '운영변동' },
+  { name: '지연사유',   label: '배송 지연 사유',  group: '운영변동' },
+  { name: '영향지역',   label: '영향 지역',       group: '운영변동' },
+  { name: '영향상품',   label: '영향 상품',       group: '운영변동' },
+  { name: '예상지연',   label: '예상 지연 기간',  group: '운영변동' },
+  { name: '변경도착예정일', label: '변경된 도착 예정일', group: '운영변동' },
+  { name: '복구예정',   label: '복구 예정 시점',  group: '운영변동' },
+  { name: '재처리일',   label: '미처리분 재처리일', group: '운영변동' },
+  // 링크
+  { name: '상세링크',   label: '상세 페이지 URL', group: '링크' },
 ];
+
+const VARIABLE_GROUPS = ['수신자', '발주', '일정', '이벤트', '운영변동', '링크'];
 
 function TemplateEditor({ data, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -545,34 +672,46 @@ function TemplateEditor({ data, onClose, onSave }) {
           </Field>
 
           {/* 변수 chip 패널 — 자동회신(/admin/mail) 과 같은 사용성.
-              마지막으로 포커스된 필드(제목/본문)에 클릭한 변수가 들어감. */}
+              마지막으로 포커스된 필드(제목/본문)에 클릭한 변수가 들어감.
+              그룹별로 시각 구분해 운영자가 빠르게 찾을 수 있게 정리. */}
           <div style={{ background: '#f6f4f0', border: '1px solid #e6e3dd', padding: '12px 14px' }}>
             <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
               변수 (클릭하면 {activeField === 'subject' ? '제목' : '본문'} 의 커서 위치에 삽입됩니다)
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {COMMON_VARIABLES.map((v) => (
-                <button key={v.name} type="button"
-                  className="adm-mail-var-item"
-                  onClick={() => onInsertCommonVariable(v.name)}
-                  title={v.label}
-                  style={{
-                    display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start',
-                    background: '#fff', border: '1px solid #d7d4cf', padding: '4px 10px',
-                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                    transition: 'all .15s ease',
-                  }}>
-                  <code style={{ background: 'transparent', fontSize: 11.5, color: '#1f5e7c' }}>{`{{${v.name}}}`}</code>
-                  <span style={{ fontSize: 10.5, color: '#8c867d' }}>{v.label}</span>
-                </button>
-              ))}
-              <button type="button" className="adm-btn-sm" onClick={onInsertCustomVariable}
-                style={{ alignSelf: 'flex-start', height: 'auto', padding: '6px 10px' }}>
-                + 사용자 정의 변수
-              </button>
-            </div>
+            {VARIABLE_GROUPS.map((groupName) => {
+              const items = COMMON_VARIABLES.filter((v) => v.group === groupName);
+              if (!items.length) return null;
+              return (
+                <div key={groupName} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, color: '#8c867d', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 4 }}>
+                    {groupName}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {items.map((v) => (
+                      <button key={v.name} type="button"
+                        className="adm-mail-var-item"
+                        onClick={() => onInsertCommonVariable(v.name)}
+                        title={v.label}
+                        style={{
+                          display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start',
+                          background: '#fff', border: '1px solid #d7d4cf', padding: '4px 10px',
+                          cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                          transition: 'all .15s ease',
+                        }}>
+                        <code style={{ background: 'transparent', fontSize: 11.5, color: '#1f5e7c' }}>{`{{${v.name}}}`}</code>
+                        <span style={{ fontSize: 10.5, color: '#8c867d' }}>{v.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <button type="button" className="adm-btn-sm" onClick={onInsertCustomVariable}
+              style={{ marginTop: 4 }}>
+              + 사용자 정의 변수
+            </button>
             <div style={{ fontSize: 11, color: '#8c867d', marginTop: 8 }}>
-              발송 시 수신자 데이터의 같은 이름 필드 값으로 자동 치환됩니다. (수신자 데이터 미입력 시 자리표시자 그대로 발송)
+              발송 시 수신자 데이터의 같은 이름 필드 값으로 자동 치환됩니다. (소스에 없는 변수는 위 단체 발송 패널에서 일괄 기본값 입력)
             </div>
           </div>
 
