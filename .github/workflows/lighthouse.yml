@@ -1,0 +1,42 @@
+name: Lighthouse CI
+
+on:
+  pull_request:
+    branches: [demo, main]
+  workflow_dispatch:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          # Lighthouse runs against the local preview at /, so build with
+          # an empty base path. (Production GitHub Pages build still uses
+          # GH_PAGES=1 in the deploy-pages workflow.)
+          VITE_SITE_BASE_URL: http://localhost:4173
+
+      - name: Run Lighthouse CI
+        run: |
+          npm install -g @lhci/cli@0.14.x
+          lhci autorun || echo "lhci returned non-zero — see assertions output above"
+        continue-on-error: true
+
+      - name: Upload Lighthouse reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: .lighthouseci/
+          retention-days: 14

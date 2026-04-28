@@ -10,3 +10,12 @@ _backup-static-*/
 .idea/
 .vscode/
 *.bak
+
+# Internal-only audits, reviews, and SEO planning docs.
+# Kept locally for reference but not pushed to GitHub (contains
+# threat-model details + finding references that aren't appropriate
+# for a public repo).
+.notes/
+SECURITY_AUDIT.md
+CODE_REVIEW.md
+SEO_REPORT.md

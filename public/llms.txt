@@ -1,5 +1,12 @@
 # DAEMU (대무)
 
+<!--
+⚠️ DOMAIN MIGRATION NOTE
+실제 도메인 발급 후 본 파일의 모든 https://juyoungjun.github.io/daemu-website
+URL을 일괄 치환하세요:
+  sed -i '' 's|https://juyoungjun.github.io/daemu-website|https://daemu.kr|g' public/llms.txt
+-->
+
 > 베이커리 & 카페 비즈니스 파트너. 전략부터 운영까지, 카페 비즈니스의 구조를 설계합니다.
 
 대무는 전라남도 나주시에 있는 카페·베이커리 전문 컨설팅 회사입니다 (2019년 설립). 카페·베이커리 창업을 준비하는 SMB와 기존 매장의 리브랜딩이 필요한 사업자를 위한 풀-스택 컨설팅을 제공합니다.

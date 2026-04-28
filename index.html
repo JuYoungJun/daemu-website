@@ -18,6 +18,16 @@
     <meta name="naver-site-verification" content="REPLACE_WITH_NAVER_TOKEN" />
     <meta name="google-site-verification" content="REPLACE_WITH_GOOGLE_TOKEN" />
 
+    <!--
+      ⚠️ DOMAIN MIGRATION NOTE ⚠️
+      모든 절대 URL은 GitHub Pages 호스트(`https://juyoungjun.github.io/daemu-website`)
+      를 가리킵니다. 실제 도메인(예: https://daemu.kr) 발급 후 다음 한 줄로 일괄 교체:
+        sed -i '' 's|https://juyoungjun.github.io/daemu-website|https://daemu.kr|g' \
+          index.html public/robots.txt public/sitemap.xml public/llms.txt \
+          public/.well-known/security.txt
+      그리고 빌드 환경에 VITE_SITE_BASE_URL=https://daemu.kr 추가 (src/lib/seo.js 가 자동으로 사용).
+    -->
+
     <!-- Open Graph -->
     <meta property="og:title" content="대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너" />
     <meta property="og:description" content="전라남도 나주 기반 베이커리·카페 전문 컨설팅. 브랜드 전략부터 운영까지 카페 비즈니스 구조를 설계합니다." />

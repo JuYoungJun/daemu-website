@@ -1,6 +1,10 @@
 # DAEMU 대무 — robots.txt
 # Site: https://juyoungjun.github.io/daemu-website/
 # Korean B2B brand for bakery & cafe consulting (전라남도 나주시)
+#
+# ⚠️ DOMAIN MIGRATION NOTE
+# 도메인 발급 후 마지막 줄 Sitemap URL을 새 도메인으로 교체.
+# (예: Sitemap: https://daemu.kr/sitemap.xml)
 
 User-agent: *
 Allow: /

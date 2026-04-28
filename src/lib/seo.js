@@ -216,3 +216,62 @@ export function faqLd(faqs) {
     })),
   };
 }
+
+/**
+ * HowTo schema for the Process page — generative engines surface this
+ * as step-by-step answers to "how do I open a cafe?" type queries.
+ *
+ * @param {string} name
+ * @param {string} description
+ * @param {Array<{name: string, text: string}>} steps
+ */
+export function howToLd(name, description, steps) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name,
+    description,
+    totalTime: 'P3M',
+    step: steps.map((s, i) => ({
+      '@type': 'HowToStep',
+      position: i + 1,
+      name: s.name,
+      text: s.text,
+    })),
+  };
+}
+
+/**
+ * Service schema — one per consulting offering. AI search engines
+ * (Perplexity, ChatGPT search) treat each as a distinct answer for
+ * "what does X provide" queries.
+ */
+export function serviceLd(name, description, serviceType) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name,
+    description,
+    serviceType,
+    provider: { '@id': SITE_BASE_URL + '/#organization' },
+    areaServed: { '@type': 'Country', name: 'South Korea' },
+  };
+}
+
+/**
+ * Article / CreativeWork schema for individual case studies (work detail).
+ */
+export function articleLd({ title, description, image, slug, datePublished }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description,
+    image: image || (SITE_BASE_URL + '/assets/logo.svg'),
+    author: { '@id': SITE_BASE_URL + '/#organization' },
+    publisher: { '@id': SITE_BASE_URL + '/#organization' },
+    mainEntityOfPage: SITE_BASE_URL + '/work/' + slug,
+    datePublished: datePublished || '2024-01-01',
+    inLanguage: 'ko-KR',
+  };
+}

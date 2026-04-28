@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <!-- DAEMU 대무 sitemap. When the custom domain ships, search-replace
-       https://juyoungjun.github.io/daemu-website with https://daemu.kr -->
+  <!-- DAEMU 대무 sitemap.
+       ⚠️ DOMAIN MIGRATION NOTE ⚠️
+       모든 <loc> 와 <xhtml:link> 의 호스트가 GitHub Pages 입니다.
+       실제 도메인(daemu.kr 등) 발급 후 일괄 치환:
+         sed -i '' 's|https://juyoungjun.github.io/daemu-website|https://daemu.kr|g' \
+           public/sitemap.xml
+       이후 Naver Search Advisor / Google Search Console 에 새 사이트맵 URL 재제출. -->
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/</loc>
     <lastmod>2026-04-28</lastmod>

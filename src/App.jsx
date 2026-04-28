@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 import { initAnalytics, trackPageview } from './lib/analytics.js';
 
 import PublicLayout from './components/PublicLayout.jsx';
@@ -8,6 +8,7 @@ import LinkInterceptor from './components/LinkInterceptor.jsx';
 import Splash from './components/Splash.jsx';
 import DialogHost from './components/DialogHost.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
+import CookieConsent from './components/CookieConsent.jsx';
 import { useSplash } from './hooks/useSplash.js';
 import { useSitePopups } from './hooks/useSitePopups.js';
 
@@ -30,22 +31,30 @@ import Contact from './pages/Contact.jsx';
 import Partners from './pages/Partners.jsx';
 import Privacy from './pages/Privacy.jsx';
 
-// Admin pages
-import AdminGate from './admin/AdminGate.jsx';
-import AdminWorks from './admin/AdminWorks.jsx';
-import AdminInquiries from './admin/AdminInquiries.jsx';
-import AdminPartners from './admin/AdminPartners.jsx';
-import AdminOrders from './admin/AdminOrders.jsx';
-import AdminContent from './admin/AdminContent.jsx';
-import AdminStats from './admin/AdminStats.jsx';
-import AdminMedia from './admin/AdminMedia.jsx';
-import AdminMail from './admin/AdminMail.jsx';
-import AdminCRM from './admin/AdminCRM.jsx';
-import AdminCampaign from './admin/AdminCampaign.jsx';
-import AdminPromotion from './admin/AdminPromotion.jsx';
-import AdminPopup from './admin/AdminPopup.jsx';
-import AdminOutbox from './admin/AdminOutbox.jsx';
-import AdminUsers from './admin/AdminUsers.jsx';
+// Admin pages — code-split via React.lazy. Public visitors never download
+// these chunks; each /admin/* route triggers its own JS request on first nav.
+const AdminGate = lazy(() => import('./admin/AdminGate.jsx'));
+const AdminWorks = lazy(() => import('./admin/AdminWorks.jsx'));
+const AdminInquiries = lazy(() => import('./admin/AdminInquiries.jsx'));
+const AdminPartners = lazy(() => import('./admin/AdminPartners.jsx'));
+const AdminOrders = lazy(() => import('./admin/AdminOrders.jsx'));
+const AdminContent = lazy(() => import('./admin/AdminContent.jsx'));
+const AdminStats = lazy(() => import('./admin/AdminStats.jsx'));
+const AdminMedia = lazy(() => import('./admin/AdminMedia.jsx'));
+const AdminMail = lazy(() => import('./admin/AdminMail.jsx'));
+const AdminCRM = lazy(() => import('./admin/AdminCRM.jsx'));
+const AdminCampaign = lazy(() => import('./admin/AdminCampaign.jsx'));
+const AdminPromotion = lazy(() => import('./admin/AdminPromotion.jsx'));
+const AdminPopup = lazy(() => import('./admin/AdminPopup.jsx'));
+const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
+const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
+
+const AdminFallback = () => (
+  <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5f5b57', fontSize: 13 }}>
+    어드민 페이지 로딩 중…
+  </div>
+);
+const wrap = (el) => <Suspense fallback={<AdminFallback />}>{el}</Suspense>;
 
 const PUBLIC_PAGE_KEYS = {
   '/': 'home', '/about': 'about', '/service': 'service',
@@ -129,6 +138,7 @@ export default function App() {
       <AnalyticsBoot />
       <LinkInterceptor />
       <DialogHost />
+      <CookieConsent />
       <Splash key={(isAdmin || isError) ? 'no-splash-zone' : 'public-zone'} show={showSplash && !isAdmin && !isError} />
       <Routes>
         <Route path="/" element={<PublicRoute pageKey="home"><Home /></PublicRoute>} />
@@ -142,21 +152,21 @@ export default function App() {
         <Route path="/partners" element={<PublicRoute pageKey="partners"><Partners /></PublicRoute>} />
         <Route path="/privacy" element={<PublicRoute pageKey="privacy"><Privacy /></PublicRoute>} />
 
-        <Route path="/admin" element={<AdminGate />} />
-        <Route path="/admin/works" element={<RequireAuth><AdminWorks /></RequireAuth>} />
-        <Route path="/admin/inquiries" element={<RequireAuth><AdminInquiries /></RequireAuth>} />
-        <Route path="/admin/partners" element={<RequireAuth><AdminPartners /></RequireAuth>} />
-        <Route path="/admin/orders" element={<RequireAuth><AdminOrders /></RequireAuth>} />
-        <Route path="/admin/content" element={<RequireAuth><AdminContent /></RequireAuth>} />
-        <Route path="/admin/stats" element={<RequireAuth><AdminStats /></RequireAuth>} />
-        <Route path="/admin/media" element={<RequireAuth><AdminMedia /></RequireAuth>} />
-        <Route path="/admin/mail" element={<RequireAuth><AdminMail /></RequireAuth>} />
-        <Route path="/admin/crm" element={<RequireAuth><AdminCRM /></RequireAuth>} />
-        <Route path="/admin/campaign" element={<RequireAuth><AdminCampaign /></RequireAuth>} />
-        <Route path="/admin/promotion" element={<RequireAuth><AdminPromotion /></RequireAuth>} />
-        <Route path="/admin/popup" element={<RequireAuth><AdminPopup /></RequireAuth>} />
-        <Route path="/admin/outbox" element={<RequireAuth><AdminOutbox /></RequireAuth>} />
-        <Route path="/admin/users" element={<RequireAuth><AdminUsers /></RequireAuth>} />
+        <Route path="/admin" element={wrap(<AdminGate />)} />
+        <Route path="/admin/works" element={wrap(<RequireAuth><AdminWorks /></RequireAuth>)} />
+        <Route path="/admin/inquiries" element={wrap(<RequireAuth><AdminInquiries /></RequireAuth>)} />
+        <Route path="/admin/partners" element={wrap(<RequireAuth><AdminPartners /></RequireAuth>)} />
+        <Route path="/admin/orders" element={wrap(<RequireAuth><AdminOrders /></RequireAuth>)} />
+        <Route path="/admin/content" element={wrap(<RequireAuth><AdminContent /></RequireAuth>)} />
+        <Route path="/admin/stats" element={wrap(<RequireAuth><AdminStats /></RequireAuth>)} />
+        <Route path="/admin/media" element={wrap(<RequireAuth><AdminMedia /></RequireAuth>)} />
+        <Route path="/admin/mail" element={wrap(<RequireAuth><AdminMail /></RequireAuth>)} />
+        <Route path="/admin/crm" element={wrap(<RequireAuth><AdminCRM /></RequireAuth>)} />
+        <Route path="/admin/campaign" element={wrap(<RequireAuth><AdminCampaign /></RequireAuth>)} />
+        <Route path="/admin/promotion" element={wrap(<RequireAuth><AdminPromotion /></RequireAuth>)} />
+        <Route path="/admin/popup" element={wrap(<RequireAuth><AdminPopup /></RequireAuth>)} />
+        <Route path="/admin/outbox" element={wrap(<RequireAuth><AdminOutbox /></RequireAuth>)} />
+        <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
 
         {/* Error showcase routes — accessible directly for QA + linkable from CTA */}
         <Route path="/error/400" element={<BadRequest />} />
