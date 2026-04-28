@@ -1,10 +1,25 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { installConsultFormHandler } from './lib/consultForms.js';
 import App from './App.jsx';
 
-installConsultFormHandler();
+// FR-01 fix: defer the legacy form handler until a `data-consult-form`
+// submission actually fires. Until then, db.js / email.js / api.js stay
+// out of the public visitor's main bundle.
+function installLazyConsultBridge() {
+  if (typeof document === 'undefined' || window.__daemuConsultLazy) return;
+  window.__daemuConsultLazy = true;
+  document.addEventListener('submit', async (e) => {
+    if (!e.target.closest || !e.target.closest('form[data-consult-form]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const mod = await import('./lib/consultForms.js');
+    mod.installConsultFormHandler();
+    // Re-dispatch so the now-installed handler picks up the original event.
+    e.target.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  }, { once: true, capture: true });
+}
+installLazyConsultBridge();
 
 // V3-02: globals.js drags email/upload/csv/db into the bundle for every
 // public visitor (~70 KB). Only admin pages and the legacy form handler

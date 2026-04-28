@@ -297,7 +297,11 @@ if not PROD:
       el.dataset.configuration = JSON.stringify(scalarConfig);
     });
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <!-- FA-05: pin the Scalar API Reference version + SRI hash so a CDN
+       compromise can't substitute the bundle. Update when intentionally
+       upgrading; the SHA-384 below matches @scalar/api-reference@1.25.94. -->
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.25.94"
+          crossorigin="anonymous"></script>
 </body>
 </html>"""
 

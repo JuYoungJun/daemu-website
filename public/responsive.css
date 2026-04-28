@@ -17,6 +17,16 @@
   border: 0;
 }
 
+/* FR-06 inert fallback for browsers without inert support (~7% as of 2026).
+   `inert` removes the element from focus order + AT tree natively in modern
+   engines; this CSS provides a defensive equivalent for older browsers. */
+[inert],
+[inert] * {
+  pointer-events: none !important;
+  user-select: none !important;
+  cursor: default !important;
+}
+
 /* ============================================================
    GLOBAL OVERFLOW GUARD — applies at every viewport.
    Prevents stray wide elements (marquees, hero text, off-canvas

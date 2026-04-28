@@ -304,10 +304,46 @@ async def ensure_default_users(session: AsyncSession) -> None:
 
     Existing users are NEVER overwritten — env passwords only matter on the
     very first deploy. Update credentials via /api/users afterwards."""
+
+    # FR-03 prod fail-closed: refuse to seed/keep a test super-admin in
+    # production. If ENV=prod AND TEST_ADMIN_* still set, surface a loud
+    # error so the deploy doesn't silently leave a bypass account.
+    is_prod = os.environ.get("ENV", "").lower() in {"prod", "production"}
+    if is_prod and TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD:
+        raise RuntimeError(
+            "TEST_ADMIN_EMAIL/PASSWORD must NOT be set when ENV=prod. "
+            "Unset both env vars on the deploy host and redeploy."
+        )
+
+    # FA-01 collision guard + FA-03 password strength validation —
+    # decide once whether the test super-admin seed is valid for THIS boot.
+    seed_test = bool(TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD)
+    if seed_test:
+        if TEST_ADMIN_EMAIL.lower() in {ADMIN_EMAIL.lower(), TESTER_EMAIL.lower(), DEVELOPER_EMAIL.lower()}:
+            print(f"[auth] ⚠️ TEST_ADMIN_EMAIL ({TEST_ADMIN_EMAIL}) collides with a default seed — skipping.")
+            seed_test = False
+        else:
+            err = validate_password_strength(TEST_ADMIN_PASSWORD)
+            if err:
+                print(f"[auth] ⚠️ TEST_ADMIN_PASSWORD too weak: {err} — skipping.")
+                seed_test = False
+
     res = await session.execute(select(AdminUser).limit(1))
     if res.scalar_one_or_none():
-        # Existing DB. Check if we should append the test super-admin only.
-        if TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD:
+        # FA-02 tombstone: if the test user exists in DB but TEST_ADMIN_*
+        # is unset, deactivate it on every boot. The row stays for audit
+        # forensics but cannot log in.
+        if not (TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD):
+            tomb = await session.execute(
+                select(AdminUser).where(AdminUser.name.like("%TEMPORARY%REMOVE AFTER TESTING%"))
+            )
+            for ghost in tomb.scalars().all():
+                if ghost.active:
+                    ghost.active = False
+                    print(f"[auth] ⚠️ test super-admin {ghost.email} auto-deactivated (env vars cleared)")
+            await session.commit()
+        # Existing DB + valid env: seed the test super-admin if not present.
+        elif seed_test:
             existing = await session.execute(
                 select(AdminUser).where(AdminUser.email == TEST_ADMIN_EMAIL)
             )
@@ -318,7 +354,7 @@ async def ensure_default_users(session: AsyncSession) -> None:
                     name="Test Super-Admin (TEMPORARY — REMOVE AFTER TESTING)",
                     role=ROLE_ADMIN,
                     active=True,
-                    must_change_password=False,  # bypass rotation for QA
+                    must_change_password=False,
                 ))
                 await session.commit()
                 print(f"[auth] ⚠️ TEMPORARY test super-admin seeded: {TEST_ADMIN_EMAIL}")
@@ -348,8 +384,9 @@ async def ensure_default_users(session: AsyncSession) -> None:
         ))
 
     # ⚠️ TEMPORARY test super-admin — REMOVE BEFORE GOING LIVE.
+    # FA-01: only seed when seed_test passed the collision + strength check.
     # See header comment for cleanup procedure.
-    if TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD:
+    if seed_test:
         session.add(AdminUser(
             email=TEST_ADMIN_EMAIL,
             password_hash=hash_password(TEST_ADMIN_PASSWORD),
