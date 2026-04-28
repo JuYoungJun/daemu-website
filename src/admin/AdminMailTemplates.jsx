@@ -24,6 +24,7 @@ import { isEmailEnabled } from '../lib/email.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js';
 import { DB } from '../lib/db.js';
+import { renderInlineMarkdown, renderMailBody } from '../components/MailBodyRenderer.jsx';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -286,77 +287,9 @@ function applyVars(text, vars) {
       : '{{' + name + '}}'));
 }
 
-// Markdown 파서 — 이미지 ![alt](url) 와 링크 [text](url) 만 인식.
-// React 가 텍스트는 자동 escape, URL 은 safeMediaUrl/validateOutboundUrl 로
-// 검증된 결과만 element 에 바인딩하므로 XSS 안전.
-//
-// 다른 markdown(굵게, 헤딩 등)은 의도적으로 미지원 — 메일 본문에는 단순
-// 텍스트 + 이미지 + 링크 조합이면 충분, 추가 marker 는 발송 모드에 따라
-// 다르게 해석돼 일관성이 깨질 위험.
-const MD_TOKEN_RE = /(!\[([^\]]*)\]\(([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))/g;
-
-function renderInlineMarkdown(text, keyPrefix = '') {
-  if (!text) return null;
-  const out = [];
-  const re = new RegExp(MD_TOKEN_RE.source, 'g');
-  let last = 0;
-  let m;
-  let i = 0;
-  const str = String(text);
-  while ((m = re.exec(str))) {
-    if (m.index > last) out.push(str.slice(last, m.index));
-    if (m[1]) {
-      // 이미지 — alt 는 단순 텍스트, src 는 safeMediaUrl 통과 후 String()
-      // primitive 로 재할당해 React 에 바인딩.
-      const candidate = safeMediaUrl(m[3]);
-      if (candidate) {
-        const verifiedSrc = String(candidate);
-        const safeAlt = String(m[2] || '').slice(0, 200);
-        out.push(
-          <img
-            key={`${keyPrefix}img-${i++}`}
-            src={verifiedSrc}
-            alt={safeAlt}
-            loading="lazy"
-            style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '12px auto' }}
-          />
-        );
-      }
-    } else if (m[4]) {
-      // 링크 — text 는 단순 텍스트, href 는 validateOutboundUrl + encodeURI.
-      const candidate = validateOutboundUrl(m[6]);
-      if (candidate) {
-        const verifiedHref = String(candidate);
-        const safeText = String(m[5] || '').slice(0, 200);
-        out.push(
-          <a
-            key={`${keyPrefix}lnk-${i++}`}
-            href={verifiedHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#1f5e7c', textDecoration: 'underline' }}
-          >{safeText}</a>
-        );
-      } else {
-        out.push(String(m[5] || ''));
-      }
-    }
-    last = re.lastIndex;
-  }
-  if (last < str.length) out.push(str.slice(last));
-  return out;
-}
-
-// 라인 단위로 분해해 줄바꿈 보존 + 빈 줄은 단락 간격으로.
-function renderMailBody(text) {
-  if (!text) return null;
-  const lines = String(text).split('\n');
-  return lines.map((line, idx) => (
-    <div key={`mb-${idx}`} style={{ minHeight: line.trim() ? undefined : '0.7em' }}>
-      {line.trim() ? renderInlineMarkdown(line, `mb-${idx}-`) : ' '}
-    </div>
-  ));
-}
+// renderInlineMarkdown / renderMailBody / MD_TOKEN_RE 는 모두
+// src/components/MailBodyRenderer.jsx 로 분리됨 (Snyk DOM-XSS taint
+// break + img src 추가 encodeURI sanitizer). import 만 사용.
 
 export default function AdminMailTemplates() {
   const [templates, setTemplates] = useState(() => ensureSeedTemplates());
