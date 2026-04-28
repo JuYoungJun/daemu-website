@@ -5,6 +5,7 @@ import { PRODUCT_CATALOG, findProduct } from '../lib/partnerProducts.js';
 import { DB } from '../lib/db.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd } from '../lib/seo.js';
+import { api } from '../lib/api.js';
 
 export default function Partners() {
   useFadeUp([]);
@@ -96,6 +97,8 @@ function PartnersGate({ mode, setMode, onLogin }) {
           </div>
         </div>
       </section>
+
+      <NewsletterCTA />
     </main>
   );
 }
@@ -621,5 +624,88 @@ function Account({ partner }) {
         {!editing && msg && <p style={{fontSize:12,color: msg.startsWith('✓') ? '#2e7d32' : '#c0392b',margin:0}}>{msg}</p>}
       </div>
     </div>
+  );
+}
+
+/* ─────────────── 뉴스레터 구독 (Public CTA) ─────────────── */
+
+function NewsletterCTA() {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [status, setStatus] = useState({ kind: '', text: '' });
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setStatus({ kind: '', text: '' });
+    if (!consent) {
+      setStatus({ kind: 'err', text: '개인정보 수집·이용 동의가 필요합니다.' });
+      return;
+    }
+    setLoading(true);
+    try {
+      if (api.isConfigured()) {
+        const r = await api.post('/api/newsletter/subscribe', {
+          email: email.trim(), name: name.trim(),
+          source: 'partners-page', privacy_consent: true,
+        });
+        if (r.ok) {
+          setStatus({ kind: 'ok', text: r.already ? '이미 구독 중인 이메일입니다.' : '구독이 완료되었습니다. 새 소식을 보내드릴게요.' });
+          setEmail(''); setName(''); setConsent(false);
+        } else if (r.status === 429) {
+          setStatus({ kind: 'err', text: '구독 시도가 너무 빠르게 발생했습니다. 잠시 후 다시 시도해 주세요.' });
+        } else {
+          setStatus({ kind: 'err', text: r.error || '구독에 실패했습니다.' });
+        }
+      } else {
+        // Demo mode — write to localStorage so admin Campaign page picks it up.
+        const subs = DB.get('subscribers');
+        const lower = email.trim().toLowerCase();
+        if (subs.find((s) => (s.email || '').toLowerCase() === lower)) {
+          setStatus({ kind: 'ok', text: '이미 구독 중인 이메일입니다.' });
+        } else {
+          DB.add('subscribers', { email: lower, name: name.trim(), status: '활성', source: 'partners-page' });
+          setStatus({ kind: 'ok', text: '구독이 완료되었습니다. (데모 모드 — localStorage 저장)' });
+          setEmail(''); setName(''); setConsent(false);
+        }
+      }
+    } catch (err) {
+      setStatus({ kind: 'err', text: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="partners-section-block" style={{ background: '#f6f4f0' }}>
+      <div className="wide">
+        <h3 className="partners-section-title">뉴스레터 구독</h3>
+        <p className="partners-section-sub">Newsletter</p>
+        <p style={{ maxWidth: 620, color: '#5f5b57', fontSize: 14, lineHeight: 1.7, margin: '0 auto 22px', textAlign: 'center' }}>
+          신규 매장 오픈 소식, 시즌 메뉴 공개, 컨설팅 인사이트를 이메일로 보내드립니다.<br />
+          언제든지 수신 거부할 수 있습니다.
+        </p>
+        <form onSubmit={submit}
+          style={{ maxWidth: 540, margin: '0 auto', display: 'grid', gap: 10 }}>
+          <input type="text" placeholder="이름 (선택)" value={name} onChange={(e) => setName(e.target.value)}
+            style={{ width: '100%', padding: 12, border: '1px solid #d7d4cf', background: '#fff', borderRadius: 4, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <input type="email" placeholder="이메일 주소" value={email} onChange={(e) => setEmail(e.target.value)} required
+            style={{ width: '100%', padding: 12, border: '1px solid #d7d4cf', background: '#fff', borderRadius: 4, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: '#6f6b68', lineHeight: 1.6 }}>
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)}
+              style={{ marginTop: 3 }} />
+            <span>(필수) 개인정보 수집·이용에 동의합니다. 수집 항목: 이메일, 이름. 보유기간: 구독 해제 시까지. 자세한 내용은 <a href="/privacy" style={{ color: '#231815', textDecoration: 'underline' }}>개인정보 처리방침</a>을 확인해 주세요.</span>
+          </label>
+          <button type="submit" className="btn" disabled={loading}
+            style={{ marginTop: 4 }}>{loading ? '처리 중…' : '구독 신청'}</button>
+          {status.text && (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: status.kind === 'ok' ? '#2e7d32' : '#c0392b' }}>
+              {status.text}
+            </p>
+          )}
+        </form>
+      </div>
+    </section>
   );
 }

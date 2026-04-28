@@ -77,7 +77,9 @@ ALLOWED_ORIGINS = [
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_BYTES = 8 * 1024 * 1024       # 8MB for images
+MAX_VIDEO_BYTES = 50 * 1024 * 1024      # 50MB for videos
+MAX_UPLOAD_BYTES = MAX_VIDEO_BYTES      # absolute upper bound (legacy alias)
 MAX_ATTACHMENTS = 12
 CAMPAIGN_THROTTLE_SECONDS = 0.25
 
@@ -87,17 +89,24 @@ EXT_TO_MIME = {
     ".png": "image/png",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
 }
 
-# F-06: only allow raster image formats. Block SVG (active script container)
-# and PDF (JS-capable). Each whitelisted extension is paired with a magic
-# byte signature so a renamed payload (`evil.exe` → `evil.png`) is rejected.
+VIDEO_EXTS = {".mp4", ".webm"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+# F-06 + media library extension: image and video formats only. Each whitelisted
+# extension is paired with a magic byte signature so a renamed payload
+# (`evil.exe` → `evil.mp4`) is rejected. SVG/PDF still blocked (script-capable).
 UPLOAD_MAGIC: dict[str, list[bytes]] = {
     ".jpg":  [b"\xff\xd8\xff"],
     ".jpeg": [b"\xff\xd8\xff"],
     ".png":  [b"\x89PNG\r\n\x1a\n"],
     ".gif":  [b"GIF87a", b"GIF89a"],
-    ".webp": [b"RIFF"],  # also requires "WEBP" at offset 8 — checked below
+    ".webp": [b"RIFF"],   # additional check for "WEBP" at offset 8 below
+    ".mp4":  [b"\x00\x00\x00"],  # ftyp box: bytes 4-8 contain "ftyp" — checked below
+    ".webm": [b"\x1a\x45\xdf\xa3"],  # EBML magic
 }
 
 
@@ -109,7 +118,23 @@ def magic_byte_ok(buf: bytes, ext: str) -> bool:
         return False
     if ext.lower() == ".webp":
         return len(buf) >= 12 and buf[8:12] == b"WEBP"
+    if ext.lower() == ".mp4":
+        # ISO Base Media format: bytes 4-8 must be "ftyp"
+        return len(buf) >= 12 and buf[4:8] == b"ftyp"
     return True
+
+
+def upload_kind(ext: str) -> str:
+    e = ext.lower()
+    if e in VIDEO_EXTS:
+        return "video"
+    if e in IMAGE_EXTS:
+        return "image"
+    return "other"
+
+
+def upload_size_cap(ext: str) -> int:
+    return MAX_VIDEO_BYTES if upload_kind(ext) == "video" else MAX_IMAGE_BYTES
 
 if not RESEND_API_KEY:
     print("[daemu-backend-py] RESEND_API_KEY not set — emails will be simulated.")
@@ -497,13 +522,9 @@ async def upload(
     request: Request,
     _user = Depends(require_perm("works", "write")),
 ):
-    """Image upload — restricted to admin/developer roles. Public Contact form
-    no longer needs uploads; auto-reply attachments are server-managed."""
-    # N2-05 DoS fix: reject pre-decode if the base64 string itself is
-    # already larger than the post-decode cap by a comfortable margin.
-    # base64 expands by ~4/3, so cap the input at ~12 MB (8 MB output max).
-    if len(payload.content) > MAX_UPLOAD_BYTES * 4 // 3 + 256:
-        raise HTTPException(413, detail="file too large (8MB cap)")
+    """Media upload — restricted to admin/developer roles. Accepts images
+    (jpg/png/gif/webp ≤ 8 MB) and videos (mp4/webm ≤ 50 MB). Public Contact
+    form no longer needs uploads; auto-reply attachments are server-managed."""
     if not payload.filename or not payload.content:
         raise HTTPException(400, detail="filename + content required")
 
@@ -511,20 +532,32 @@ async def upload(
     ext_match = re.search(r"\.[a-z0-9]+$", safe, re.IGNORECASE)
     ext = ext_match.group(0).lower() if ext_match else ".bin"
 
+    if ext not in UPLOAD_MAGIC:
+        raise HTTPException(
+            415,
+            detail="허용되지 않는 형식입니다. 이미지(.jpg/.png/.gif/.webp) 또는 영상(.mp4/.webm)만 업로드할 수 있습니다.",
+        )
+
+    cap = upload_size_cap(ext)
+    # N2-05 DoS fix: reject pre-decode if the base64 string itself is
+    # already larger than the post-decode cap by a comfortable margin.
+    if len(payload.content) > cap * 4 // 3 + 256:
+        cap_mb = cap // (1024 * 1024)
+        raise HTTPException(413, detail=f"file too large ({cap_mb}MB cap)")
+
     try:
         buf = base64.b64decode(payload.content, validate=False)
     except (binascii.Error, ValueError):
         raise HTTPException(400, detail="invalid base64 content") from None
 
-    if len(buf) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, detail="file too large (8MB cap)")
+    if len(buf) > cap:
+        cap_mb = cap // (1024 * 1024)
+        raise HTTPException(413, detail=f"file too large ({cap_mb}MB cap)")
     if not buf:
         raise HTTPException(400, detail="empty file")
 
-    if ext.lower() not in UPLOAD_MAGIC:
-        raise HTTPException(415, detail="이미지 파일(.jpg, .png, .gif, .webp)만 업로드할 수 있습니다.")
     if not magic_byte_ok(buf, ext):
-        raise HTTPException(415, detail="파일 내용이 이미지 형식과 일치하지 않습니다.")
+        raise HTTPException(415, detail="파일 내용이 선언된 형식과 일치하지 않습니다.")
 
     # F-33: token_hex(8) gives 32 bits of entropy + the timestamp prefix —
     # collisions over the lifetime of the demo are now astronomically
@@ -550,6 +583,7 @@ async def upload(
         "filename": safe,
         "contentType": detect_mime(final_name, payload.contentType),
         "size": len(buf),
+        "kind": upload_kind(ext),
     }
 
 
@@ -596,6 +630,83 @@ async def send_via_resend(client: httpx.AsyncClient, payload: dict[str, Any]) ->
     return {"ok": True, "id": rid}
 
 
+# ---------------------------------------------------------------------------
+# SMTP fallback (e.g., Gmail App Password) for environments without a
+# verified Resend domain. Configured via env:
+#   SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASS,
+#   SMTP_FROM (default = SMTP_USER), SMTP_USE_TLS ("1" by default)
+# When SMTP_HOST is set and RESEND_API_KEY is empty, send_email() routes here.
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
+SMTP_USER = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASS = os.environ.get("SMTP_PASS", "").strip()
+SMTP_FROM = os.environ.get("SMTP_FROM", "").strip() or SMTP_USER
+SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "1").strip() not in {"0", "false", "no"}
+
+
+def _send_via_smtp_blocking(payload: dict[str, Any]) -> dict[str, Any]:
+    """Synchronous SMTP send — runs inside asyncio.to_thread() so the event
+    loop isn't blocked. Built on stdlib smtplib (no extra deps)."""
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["Subject"] = payload.get("subject", "")
+    msg["From"] = payload.get("from") or SMTP_FROM
+    to_list = payload.get("to") or []
+    if isinstance(to_list, str):
+        to_list = [to_list]
+    msg["To"] = ", ".join(to_list)
+    if payload.get("reply_to"):
+        msg["Reply-To"] = payload["reply_to"]
+    body_text = payload.get("text") or ""
+    body_html = payload.get("html")
+    if body_html:
+        msg.set_content(body_text or " ")
+        msg.add_alternative(body_html, subtype="html")
+    else:
+        msg.set_content(body_text)
+
+    try:
+        if SMTP_USE_TLS:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as s:
+                s.starttls()
+                if SMTP_USER:
+                    s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as s:
+                if SMTP_USER:
+                    s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        return {"ok": True, "id": f"smtp-{int(time.time() * 1000)}"}
+    except Exception as e:
+        return {"ok": False, "error": f"SMTP: {e!r}"[:200]}
+
+
+async def send_via_smtp(payload: dict[str, Any]) -> dict[str, Any]:
+    return await asyncio.to_thread(_send_via_smtp_blocking, payload)
+
+
+def email_provider() -> str:
+    if RESEND_API_KEY:
+        return "resend"
+    if SMTP_HOST:
+        return "smtp"
+    return "none"
+
+
+async def send_email(payload: dict[str, Any]) -> dict[str, Any]:
+    """Unified send — Resend if configured, else SMTP if configured,
+    else returns {ok:False, simulated:True} so the caller can record outbox."""
+    provider = email_provider()
+    if provider == "resend":
+        async with httpx.AsyncClient() as client:
+            return await send_via_resend(client, payload)
+    if provider == "smtp":
+        return await send_via_smtp(payload)
+    return {"ok": False, "simulated": True, "error": "no email provider configured"}
+
+
 async def log_outbox(session: AsyncSession, *, type_: str, to: str, subject: str, body: str, status: str, error: str = "", payload: dict | None = None) -> None:
     try:
         entry = Outbox(
@@ -631,7 +742,7 @@ async def email_send(
     safe_attachments = normalize_attachments(payload.attachments)
     log_type = payload.type or "email"
 
-    if not RESEND_API_KEY:
+    if email_provider() == "none":
         sim_id = f"sim-{int(time.time() * 1000)}"
         await log_outbox(
             session, type_=log_type, to=payload.to, subject=payload.subject,
@@ -641,7 +752,7 @@ async def email_send(
         return {"ok": True, "simulated": True, "id": sim_id}
 
     body: dict[str, Any] = {
-        "from": FROM_EMAIL,
+        "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
         "to": [payload.to],
         "subject": payload.subject,
     }
@@ -653,11 +764,11 @@ async def email_send(
             body["text"] = payload.body
     else:
         body["text"] = payload.body or ""
-    if safe_attachments:
+    if safe_attachments and RESEND_API_KEY:
+        # Attachments only supported through Resend in this implementation.
         body["attachments"] = safe_attachments
 
-    async with httpx.AsyncClient() as client:
-        result = await send_via_resend(client, body)
+    result = await send_email(body)
 
     if not result["ok"]:
         await log_outbox(
@@ -692,7 +803,7 @@ async def email_campaign(
 
     safe_attachments = normalize_attachments(payload.attachments)
 
-    if not RESEND_API_KEY:
+    if email_provider() == "none":
         for r in payload.recipients:
             await log_outbox(
                 session, type_="campaign", to=r.email, subject=payload.subject,
@@ -710,52 +821,51 @@ async def email_campaign(
     failed = 0
     errors: list[dict[str, Any]] = []
 
-    async with httpx.AsyncClient() as client:
-        for recipient in payload.recipients:
-            if not recipient.email:
-                failed += 1
-                continue
+    for recipient in payload.recipients:
+        if not recipient.email:
+            failed += 1
+            continue
 
-            personal_vars = {"name": recipient.name or ""}
-            body: dict[str, Any] = {
-                "from": FROM_EMAIL,
-                "to": [recipient.email],
-                "subject": apply_vars(payload.subject, personal_vars),
-            }
-            if payload.replyTo:
-                body["reply_to"] = payload.replyTo
-            if payload.html:
-                body["html"] = apply_vars(payload.html, personal_vars)
-                if payload.body:
-                    body["text"] = apply_vars(payload.body, personal_vars)
+        personal_vars = {"name": recipient.name or ""}
+        body: dict[str, Any] = {
+            "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+            "to": [recipient.email],
+            "subject": apply_vars(payload.subject, personal_vars),
+        }
+        if payload.replyTo:
+            body["reply_to"] = payload.replyTo
+        if payload.html:
+            body["html"] = apply_vars(payload.html, personal_vars)
+            if payload.body:
+                body["text"] = apply_vars(payload.body, personal_vars)
+        else:
+            body["text"] = apply_vars(payload.body or "", personal_vars)
+        if safe_attachments and RESEND_API_KEY:
+            body["attachments"] = safe_attachments
+
+        try:
+            result = await send_email(body)
+            if result["ok"]:
+                sent += 1
+                await log_outbox(
+                    session, type_="campaign", to=recipient.email, subject=payload.subject,
+                    body=payload.body or "", status="sent",
+                    payload={"resendId": result.get("id"), "campaignId": payload.campaignId},
+                )
             else:
-                body["text"] = apply_vars(payload.body or "", personal_vars)
-            if safe_attachments:
-                body["attachments"] = safe_attachments
-
-            try:
-                result = await send_via_resend(client, body)
-                if result["ok"]:
-                    sent += 1
-                    await log_outbox(
-                        session, type_="campaign", to=recipient.email, subject=payload.subject,
-                        body=payload.body or "", status="sent",
-                        payload={"resendId": result.get("id"), "campaignId": payload.campaignId},
-                    )
-                else:
-                    failed += 1
-                    err = str(result.get("error", "send failed"))
-                    errors.append({"email": recipient.email, "error": err})
-                    await log_outbox(
-                        session, type_="campaign", to=recipient.email, subject=payload.subject,
-                        body=payload.body or "", status="failed", error=err,
-                        payload={"campaignId": payload.campaignId},
-                    )
-            except Exception as err:  # noqa: BLE001
                 failed += 1
-                errors.append({"email": recipient.email, "error": str(err)})
+                err = str(result.get("error", "send failed"))
+                errors.append({"email": recipient.email, "error": err})
+                await log_outbox(
+                    session, type_="campaign", to=recipient.email, subject=payload.subject,
+                    body=payload.body or "", status="failed", error=err,
+                    payload={"campaignId": payload.campaignId},
+                )
+        except Exception as err:  # noqa: BLE001
+            failed += 1
+            errors.append({"email": recipient.email, "error": str(err)})
 
-            await asyncio.sleep(CAMPAIGN_THROTTLE_SECONDS)
+        await asyncio.sleep(CAMPAIGN_THROTTLE_SECONDS)
 
     return {
         "ok": True,

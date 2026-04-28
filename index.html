@@ -45,6 +45,12 @@
 
     <link rel="canonical" href="https://juyoungjun.github.io/daemu-website/" />
 
+    <!-- Favicon (SVG monogram derived from logo). Modern browsers prefer SVG;
+         apple-touch-icon falls back to the wordmark logo for iOS home-screen. -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <link rel="apple-touch-icon" href="%BASE_URL%assets/logo.svg" />
+    <link rel="mask-icon" href="%BASE_URL%favicon.svg" color="#231815" />
+
     <!-- Performance: preconnect + preload critical resources.
          LCP candidate is the hero image on / — preload it so mobile
          doesn't wait for HTML parse → CSS → JS → image discovery. -->
@@ -130,16 +136,11 @@
   </head>
   <body class="splash-pending">
     <div id="root"></div>
-    <!-- FR-04: pin + SRI for GSAP CDN. Hashes match cdnjs gsap@3.12.5
-         (verifiable via: openssl dgst -sha384 -binary file | openssl base64 -A). -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"
-            integrity="sha512-AY2+JxnBETJ0wcXnLPCcZJIJx0eimyhz3OJ55k2Jx4RtYC+XdIi2VtJQ+tP3BaTst4otlGG1tnbMpNqAwhCIVg=="
-            crossorigin="anonymous"
-            referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"
-            integrity="sha512-AAH7HeeyhAXVbE+EmZoQOTtDe4uaIqhCB2K3OY1KKtGFa7Inj1NuBMLGhxDUzrChH+H1YuYmeyz8DvHsUkrUVw=="
-            crossorigin="anonymous"
-            referrerpolicy="no-referrer"></script>
+    <!-- GSAP 3.12.5 self-hosted from public/vendor/gsap to remove the third-party CDN
+         attack surface and the chronic SRI maintenance pain. License retained in
+         the source files (Standard Greensock license). -->
+    <script src="%BASE_URL%vendor/gsap/gsap.min.js"></script>
+    <script src="%BASE_URL%vendor/gsap/ScrollTrigger.min.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

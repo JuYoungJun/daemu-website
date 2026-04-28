@@ -38,6 +38,7 @@ from models import (
     CrmCustomer,
     Inquiry,
     MailTemplate,
+    NewsletterSubscriber,
     Order,
     Outbox,
     Partner,
@@ -482,6 +483,77 @@ _crud(Promotion, "promotions",
 
 _crud(Outbox, "outbox",
       allowed_fields={"type", "recipient", "subject", "body", "status", "error", "payload"})
+
+_crud(NewsletterSubscriber, "newsletter",
+      allowed_fields={"email", "name", "source", "status"})
+
+
+# ---------------------------------------------------------------------------
+# Public newsletter subscription — open POST, rate-limited per IP (8/10min).
+# This is the only public mutation aside from /api/inquiries.
+
+class NewsletterSubscribeIn(BaseModel):
+    email: EmailStr
+    name: str = ""
+    source: str = "partners-page"
+    privacy_consent: bool = False  # PIPA: explicit consent, durable record
+
+
+_newsletter_limiter = RateLimiter(max_calls=5, window_seconds=600)
+
+
+@router.post("/newsletter/subscribe", status_code=201)
+async def newsletter_subscribe(
+    payload: NewsletterSubscribeIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Public — Partners/Contact page subscribe form posts here."""
+    ip = _client_ip(request)
+    if not _newsletter_limiter.check(ip):
+        raise HTTPException(429, detail="구독 시도가 너무 빠르게 발생했습니다. 잠시 후 다시 시도해 주세요.")
+    if not payload.privacy_consent:
+        raise HTTPException(400, detail="개인정보 수집·이용 동의가 필요합니다.")
+
+    email = str(payload.email).strip().lower()
+    res = await session.execute(select(NewsletterSubscriber).where(NewsletterSubscriber.email == email))
+    existing = res.scalar_one_or_none()
+    if existing:
+        # Reactivate if previously unsubscribed; otherwise idempotent success.
+        if existing.status != "active":
+            existing.status = "active"
+            existing.unsubscribed_at = None
+            await session.flush()
+        return {"ok": True, "already": True}
+
+    sub = NewsletterSubscriber(
+        email=email,
+        name=str(payload.name or "").strip()[:120],
+        source=str(payload.source or "")[:60],
+        status="active",
+        consent_at=datetime.now(timezone.utc),
+    )
+    session.add(sub)
+    await session.flush()
+    return {"ok": True, "id": sub.id}
+
+
+@router.post("/newsletter/unsubscribe", status_code=200)
+async def newsletter_unsubscribe(
+    payload: NewsletterSubscribeIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Public — soft-unsubscribe (sets status=unsubscribed but keeps the row
+    for compliance evidence)."""
+    email = str(payload.email).strip().lower()
+    res = await session.execute(select(NewsletterSubscriber).where(NewsletterSubscriber.email == email))
+    sub = res.scalar_one_or_none()
+    if not sub:
+        return {"ok": True, "not_found": True}
+    sub.status = "unsubscribed"
+    sub.unsubscribed_at = datetime.now(timezone.utc)
+    await session.flush()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

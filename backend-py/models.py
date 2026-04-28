@@ -240,6 +240,23 @@ class ContentBlock(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class NewsletterSubscriber(Base):
+    """Newsletter subscription — captured from the public site (Partners/Contact).
+    Public POST /api/newsletter/subscribe creates a row; admin Campaign page
+    pulls active subscribers as a recipient pool. Status: active | unsubscribed.
+    """
+    __tablename__ = "newsletter_subscribers"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(190), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    source: Mapped[str] = mapped_column(String(60), default="")  # partners-page / contact-page / manual
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)  # active | unsubscribed
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    unsubscribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class AuditLog(Base):
     """접속기록 / 권한변경 / 인증이력 — 개인정보 보호법 제29조 안전성 확보 조치 준수.
     Retain ≥ 1년. The retention cron in main.py keeps these untouched so they

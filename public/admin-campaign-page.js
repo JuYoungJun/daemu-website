@@ -4,13 +4,7 @@ const KEY = "campaigns";
 const SUB_KEY = "subscribers";
 let editingId = null;
 
-if (!DB.get(SUB_KEY).length) {
-  [
-    {email:"hello@cafe-eum.com", name:"카페 이음 김민수", status:"활성"},
-    {email:"jiyoung@bakehouse.kr", name:"베이크하우스 박지영", status:"활성"},
-    {email:"info@example.com", name:"홍길동", status:"활성"},
-  ].forEach(d => DB.add(SUB_KEY, d));
-}
+// 데모 뉴스레터 구독자 시드 제거 — 실제 구독은 Partners/Contact 페이지의 구독 폼에서 들어옵니다.
 
 function onChannel() {
   const ch = document.getElementById("f-channel").value;

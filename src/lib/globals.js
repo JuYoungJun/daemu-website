@@ -2,7 +2,7 @@
 import { DB, badgeStr, confirmDel } from './db.js';
 import { Auth } from './auth.js';
 import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabled } from './email.js';
-import { uploadImage } from './upload.js';
+import { uploadImage, uploadVideo, uploadMedia } from './upload.js';
 import { downloadCSV } from './csv.js';
 
 // HTML / attribute / URL escapers — used in every admin innerHTML template
@@ -42,6 +42,8 @@ if (typeof window !== 'undefined') {
 
   // Upload API (always client-side optimized + base64 stored)
   window.uploadImage = uploadImage;
+  window.uploadVideo = uploadVideo;
+  window.uploadMedia = uploadMedia;
   window.isUploadEnabled = () => false; // legacy flag, always local now
 
   // CSV export helper for admin pages

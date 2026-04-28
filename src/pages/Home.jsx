@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useExternalScript } from '../hooks/useExternalScript.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd, faqLd } from '../lib/seo.js';
+import PromotionBanner from '../components/PromotionBanner.jsx';
 // R-02: Organization/LocalBusiness/WebSite live in index.html as the static
 // @graph — single source of truth. Don't re-inject them on Home.
 
@@ -29,6 +30,7 @@ export default function Home() {
 
   return (
     <main className="page home-page">
+      <PromotionBanner />
       {/* AEO answer-first block — visually hidden, indexed by search/AI engines.
           Provides factual, quotable definition of the company at the top of
           the document so generative engines surface it as a direct answer. */}

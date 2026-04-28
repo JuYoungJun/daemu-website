@@ -81,7 +81,8 @@ function renderKPI() {
   const active = all.filter(d => (d.status||"active") === "active").length;
   const imps = all.reduce((a,d) => a + (d.impressions||0), 0);
   const clicks = all.reduce((a,d) => a + (d.clicks||0), 0);
-  const ctr = imps ? Math.round(clicks/imps*100) : 0;
+  // CTR = clicks / impressions × 100 — 1 decimal place for sensitivity
+  const ctr = imps ? (clicks / imps * 100).toFixed(1) : "0.0";
   document.getElementById("k-active").textContent = active;
   document.getElementById("k-impressions").textContent = imps.toLocaleString('ko');
   document.getElementById("k-clicks").textContent = clicks.toLocaleString('ko');
@@ -103,7 +104,7 @@ function render() {
       <td data-label="빈도">${FREQ_LABEL[d.frequency]||d.frequency}</td>
       <td data-label="기간" style="font-size:11px;color:#6f6b68">${fmtPeriod(d)}</td>
       <td data-label="대상" style="font-size:11px;color:#6f6b68">${targets}</td>
-      <td data-label="노출/클릭">${d.impressions||0} / ${d.clicks||0}</td>
+      <td data-label="노출/클릭/CTR">${d.impressions||0} / ${d.clicks||0} <span style="color:#8c867d;font-size:11px">· ${(d.impressions||0) ? ((d.clicks||0)/(d.impressions)*100).toFixed(1) + "%" : "-"}</span></td>
       <td data-label="상태">${badge(d.status === "paused" ? "일시중지" : "활성")}</td>
       <td data-label="관리" class="col-actions">
         <button class="adm-btn-sm" onclick="preview(${d.id})">미리보기</button>

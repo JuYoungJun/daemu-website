@@ -10,13 +10,7 @@ const STAGES = [
 let editingId = null;
 let drawerId = null;
 
-if (!DB.get(KEY).length) {
-  [
-    {name:"김민수",company:"카페 이음",email:"minsoo@example.com",phone:"010-1111-2222",source:"웹사이트",status:"lead",value:50000000,tags:["카페","신규창업"],summary:"강남 신축 상가 카페 오픈 예정. 비클래시 형태 관심.",notes:[]},
-    {name:"박지영",company:"베이크하우스",email:"jiyoung@example.com",phone:"010-3333-4444",source:"레퍼럴",status:"qualified",value:30000000,tags:["베이커리"],summary:"기존 매장 리브랜딩 + 메뉴 개발 의뢰.",notes:[]},
-    {name:"이한솔",company:"-",email:"hansol@example.com",phone:"010-5555-6666",source:"SNS",status:"customer",value:120000000,tags:["전라남도","장어"],summary:"품장 인천점 오픈 예정.",notes:[]},
-  ].forEach(d => DB.add(KEY, d));
-}
+// 데모 시드 제거 — 실제 리드는 Contact 폼/Partners 신청을 통해 자동 생성됩니다.
 
 function getAllTags() {
   const set = new Set();

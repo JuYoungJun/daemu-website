@@ -96,6 +96,17 @@
     const pid = (m && m[1]) || (new URLSearchParams(window.location.search)).get('project') || 'beclassy-naju';
     const isPreview = (new URLSearchParams(window.location.search)).get('preview') === '1';
 
+    // Preview banner — make it obvious to admins that they are NOT looking
+    // at a published page, even if the URL looks identical to live.
+    if (isPreview && !document.getElementById('admin-preview-bar')) {
+      const bar = document.createElement('div');
+      bar.id = 'admin-preview-bar';
+      bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b87333;color:#fff;padding:8px 14px;font-size:13px;letter-spacing:.04em;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.2)';
+      bar.innerHTML = '🔎 미리보기 모드 — 본 화면은 실제 게시되지 않은 초안입니다. <a href="javascript:window.close()" style="color:#fff;margin-left:12px;text-decoration:underline">닫기</a>';
+      document.body.appendChild(bar);
+      document.body.style.paddingTop = '40px';
+    }
+
     function adaptDb(p) {
       // Adapt admin-works DB project shape → work-detail data shape
       const heroSrc = p.hero || (p.images && p.images[0] && p.images[0].src) || (p.img || '');

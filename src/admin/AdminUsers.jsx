@@ -3,11 +3,11 @@ import AdminShell from '../components/AdminShell.jsx';
 import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 
-const ROLE_LABEL = { admin: '관리자', tester: '테스트', developer: '개발' };
+const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_DESC = {
-  admin: '전체 권한. 사용자/고객/파트너/CRM 등 모든 데이터 관리.',
-  tester: '대부분 읽기 전용 + 팝업 등록. 고객 PII는 조회 가능, 삭제 불가.',
-  developer: '작업사례/팝업/메일템플릿/콘텐츠 관리. 고객 PII는 조회 불가.',
+  admin: '전체 권한. 사용자·고객·파트너·CRM·결제/계약·시스템 설정까지 모두 접근.',
+  tester: '서브 관리자 — 대부분 읽기 전용. 팝업 등록/문의 모니터링은 가능. 사용자/결제/시스템 설정은 차단.',
+  developer: '개발자 — 작업사례·팝업·메일템플릿·콘텐츠 관리. 고객 PII·결제는 차단.',
 };
 
 export default function AdminUsers() {
@@ -118,8 +118,8 @@ export default function AdminUsers() {
               style={inputStyle} />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle}>
               <option value="admin">관리자 (admin)</option>
-              <option value="tester">테스트 (tester)</option>
-              <option value="developer">개발 (developer)</option>
+              <option value="tester">서브 관리자 (tester)</option>
+              <option value="developer">개발자 (developer)</option>
             </select>
             <button className="btn" type="submit" disabled={submitting}>{submitting ? '생성 중…' : '계정 생성'}</button>
           </form>
@@ -152,8 +152,8 @@ export default function AdminUsers() {
                       <select value={u.role} onChange={(e) => onUpdate(u.id, { role: e.target.value })}
                         disabled={u.id === me?.id} style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }}>
                         <option value="admin">관리자</option>
-                        <option value="tester">테스트</option>
-                        <option value="developer">개발</option>
+                        <option value="tester">서브 관리자</option>
+                        <option value="developer">개발자</option>
                       </select>
                     </td>
                     <td style={td}>

@@ -121,7 +121,7 @@ const EXPORTS = {
   },
   '/admin/popup': {
     key: 'popups',
-    filename: '팝업',
+    filename: '팝업_CTR',
     columns: [
       { key: 'date',         label: '등록일' },
       { key: 'title',        label: '제목' },
@@ -132,7 +132,19 @@ const EXPORTS = {
       { key: (r) => (r.targetPages || []).join(' | '), label: '타겟페이지' },
       { key: 'impressions',  label: '노출' },
       { key: 'clicks',       label: '클릭' },
+      { key: (r) => (r.impressions || 0) ? ((r.clicks || 0) / r.impressions * 100).toFixed(2) + '%' : '-', label: 'CTR' },
       { key: 'status',       label: '상태' }
+    ]
+  },
+  '/admin/campaign-subscribers': {
+    key: 'subscribers',
+    filename: '뉴스레터구독자',
+    columns: [
+      { key: 'date',   label: '등록일' },
+      { key: 'name',   label: '이름' },
+      { key: 'email',  label: '이메일' },
+      { key: 'source', label: '유입경로' },
+      { key: 'status', label: '상태' }
     ]
   }
 };

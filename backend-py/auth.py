@@ -153,6 +153,9 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "outbox":        {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ, ROLE_DEVELOPER: _READ},
     "mail-template": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
     "content":       {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL},
+    "newsletter":    {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
+    # Operational health / error monitoring page (read-only).
+    "monitoring":    {ROLE_ADMIN: _READ, ROLE_DEVELOPER: _READ},
 }
 
 

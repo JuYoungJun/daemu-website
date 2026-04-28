@@ -142,10 +142,13 @@ export default function AdminGate() {
     'promotion':     ['admin'],
     'popup':         ['admin', 'developer', 'tester'],
     'outbox':        ['admin', 'developer', 'tester'],
+    'monitoring':    ['admin', 'developer'],
     'users':         ['admin'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
-  const ROLE_BADGE = { admin: '관리자', tester: '테스트', developer: '개발' };
+  // 한국어 역할 라벨. admin = Super Admin (모든 권한),
+  // tester = Sub Admin (읽기 전용), developer = 개발자(콘텐츠/시스템 일부).
+  const ROLE_BADGE = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 
   return (
     <AdminShell>
@@ -196,6 +199,7 @@ export default function AdminGate() {
               {can('promotion') && <MenuCard to="/admin/promotion" title="프로모션" desc="쿠폰 코드와 이벤트/공지를 관리합니다." items={['정률·정액·1+1 할인','유효기간·최대사용 횟수','실시간 사용량 추적','이벤트/공지 배너']} />}
               {can('popup')     && <MenuCard to="/admin/popup" title="팝업" desc="사이트 팝업 배너를 등록·수정하고 노출 규칙을 관리합니다." items={['중앙/우하단/상단 위치','이미지 + CTA 버튼','노출 빈도 (매번/일1회/영구1회)','타겟 페이지 + 노출/클릭 추적']} />}
               {can('outbox')    && <MenuCard to="/admin/outbox" title="Outbox" desc="이메일·캠페인·계약서 발송 이력을 확인합니다." items={['백엔드 API 호출 로그','시뮬레이션 / 발송완료 / 실패 구분','수신자·제목·본문 검색','데모 환경에서도 발송 시뮬레이션 확인']} />}
+              {can('monitoring') && <MenuCard to="/admin/monitoring" title="유지보수 모니터링" desc="운영 중 발생한 오류와 백엔드 헬스를 확인합니다." items={['백엔드 헬스 1분 주기 체크','24시간 발송 실패 카운트','API 호출 오류 누적','브라우저 런타임 에러 수집']} />}
             </div>
 
             {can('users') && (

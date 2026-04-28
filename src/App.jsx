@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { useEffect, useLayoutEffect, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
 import { initAnalytics, trackPageview } from './lib/analytics.js';
+import { Auth } from './lib/auth.js';
 
 import PublicLayout from './components/PublicLayout.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
@@ -47,6 +48,7 @@ const AdminCampaign = lazy(() => import('./admin/AdminCampaign.jsx'));
 const AdminPromotion = lazy(() => import('./admin/AdminPromotion.jsx'));
 const AdminPopup = lazy(() => import('./admin/AdminPopup.jsx'));
 const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
+const AdminMonitoring = lazy(() => import('./admin/AdminMonitoring.jsx'));
 const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
 
 const AdminFallback = () => (
@@ -87,6 +89,29 @@ function AnalyticsBoot() {
   const { pathname } = useLocation();
   useEffect(() => { initAnalytics(); }, []);
   useEffect(() => { trackPageview(); }, [pathname]);
+  return null;
+}
+
+// Security: when the admin navigates away from /admin/*, wipe the session.
+// Combined with sessionStorage tokens, the user must re-login on every entry
+// to the admin area. Transitions between admin pages do NOT trigger logout.
+function AdminSessionGuard() {
+  const { pathname } = useLocation();
+  const prevAdmin = useRef(pathname.startsWith('/admin'));
+  useEffect(() => {
+    const nowAdmin = pathname.startsWith('/admin');
+    if (prevAdmin.current && !nowAdmin) {
+      Auth.logout();
+    }
+    prevAdmin.current = nowAdmin;
+  }, [pathname]);
+
+  // Tab close / hard reload — also clear the session.
+  useEffect(() => {
+    const onUnload = () => { Auth.logout(); };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []);
   return null;
 }
 
@@ -136,6 +161,7 @@ export default function App() {
     <ErrorBoundary>
       <ScrollToTop />
       <AnalyticsBoot />
+      <AdminSessionGuard />
       <LinkInterceptor />
       <DialogHost />
       <CookieConsent />
@@ -166,6 +192,7 @@ export default function App() {
         <Route path="/admin/promotion" element={wrap(<RequireAuth><AdminPromotion /></RequireAuth>)} />
         <Route path="/admin/popup" element={wrap(<RequireAuth><AdminPopup /></RequireAuth>)} />
         <Route path="/admin/outbox" element={wrap(<RequireAuth><AdminOutbox /></RequireAuth>)} />
+        <Route path="/admin/monitoring" element={wrap(<RequireAuth><AdminMonitoring /></RequireAuth>)} />
         <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
 
         {/* Error showcase routes — accessible directly for QA + linkable from CTA */}
