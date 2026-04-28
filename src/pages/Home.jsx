@@ -1,11 +1,63 @@
 import { Link } from 'react-router-dom';
 import { useExternalScript } from '../hooks/useExternalScript.js';
+import { useSeo } from '../hooks/useSeo.js';
+import { breadcrumbLd, faqLd, LOCAL_BUSINESS_LD } from '../lib/seo.js';
+
+const HOME_FAQS = [
+  { q: '대무는 어떤 회사인가요?', a: '전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사입니다. 2019년 설립, 40+ 프로젝트 진행. 브랜드 전략·메뉴 개발·공간 설계·운영까지 일관된 카페 비즈니스 구조를 설계합니다.' },
+  { q: '카페 창업 컨설팅 비용은 얼마인가요?', a: '프로젝트 범위에 따라 결정됩니다. 전략 단독·풀 컨설팅(전략→운영)·부분 위탁 등 옵션을 상담을 통해 견적 산정합니다.' },
+  { q: '나주에서 카페 컨설팅을 받을 수 있나요?', a: '가능합니다. 본사가 전라남도 나주시이며 인천·광주·전남권 다수 진행. 화상·방문 상담 모두 지원합니다.' },
+  { q: '베이커리 메뉴 개발도 하나요?', a: '네. 빵·디저트·음료를 브랜드 방향에 맞춰 R&D부터 SOP 정리까지 진행합니다.' },
+  { q: '브랜드만 의뢰할 수도 있나요?', a: 'Strategy·Brand·Space·Operation 중 일부 단계만 부분 위탁 가능합니다.' },
+  { q: '상담 신청은 어떻게 하나요?', a: '/contact 페이지에서 24시간 접수. 1–2 영업일 내 담당 매니저가 회신합니다.' },
+];
 
 export default function Home() {
   useExternalScript('/home.js', []);
+  useSeo({
+    title: '베이커리 · 카페 비즈니스 파트너',
+    description: '대무는 전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사입니다. 브랜드 전략부터 메뉴 개발, 공간 설계, 운영까지 카페 비즈니스의 구조를 함께 설계합니다.',
+    path: '/',
+    keywords: '대무, DAEMU, 베이커리 컨설팅, 카페 창업, 카페 컨설팅, 메뉴 개발, 브랜드 전략, 공간 설계, 매장 운영, 나주 카페, 전남 카페 컨설팅',
+    jsonLd: [
+      LOCAL_BUSINESS_LD,
+      breadcrumbLd([{ name: '홈', path: '/' }]),
+      faqLd(HOME_FAQS),
+    ],
+  });
 
   return (
     <main className="page home-page">
+      {/* AEO answer-first block — visually hidden, indexed by search/AI engines.
+          Provides factual, quotable definition of the company at the top of
+          the document so generative engines surface it as a direct answer. */}
+      <section className="visually-hidden" aria-label="대무 회사 안내">
+        {/* h2 (not h1) since the hero already declares an h1 — single-h1 rule. */}
+        <h2>대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너</h2>
+        <p>
+          대무는 전라남도 나주시 황동에 본사를 둔 베이커리·카페 전문 컨설팅 회사입니다. 2019년 설립 이후 40여 개 프로젝트를 진행했으며,
+          브랜드 전략, 메뉴 개발, 공간 설계, 매장 운영까지 다섯 단계로 연결되는 카페 비즈니스 구조를 설계합니다.
+          연락처는 061-335-1239 / daemu_office@naver.com 이며 월–금 09:00–18:00 운영합니다.
+        </p>
+        <h3>대무가 제공하는 5단계 서비스</h3>
+        <ul>
+          <li><strong>Strategy (전략)</strong>: 시장 분석·포지셔닝 기반 브랜드 방향 설계</li>
+          <li><strong>Product (제품)</strong>: 베이커리·음료 메뉴 R&amp;D부터 SOP 정리까지</li>
+          <li><strong>Brand (브랜드)</strong>: 로고·톤 앤 보이스·비주얼 시스템 일관 구축</li>
+          <li><strong>Space (공간)</strong>: 동선·운영 효율 고려한 매장 공간 기획</li>
+          <li><strong>Operation (운영)</strong>: 오픈 후 운영 구조와 매뉴얼 정비</li>
+        </ul>
+        <h3>자주 묻는 질문</h3>
+        <dl>
+          {HOME_FAQS.map((faq) => (
+            <div key={faq.q}>
+              <dt>{faq.q}</dt>
+              <dd>{faq.a}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
       {/* HERO */}
       <section className="home-hero-v2">
         <div className="wide home-hero-inner">

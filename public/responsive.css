@@ -2,6 +2,21 @@
    Loaded after all other CSS so wins on equal specificity.
    Targets common breakpoints: ≤980 tablet, ≤768 mobile-large, ≤480 mobile-small. */
 
+/* AEO/A11y utility — hidden from sighted users but readable by screen
+   readers AND search/AI crawlers (Google, Naver, Perplexity, GPTBot, etc.).
+   Used to inject answer-first factual blocks that AI engines quote. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ============================================================
    GLOBAL OVERFLOW GUARD — applies at every viewport.
    Prevents stray wide elements (marquees, hero text, off-canvas

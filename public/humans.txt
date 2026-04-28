@@ -1,0 +1,14 @@
+/* DAEMU — humans.txt */
+
+# TEAM
+Brand: 대무 (DAEMU)
+Location: 전라남도 나주시 황동 3길 8
+Contact: daemu_office@naver.com / 061-335-1239
+Founded: 2019
+
+# SITE
+Last update: 2026-04-28
+Standards: HTML5, CSS3, ES2022
+Components: React 18, Vite, FastAPI, SQLAlchemy
+Doctype: SPA (BrowserRouter)
+Hosting: GitHub Pages (frontend) + Render (backend)

@@ -4,6 +4,14 @@ import { useFadeUp } from '../hooks/useFadeUp.js';
 import { DB } from '../lib/db.js';
 import { sendAutoReply, isEmailEnabled } from '../lib/email.js';
 import { api } from '../lib/api.js';
+import { useSeo } from '../hooks/useSeo.js';
+import { breadcrumbLd, faqLd } from '../lib/seo.js';
+
+const CONTACT_FAQS = [
+  { q: '상담은 어떻게 신청하나요?', a: '본 페이지의 카테고리를 선택하고 폼을 작성해 주시면, 1–2 영업일 내 담당 매니저가 회신합니다.' },
+  { q: '비용은 미리 알 수 있나요?', a: '프로젝트 범위에 따라 견적이 달라지므로, 상담 신청 후 1차 무료 상담을 통해 견적을 안내드립니다.' },
+  { q: '나주 외 지역도 가능한가요?', a: '네. 인천·광주·전남 등 전국 프로젝트 진행 가능. 화상 회의 + 현장 방문 병행.' },
+];
 
 function ConsentRow({ consent, setConsent }) {
   return (
@@ -28,6 +36,16 @@ export default function Contact() {
   const [submitting, setSubmitting] = useState(false);
 
   useFadeUp([]);
+  useSeo({
+    title: 'Contact — 상담·문의 접수',
+    description: '카페 창업, 브랜드 개발, 메뉴 개발, 공간 설계 등 대무와 함께할 다양한 프로젝트를 상담하세요. 1–2 영업일 내 담당 매니저 회신.',
+    path: '/contact',
+    keywords: '카페 컨설팅 상담, 베이커리 창업 문의, 카페 견적 문의, 대무 연락',
+    jsonLd: [
+      breadcrumbLd([{ name: '홈', path: '/' }, { name: 'Contact', path: '/contact' }]),
+      faqLd(CONTACT_FAQS),
+    ],
+  });
 
   const isEtc = active === '기타 문의';
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));

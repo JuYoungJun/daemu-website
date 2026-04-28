@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useExternalScript } from '../hooks/useExternalScript.js';
+import { useSeo } from '../hooks/useSeo.js';
+import { breadcrumbLd } from '../lib/seo.js';
 
 export default function About() {
   useEffect(() => {
@@ -8,6 +10,13 @@ export default function About() {
     return () => { document.body.classList.remove('about-reference-body', 'include-shell'); };
   }, []);
   useExternalScript('/about.js', []);
+  useSeo({
+    title: '회사 소개 — 對舞 · 같이 춤추다',
+    description: '對舞(대무) — 당신과 마주하다, 같이 춤추다. 문제를 회피하지 않고 고객의 본질을 정면으로 바라보며 실행 단계까지 함께 움직이는 카페 비즈니스 파트너.',
+    path: '/about',
+    keywords: '대무 소개, DAEMU 회사, 카페 컨설팅 회사, 베이커리 컨설팅 전남, 나주 컨설팅',
+    jsonLd: [breadcrumbLd([{ name: '홈', path: '/' }, { name: 'About Us', path: '/about' }])],
+  });
 
   return (
     <main className="about-ref-main dmabout-page">

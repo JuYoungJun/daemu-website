@@ -1,0 +1,8 @@
+# RFC 9116 security.txt for DAEMU
+# https://juyoungjun.github.io/daemu-website/.well-known/security.txt
+
+Contact: mailto:daemu_office@naver.com
+Contact: tel:+82-61-335-1239
+Preferred-Languages: ko, en
+Canonical: https://juyoungjun.github.io/daemu-website/.well-known/security.txt
+Expires: 2027-04-28T00:00:00.000Z

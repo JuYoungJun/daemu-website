@@ -1,6 +1,16 @@
 // Privacy policy / 개인정보처리방침 — PIPA-compliant disclosure (F-08).
 // Updated whenever the data flow changes (new processor, retention, etc).
+import { useSeo } from '../hooks/useSeo.js';
+import { breadcrumbLd } from '../lib/seo.js';
+
 export default function Privacy() {
+  useSeo({
+    title: '개인정보처리방침',
+    description: '대무 (DAEMU)의 개인정보 수집·이용·보유·제3자 제공·정보주체 권리에 대한 PIPA 준수 방침.',
+    path: '/privacy',
+    noindex: false,
+    jsonLd: [breadcrumbLd([{ name: '홈', path: '/' }, { name: '개인정보처리방침', path: '/privacy' }])],
+  });
   return (
     <main className="page" style={{ padding: '32px 0 64px' }}>
       <section className="narrow" style={{ maxWidth: 820, margin: '0 auto', padding: '0 24px' }}>

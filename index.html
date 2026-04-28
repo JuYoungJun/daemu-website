@@ -3,8 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DAEMU — Bakery & Cafe Business Partner</title>
-    <meta name="description" content="기획은 많습니다. 실행까지 책임지는 팀은 많지 않습니다. 대무는 카페 비즈니스의 전략부터 운영까지 연결되는 구조를 설계합니다." />
+    <meta name="theme-color" content="#f2f0ec" />
+    <meta name="referrer" content="origin-when-cross-origin" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <title>대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너</title>
+    <meta name="description" content="전라남도 나주 기반 베이커리·카페 전문 컨설팅. 브랜드 전략부터 메뉴 개발, 공간 설계, 운영까지 — 카페 비즈니스의 구조를 함께 설계합니다." />
+    <meta name="keywords" content="베이커리 컨설팅, 카페 창업, 카페 컨설팅, 메뉴 개발, 브랜드 전략, 공간 설계, 매장 운영, 나주 카페, 전남 카페 컨설팅, 카페 리브랜딩, 베이커리 창업, 디저트 브랜드, F&B 컨설팅" />
+    <meta name="author" content="대무 (DAEMU)" />
+
+    <!-- Naver / Google Search Console verification — replace placeholders after onboarding.
+         Naver Search Advisor: https://searchadvisor.naver.com/
+         Google Search Console: https://search.google.com/search-console -->
+    <meta name="naver-site-verification" content="REPLACE_WITH_NAVER_TOKEN" />
+    <meta name="google-site-verification" content="REPLACE_WITH_GOOGLE_TOKEN" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너" />
+    <meta property="og:description" content="전라남도 나주 기반 베이커리·카페 전문 컨설팅. 브랜드 전략부터 운영까지 카페 비즈니스 구조를 설계합니다." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://juyoungjun.github.io/daemu-website/" />
+    <meta property="og:image" content="https://juyoungjun.github.io/daemu-website/assets/logo.svg" />
+    <meta property="og:site_name" content="대무 (DAEMU)" />
+    <meta property="og:locale" content="ko_KR" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너" />
+    <meta name="twitter:description" content="전라남도 나주 기반 베이커리·카페 전문 컨설팅." />
+    <meta name="twitter:image" content="https://juyoungjun.github.io/daemu-website/assets/logo.svg" />
+
+    <link rel="canonical" href="https://juyoungjun.github.io/daemu-website/" />
+
+    <!-- Performance: preconnect to font / CDN origins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+
     <link rel="stylesheet" href="%BASE_URL%style.css" />
     <link rel="stylesheet" href="%BASE_URL%home.css" />
     <link rel="stylesheet" href="%BASE_URL%team.css" />
@@ -12,6 +47,73 @@
     <link rel="stylesheet" href="%BASE_URL%about.css" />
     <link rel="stylesheet" href="%BASE_URL%admin-sub.css" />
     <link rel="stylesheet" href="%BASE_URL%responsive.css" />
+
+    <!-- Global JSON-LD (Organization + WebSite). Per-page LD is injected
+         by src/lib/seo.js on route changes. -->
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://juyoungjun.github.io/daemu-website/#organization",
+      "name": "대무 (DAEMU)",
+      "alternateName": "DAEMU",
+      "url": "https://juyoungjun.github.io/daemu-website/",
+      "logo": "https://juyoungjun.github.io/daemu-website/assets/logo.svg",
+      "description": "전라남도 나주 기반 베이커리·카페 전문 컨설팅. 브랜드 전략부터 운영까지 카페 비즈니스의 구조를 설계합니다.",
+      "foundingDate": "2019",
+      "contactPoint": [{
+        "@type": "ContactPoint",
+        "telephone": "+82-61-335-1239",
+        "email": "daemu_office@naver.com",
+        "contactType": "customer service",
+        "areaServed": "KR",
+        "availableLanguage": ["ko", "en"]
+      }],
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "황동 3길 8",
+        "addressLocality": "나주시",
+        "addressRegion": "전라남도",
+        "addressCountry": "KR"
+      }
+    },
+    {
+      "@type": "ProfessionalService",
+      "@id": "https://juyoungjun.github.io/daemu-website/#localbusiness",
+      "name": "대무 (DAEMU)",
+      "image": "https://juyoungjun.github.io/daemu-website/assets/logo.svg",
+      "url": "https://juyoungjun.github.io/daemu-website/",
+      "telephone": "+82-61-335-1239",
+      "email": "daemu_office@naver.com",
+      "priceRange": "$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "황동 3길 8",
+        "addressLocality": "나주시",
+        "addressRegion": "전라남도",
+        "addressCountry": "KR"
+      },
+      "areaServed": { "@type": "Country", "name": "South Korea" },
+      "openingHoursSpecification": [{
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+        "opens": "09:00",
+        "closes": "18:00"
+      }]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://juyoungjun.github.io/daemu-website/#website",
+      "url": "https://juyoungjun.github.io/daemu-website/",
+      "name": "대무 (DAEMU)",
+      "inLanguage": "ko-KR",
+      "publisher": { "@id": "https://juyoungjun.github.io/daemu-website/#organization" }
+    }
+  ]
+}
+    </script>
   </head>
   <body class="splash-pending">
     <div id="root"></div>

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import '../styles/errors.css';
+import { useSeo } from '../hooks/useSeo.js';
 
 export default function ErrorPage({
   code = '500',
@@ -11,6 +12,13 @@ export default function ErrorPage({
   meta,
 }) {
   const navigate = useNavigate();
+
+  // noindex on every error page so Google/Naver/AI crawlers don't index 404s.
+  useSeo({
+    title: `${code} — ${title}`,
+    description: message,
+    noindex: true,
+  });
 
   useEffect(() => {
     const original = document.title;

@@ -3,9 +3,18 @@ import { useFadeUp } from '../hooks/useFadeUp.js';
 import { PartnerAuth, defaultPasswordHint } from '../lib/partnerAuth.js';
 import { PRODUCT_CATALOG, findProduct } from '../lib/partnerProducts.js';
 import { DB } from '../lib/db.js';
+import { useSeo } from '../hooks/useSeo.js';
+import { breadcrumbLd } from '../lib/seo.js';
 
 export default function Partners() {
   useFadeUp([]);
+  useSeo({
+    title: 'Partners — 파트너사 모집 및 발주 포털',
+    description: '대무 파트너 전용 발주 및 운영 포털. 본사 승인 후 발주서·계약서 발송, 실시간 발주 추적, 파트너 계정 관리.',
+    path: '/partners',
+    keywords: '대무 파트너, 카페 납품 파트너, 베이커리 원두 파트너, B2B 발주 포털',
+    jsonLd: [breadcrumbLd([{ name: '홈', path: '/' }, { name: 'Partners', path: '/partners' }])],
+  });
   const [partner, setPartner] = useState(() => PartnerAuth.current());
   const [mustChange, setMustChange] = useState(() => partner ? PartnerAuth.needsPasswordChange(partner) : false);
   const [mode, setMode] = useState('login');

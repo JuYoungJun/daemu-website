@@ -1,0 +1,61 @@
+# DAEMU 대무 — robots.txt
+# Site: https://juyoungjun.github.io/daemu-website/
+# Korean B2B brand for bakery & cafe consulting (전라남도 나주시)
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /admin
+Disallow: /error/
+Disallow: /uploads/
+
+# AI / LLM crawlers — explicitly opted in for marketing visibility.
+# Per https://llmstxt.org best practice, expose the brand-marketing surface
+# but exclude admin/error pages from training.
+User-agent: GPTBot
+Allow: /
+Disallow: /admin/
+Disallow: /error/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin/
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /admin/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /admin/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /admin/
+
+User-agent: cohere-ai
+Allow: /
+Disallow: /admin/
+
+# Naver / Daum
+User-agent: Yeti
+Allow: /
+Disallow: /admin/
+
+User-agent: Daumoa
+Allow: /
+Disallow: /admin/
+
+Sitemap: https://juyoungjun.github.io/daemu-website/sitemap.xml
