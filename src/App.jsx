@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { useEffect, useLayoutEffect, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
 import { initAnalytics, trackPageview } from './lib/analytics.js';
+import { Auth } from './lib/auth.js';
 
 import PublicLayout from './components/PublicLayout.jsx';
 import RequireAuth from './components/RequireAuth.jsx';
@@ -94,14 +95,34 @@ function AnalyticsBoot() {
   return null;
 }
 
-// Note: the previous build had an AdminSessionGuard that auto-logged-out on
-// every navigation away from /admin/* AND on `beforeunload`. That broke the
-// back button, page reload, and quick excursions to public pages. We rely
-// instead on:
-//   · 60-minute inactivity timeout in lib/auth.js
-//   · explicit logout button on the dashboard
-//   · backend JWT TTL (12h)
-// — which is the same posture used by most B2B admin panels.
+// Admin session policy:
+//   · Logged-in admin stays logged in across reloads, tab restores,
+//     and admin↔admin navigation (covers the "back button" case the
+//     owner reported).
+//   · Leaving the admin tree to a public page (/, /work, /contact,
+//     /sign/...) wipes the session — opening /admin again requires
+//     re-login.
+//   · 60-minute inactivity timeout (lib/auth.js) covers the "stepped
+//     away from desk" case.
+//
+// Implementation notes:
+//   · Only one location-watcher at the App root; per-route RequireAuth
+//     no longer mutates Auth state on unmount, so admin-page navigation
+//     never accidentally clears the token.
+//   · We deliberately do NOT install a `beforeunload` handler — that
+//     was the bug that was wiping the session on F5 / hard reload.
+function AdminSessionGuard() {
+  const { pathname } = useLocation();
+  const prevAdmin = useRef(pathname.startsWith('/admin'));
+  useEffect(() => {
+    const nowAdmin = pathname.startsWith('/admin');
+    if (prevAdmin.current && !nowAdmin) {
+      Auth.logout();
+    }
+    prevAdmin.current = nowAdmin;
+  }, [pathname]);
+  return null;
+}
 
 function PublicRoute({ children, pageKey }) {
   return <PublicLayout pageKey={pageKey}>{children}</PublicLayout>;
@@ -149,6 +170,7 @@ export default function App() {
     <ErrorBoundary>
       <ScrollToTop />
       <AnalyticsBoot />
+      <AdminSessionGuard />
       <LinkInterceptor />
       <DialogHost />
       <CookieConsent />
