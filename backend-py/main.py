@@ -582,6 +582,56 @@ async def monitoring_summary(_user = Depends(require_perm("monitoring", "read"))
                 .group_by(AuditLog.action)
             )).all()
             out["securityEvents24h"] = {row[0]: row[1] for row in sec_events}
+
+            # ── 해킹/DDoS 이상 징후 ────────────────────────────────────
+            # 1) 동일 IP에서 1시간 내 비정상 trafic — login.failure / throttled
+            from sqlalchemy import desc as _desc
+            hour_cutoff = datetime.now(_tz.utc) - timedelta(hours=1)
+            ip_stats = (await session.execute(
+                select(AuditLog.ip, _func.count())
+                .where(AuditLog.created_at >= hour_cutoff)
+                .where(AuditLog.action.in_(["login.failure", "login.throttled", "login.totp.failure"]))
+                .group_by(AuditLog.ip)
+                .order_by(_desc(_func.count()))
+                .limit(10)
+            )).all()
+            suspicious_ips = [
+                {"ip": (row[0] or "unknown"), "count": int(row[1])}
+                for row in ip_stats if row[0] and int(row[1]) >= 3
+            ]
+            out["suspiciousIps1h"] = suspicious_ips
+
+            # 2) 5분 내 인증 실패 spike — DDoS-style 징후
+            five_min_cutoff = datetime.now(_tz.utc) - timedelta(minutes=5)
+            spike_5m = (await session.execute(
+                select(_func.count()).select_from(AuditLog)
+                .where(AuditLog.created_at >= five_min_cutoff)
+                .where(AuditLog.action.in_(["login.failure", "login.throttled"]))
+            )).scalar_one() or 0
+            out["authFailures5m"] = int(spike_5m)
+
+            # 3) 24시간 unique 실패 IP 수 — 분산 공격 징후
+            unique_failed_ips = (await session.execute(
+                select(_func.count(_func.distinct(AuditLog.ip)))
+                .where(AuditLog.created_at >= cutoff)
+                .where(AuditLog.action.in_(["login.failure", "login.throttled"]))
+            )).scalar_one() or 0
+            out["uniqueFailedIps24h"] = int(unique_failed_ips)
+
+            # 4) 스캐닝/probing 의심 — 미지의 endpoint 접근 (404/405가 다발)
+            #    AuditLog는 인증 실패만 기록하므로, recent_failed Outbox 패턴
+            #    + login throttle 패턴으로 추정. 정확한 path별 통계는 nginx
+            #    access log에서 별도 집계 필요 (운영 시 fail2ban으로 자동화).
+
+            # 5) 위험도 등급 계산 — frontend가 색상 표시할 때 사용
+            #    suspicious_ips 3+ 건 OR authFailures5m 50+ → high
+            #    1~2건 OR 10~50 → medium / 그 외 normal
+            risk = "normal"
+            if len(suspicious_ips) >= 3 or spike_5m >= 50:
+                risk = "high"
+            elif len(suspicious_ips) >= 1 or spike_5m >= 10:
+                risk = "medium"
+            out["riskLevel"] = risk
     except Exception as exc:  # noqa: BLE001
         out["dbLatencyMs"] = None
         out["error"] = str(exc)[:200]

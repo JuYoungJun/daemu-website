@@ -96,6 +96,55 @@ function osCategory() {
   return 'other';
 }
 
+// IANA 타임존 → ISO 국가코드 추정 (외부 API 의존 없음).
+// 100% 정확하진 않지만 대다수 케이스를 잡습니다 — 정확한 IP geolocation이
+// 필요하면 backend에서 X-Forwarded-For + GeoIP2 lite를 추가해야 합니다.
+const TZ_TO_COUNTRY = {
+  'Asia/Seoul': 'KR', 'Asia/Tokyo': 'JP', 'Asia/Shanghai': 'CN', 'Asia/Hong_Kong': 'HK',
+  'Asia/Taipei': 'TW', 'Asia/Singapore': 'SG', 'Asia/Bangkok': 'TH', 'Asia/Jakarta': 'ID',
+  'Asia/Manila': 'PH', 'Asia/Ho_Chi_Minh': 'VN', 'Asia/Kuala_Lumpur': 'MY',
+  'Asia/Kolkata': 'IN', 'Asia/Calcutta': 'IN', 'Asia/Dubai': 'AE',
+  'Australia/Sydney': 'AU', 'Australia/Melbourne': 'AU', 'Australia/Perth': 'AU',
+  'Pacific/Auckland': 'NZ', 'Pacific/Honolulu': 'US',
+  'America/New_York': 'US', 'America/Chicago': 'US', 'America/Denver': 'US',
+  'America/Los_Angeles': 'US', 'America/Phoenix': 'US', 'America/Anchorage': 'US',
+  'America/Toronto': 'CA', 'America/Vancouver': 'CA', 'America/Mexico_City': 'MX',
+  'America/Sao_Paulo': 'BR', 'America/Buenos_Aires': 'AR',
+  'Europe/London': 'GB', 'Europe/Paris': 'FR', 'Europe/Berlin': 'DE',
+  'Europe/Madrid': 'ES', 'Europe/Rome': 'IT', 'Europe/Amsterdam': 'NL',
+  'Europe/Brussels': 'BE', 'Europe/Vienna': 'AT', 'Europe/Stockholm': 'SE',
+  'Europe/Oslo': 'NO', 'Europe/Copenhagen': 'DK', 'Europe/Helsinki': 'FI',
+  'Europe/Warsaw': 'PL', 'Europe/Prague': 'CZ', 'Europe/Moscow': 'RU',
+  'Europe/Istanbul': 'TR', 'Europe/Lisbon': 'PT', 'Europe/Athens': 'GR',
+  'Europe/Zurich': 'CH', 'Europe/Dublin': 'IE',
+  'Africa/Cairo': 'EG', 'Africa/Johannesburg': 'ZA', 'Africa/Lagos': 'NG',
+  'UTC': 'XX', 'GMT': 'XX',
+};
+function countryGuess() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && TZ_TO_COUNTRY[tz]) return TZ_TO_COUNTRY[tz];
+    // tz prefix로 fallback (Asia/Seoul → Asia, America/* → US 추정 안 함)
+    if (tz && tz.startsWith('Asia/')) return 'Asia';
+    if (tz && tz.startsWith('Europe/')) return 'EU';
+    if (tz && tz.startsWith('America/')) return 'AM';
+    if (tz && tz.startsWith('Africa/')) return 'AF';
+    if (tz && tz.startsWith('Australia/')) return 'AU';
+    if (tz && tz.startsWith('Pacific/')) return 'PC';
+  } catch { /* ignore */ }
+  // navigator.language 백업: 'ko-KR' → 'KR'
+  try {
+    const lang = navigator.language || '';
+    const m = /-([A-Z]{2})$/i.exec(lang);
+    if (m) return m[1].toUpperCase();
+  } catch { /* ignore */ }
+  return 'XX';
+}
+function timezoneRaw() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+  catch { return ''; }
+}
+
 function readUtm() {
   try {
     const sp = new URLSearchParams(window.location.search);
@@ -140,6 +189,7 @@ function saveEvents(arr) {
 
 export function trackEvent(name, props = {}) {
   if (!isEnabled()) return;
+  const now = new Date();
   const event = {
     id: uuidish(),
     ts: Date.now(),
@@ -150,6 +200,10 @@ export function trackEvent(name, props = {}) {
     browser: browserCategory(),
     os: osCategory(),
     lang: (navigator.language || '').slice(0, 2),
+    country: countryGuess(),
+    timezone: timezoneRaw(),
+    hour: now.getHours(),                    // 0-23 — 시간대별 트래픽
+    weekday: now.getDay(),                   // 0(일)-6(토)
     referrer: readReferrerCategory(),
     ...readUtm(),
     // primitive props만 — XSS 위험 차단

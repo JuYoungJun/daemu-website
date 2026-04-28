@@ -1,0 +1,108 @@
+name: Deploy to Cafe24 VPS
+
+# 카페24 가상서버로 자동 배포.
+# 활성화 조건: GitHub repo Settings → Secrets에 다음 4개 등록되어 있을 때만
+#   - CAFE24_HOST       (예: your-vps-host.cafe24.com)
+#   - CAFE24_USER       (예: daemu)
+#   - CAFE24_PORT       (예: 22)
+#   - CAFE24_SSH_KEY    (private SSH key 전체 내용)
+#
+# 사전 준비:
+#   1) VPS에 ssh-keygen으로 키 생성 → 공개키를 ~/.ssh/authorized_keys에
+#   2) 개인키를 GitHub Secrets에 CAFE24_SSH_KEY로 등록
+#   3) 배포 디렉토리: /var/www/daemu (frontend), /home/daemu/daemu-website (backend)
+#   4) systemd 서비스: daemu-api
+#
+# 트리거: main 브랜치 push (배포 전 staging에서 검증 완료 가정).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build + ship to VPS
+    runs-on: ubuntu-latest
+    # SSH 키가 등록되어 있을 때만 실행 (안전장치)
+    if: ${{ vars.CAFE24_DEPLOY_ENABLED == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SITE_BASE_URL: ${{ vars.VITE_SITE_BASE_URL }}
+
+      - name: Add SPA fallback (404.html with redirect)
+        run: |
+          cat > dist/404.html <<'HTML'
+          <!doctype html><html lang="ko"><head><meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>대무 (DAEMU)</title>
+          <script>(function(){try{sessionStorage.setItem('daemu_spa_redirect',location.href);}catch(e){}location.replace('/');})();</script>
+          <meta http-equiv="refresh" content="0;url=/" />
+          </head><body></body></html>
+          HTML
+
+      # SSH 키 셋업
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.CAFE24_SSH_KEY }}
+          SSH_HOST: ${{ secrets.CAFE24_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # 프론트 배포 — rsync로 변경분만 전송
+      - name: Deploy frontend (rsync)
+        env:
+          SSH_USER: ${{ secrets.CAFE24_USER }}
+          SSH_HOST: ${{ secrets.CAFE24_HOST }}
+          SSH_PORT: ${{ secrets.CAFE24_PORT }}
+        run: |
+          rsync -azP --delete \
+            -e "ssh -p $SSH_PORT -o StrictHostKeyChecking=no" \
+            ./dist/ "$SSH_USER@$SSH_HOST:/var/www/daemu/"
+
+      # 백엔드 코드 git pull + venv 갱신 + 서비스 재시작
+      - name: Deploy backend (git pull + restart)
+        env:
+          SSH_USER: ${{ secrets.CAFE24_USER }}
+          SSH_HOST: ${{ secrets.CAFE24_HOST }}
+          SSH_PORT: ${{ secrets.CAFE24_PORT }}
+        run: |
+          ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" <<'REMOTE'
+          set -e
+          cd ~/daemu-website
+          git pull --ff-only origin main
+          cd backend-py
+          source venv/bin/activate
+          pip install -q -r requirements.txt
+          deactivate
+          sudo systemctl restart daemu-api
+          sleep 3
+          curl -fsSL http://127.0.0.1:8000/api/health > /dev/null && echo "✅ backend healthy"
+          REMOTE
+
+      - name: Smoke test (public)
+        env:
+          SITE: ${{ vars.VITE_SITE_BASE_URL }}
+          API: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          curl -fsSL "$SITE/" -o /dev/null && echo "✅ frontend reachable"
+          curl -fsSL "$API/api/health" | grep -q '"ok": true' && echo "✅ api healthy"

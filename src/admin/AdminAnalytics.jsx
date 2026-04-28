@@ -63,14 +63,46 @@ export default function AdminAnalytics() {
   const ctaClicks = filtered.filter((e) => e.name === 'cta_click' || e.name === 'click').length;
   const formSubmits = filtered.filter((e) => e.name === 'form_submit' || e.name === 'inquiry_submit').length;
 
-  // 페이지별 / 채널별 / 디바이스 / 브라우저
+  // 페이지별 / 채널별 / 디바이스 / 브라우저 / 국가
   const topPages = tally(pageviews, (e) => e.path).slice(0, 10);
   const topReferrers = tally(pageviews, (e) => e.referrer || 'unknown').slice(0, 10);
   const deviceBreakdown = tally(pageviews, (e) => e.device);
   const browserBreakdown = tally(pageviews, (e) => e.browser);
   const osBreakdown = tally(pageviews, (e) => e.os);
+  const countryBreakdown = tally(pageviews, (e) => e.country || 'XX');
+  const timezoneBreakdown = tally(pageviews, (e) => e.timezone || '').filter(([k]) => k);
+  const langBreakdown = tally(pageviews, (e) => e.lang || '').filter(([k]) => k);
   const utmCampaigns = tally(filtered, (e) => e.utm_campaign).slice(0, 10);
   const utmSources = tally(filtered, (e) => e.utm_source).slice(0, 10);
+
+  // 시간대 / 요일 트래픽
+  const hourBuckets = Array.from({ length: 24 }, (_, h) => ({ h, n: 0 }));
+  const weekdayBuckets = Array.from({ length: 7 }, (_, d) => ({ d, n: 0 }));
+  for (const ev of pageviews) {
+    if (typeof ev.hour === 'number' && ev.hour >= 0 && ev.hour < 24) hourBuckets[ev.hour].n++;
+    if (typeof ev.weekday === 'number' && ev.weekday >= 0 && ev.weekday < 7) weekdayBuckets[ev.weekday].n++;
+  }
+  const maxHour = Math.max(1, ...hourBuckets.map((x) => x.n));
+  const maxWeekday = Math.max(1, ...weekdayBuckets.map((x) => x.n));
+  const WEEKDAY_LABEL = ['일', '월', '화', '수', '목', '금', '토'];
+
+  // 국가 코드 → 한국어 라벨 + 국기 이모지
+  const COUNTRY_LABEL = {
+    KR: '🇰🇷 한국', JP: '🇯🇵 일본', CN: '🇨🇳 중국', HK: '🇭🇰 홍콩', TW: '🇹🇼 대만',
+    SG: '🇸🇬 싱가포르', TH: '🇹🇭 태국', ID: '🇮🇩 인도네시아', PH: '🇵🇭 필리핀',
+    VN: '🇻🇳 베트남', MY: '🇲🇾 말레이시아', IN: '🇮🇳 인도', AE: '🇦🇪 UAE',
+    AU: '🇦🇺 호주', NZ: '🇳🇿 뉴질랜드',
+    US: '🇺🇸 미국', CA: '🇨🇦 캐나다', MX: '🇲🇽 멕시코', BR: '🇧🇷 브라질', AR: '🇦🇷 아르헨티나',
+    GB: '🇬🇧 영국', FR: '🇫🇷 프랑스', DE: '🇩🇪 독일', ES: '🇪🇸 스페인', IT: '🇮🇹 이탈리아',
+    NL: '🇳🇱 네덜란드', BE: '🇧🇪 벨기에', AT: '🇦🇹 오스트리아', SE: '🇸🇪 스웨덴',
+    NO: '🇳🇴 노르웨이', DK: '🇩🇰 덴마크', FI: '🇫🇮 핀란드', PL: '🇵🇱 폴란드',
+    CZ: '🇨🇿 체코', RU: '🇷🇺 러시아', TR: '🇹🇷 튀르키예', PT: '🇵🇹 포르투갈',
+    GR: '🇬🇷 그리스', CH: '🇨🇭 스위스', IE: '🇮🇪 아일랜드',
+    EG: '🇪🇬 이집트', ZA: '🇿🇦 남아공', NG: '🇳🇬 나이지리아',
+    Asia: '🌏 아시아 (기타)', EU: '🇪🇺 유럽 (기타)', AM: '🌎 미주 (기타)',
+    AF: '🌍 아프리카 (기타)', PC: '🌊 태평양 (기타)', XX: '🌐 미상',
+  };
+  const countryWithLabel = countryBreakdown.map(([k, n]) => [COUNTRY_LABEL[k] || `🌐 ${k}`, n]);
 
   // 일자별 트렌드 (windowDays 만큼)
   const trend = useMemo(() => {
@@ -100,6 +132,10 @@ export default function AdminAnalytics() {
       { key: 'browser', label: '브라우저' },
       { key: 'os', label: 'OS' },
       { key: 'lang', label: '언어' },
+      { key: 'country', label: '국가코드' },
+      { key: 'timezone', label: '타임존' },
+      { key: 'hour', label: '시간(0-23)' },
+      { key: 'weekday', label: '요일(0=일)' },
       { key: 'referrer', label: '유입경로' },
       { key: 'utm_source', label: 'UTM 소스' },
       { key: 'utm_medium', label: 'UTM 매체' },
@@ -166,6 +202,55 @@ export default function AdminAnalytics() {
             </div>
             {!pageviews.length && <p style={{ textAlign: 'center', color: '#8c867d', fontSize: 12, padding: '20px 0', margin: 0 }}>아직 페이지뷰가 없습니다. 사이트를 방문하면 자동으로 수집됩니다.</p>}
           </div>
+
+          {/* 시간대 / 요일별 트래픽 */}
+          <h3 className="admin-section-title">트래픽 시간대 / 요일</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 22 }}>
+            {/* 시간대 24개 */}
+            <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 16 }}>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 12 }}>시간대 (0~23시) 페이지뷰</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 110 }}>
+                {hourBuckets.map(({ h, n }) => (
+                  <div key={h} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                    <span style={{ fontSize: 9.5, color: '#5a534b' }}>{n || ''}</span>
+                    <div style={{ width: '100%', background: '#231815', height: Math.max(2, (n / maxHour) * 80) + 'px', borderRadius: 1.5 }} title={`${h}시: ${n}회`} />
+                    <span style={{ fontSize: 9, color: '#b9b5ae' }}>{h % 3 === 0 ? h : ''}</span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: '#8c867d', margin: '8px 0 0' }}>
+                💡 가장 트래픽이 높은 시간대에 마케팅 메일/푸시 발송 시 효과적입니다.
+              </p>
+            </div>
+            {/* 요일 7개 */}
+            <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 16 }}>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 12 }}>요일별 페이지뷰</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 110 }}>
+                {weekdayBuckets.map(({ d, n }) => (
+                  <div key={d} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                    <span style={{ fontSize: 11, color: '#5a534b' }}>{n || ''}</span>
+                    <div style={{ width: '100%', background: d === 0 || d === 6 ? '#b87333' : '#231815', height: Math.max(2, (n / maxWeekday) * 80) + 'px', borderRadius: 1.5 }} />
+                    <span style={{ fontSize: 11, color: d === 0 || d === 6 ? '#b87333' : '#5a534b', fontWeight: 500 }}>{WEEKDAY_LABEL[d]}</span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: '#8c867d', margin: '8px 0 0' }}>
+                주말은 구리색으로 표시. 평일/주말 패턴 비교에 활용.
+              </p>
+            </div>
+          </div>
+
+          {/* 국가 / 타임존 / 언어 */}
+          <h3 className="admin-section-title">접속 국가 (타임존 기반 추정)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 22 }}>
+            <RankCard title="국가 분포" items={countryWithLabel} emptyLabel="국가 데이터 없음" />
+            <RankCard title="타임존 (정확값)" items={timezoneBreakdown} emptyLabel="타임존 데이터 없음" />
+            <RankCard title="브라우저 언어" items={langBreakdown} emptyLabel="언어 데이터 없음" />
+          </div>
+          <p style={{ fontSize: 11, color: '#8c867d', marginTop: -10, marginBottom: 18, lineHeight: 1.6 }}>
+            ⚠️ 국가 추정은 사용자 브라우저의 IANA 타임존을 기반으로 합니다 (예: <code>Asia/Seoul → 🇰🇷 한국</code>).
+            VPN/시스템 설정에 따라 부정확할 수 있고, 정확한 IP geolocation이 필요하면 backend에 GeoIP 모듈 추가가 필요합니다.
+          </p>
 
           {/* 인기 페이지 + 유입경로 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 22 }}>

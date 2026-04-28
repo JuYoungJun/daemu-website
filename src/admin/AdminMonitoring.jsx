@@ -147,6 +147,51 @@ export default function AdminMonitoring() {
             </div>
           )}
 
+          {/* 보안 이상 징후 — 해킹/DDoS 의심 */}
+          {summary && (
+            <div style={{
+              background: summary.riskLevel === 'high' ? '#fff0ec' : summary.riskLevel === 'medium' ? '#fff8ec' : '#eef6ee',
+              border: '1px solid ' + (summary.riskLevel === 'high' ? '#f0c4c0' : summary.riskLevel === 'medium' ? '#f0e3c4' : '#cfe5cf'),
+              borderLeft: '3px solid ' + (summary.riskLevel === 'high' ? '#c0392b' : summary.riskLevel === 'medium' ? '#b87333' : '#2e7d32'),
+              padding: '14px 18px',
+              marginBottom: 18,
+              borderRadius: 4,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: summary.riskLevel === 'high' ? '#c0392b' : summary.riskLevel === 'medium' ? '#b87333' : '#2e7d32' }}>
+                  {summary.riskLevel === 'high' ? '🚨 보안 위험도 — 높음' : summary.riskLevel === 'medium' ? '⚠️ 보안 위험도 — 주의' : '🛡️ 보안 위험도 — 정상'}
+                </div>
+                <div style={{ fontSize: 11, color: '#8c867d' }}>
+                  최근 1시간 의심 IP <strong>{(summary.suspiciousIps1h || []).length}</strong>개 ·
+                  최근 5분 인증 실패 <strong>{summary.authFailures5m ?? 0}</strong>건 ·
+                  24h unique 실패 IP <strong>{summary.uniqueFailedIps24h ?? 0}</strong>개
+                </div>
+              </div>
+              {summary.riskLevel === 'high' && (
+                <p style={{ fontSize: 12, color: '#c0392b', margin: '6px 0 0', lineHeight: 1.6 }}>
+                  분산 무차별 대입 공격 또는 DDoS 의심. 카페24 운영자 패널에서 fail2ban 정책 강화 또는 ALLOWED_ORIGINS·rate limit 점검을 권장합니다.
+                </p>
+              )}
+              {summary.riskLevel === 'medium' && (
+                <p style={{ fontSize: 12, color: '#5a4a2a', margin: '6px 0 0', lineHeight: 1.6 }}>
+                  비정상 로그인 시도가 감지됩니다. 의심 IP 목록을 확인하고 필요시 차단 조치를 검토하세요.
+                </p>
+              )}
+              {(summary.suspiciousIps1h || []).length > 0 && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d7d4cf' }}>
+                  <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 6 }}>의심 IP (최근 1시간 인증 실패 3건+)</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {summary.suspiciousIps1h.slice(0, 8).map((s) => (
+                      <code key={s.ip} style={{ background: '#fff', padding: '4px 10px', border: '1px solid #d7d4cf', fontSize: 11, fontFamily: 'monospace' }}>
+                        {s.ip} <span style={{ color: '#c0392b' }}>×{s.count}</span>
+                      </code>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 2행 — 24시간 운영 통계 */}
           <h3 className="admin-section-title" style={{ marginTop: 14 }}>최근 24시간</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
