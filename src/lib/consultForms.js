@@ -6,11 +6,41 @@
 import { DB } from './db.js';
 import { sendAutoReply } from './email.js';
 import { api } from './api.js';
+import { formatPhone, normalizeEmail } from './inputFormat.js';
 
 export function installConsultFormHandler() {
   if (typeof document === 'undefined') return;
   if (window.__daemuConsultBound) return;
   window.__daemuConsultBound = true;
+
+  // 입력 시점 자동 포맷 — raw-page 의 <form data-consult-form> 안에 있는
+  // 전화·이메일 input 이 타이핑 도중 010-1234-5678 형태로 자동 정렬됨.
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t || !t.matches) return;
+    if (!t.closest('form[data-consult-form]')) return;
+    if (t.matches('input[type="tel"], input[name="phone"], input[type="text"][placeholder*="0000"], input[type="text"][placeholder*="010"]')) {
+      const formatted = formatPhone(t.value);
+      if (formatted !== t.value) {
+        const pos = t.selectionStart;
+        t.value = formatted;
+        try { t.setSelectionRange(formatted.length, formatted.length); } catch { /* ignore */ }
+      }
+    } else if (t.matches('input[type="email"], input[name="email"]')) {
+      // 이메일은 공백 즉시 제거 (보내는 알파벳·숫자 keystroke 는 그대로).
+      if (/\s/.test(t.value)) t.value = t.value.replace(/\s/g, '');
+    }
+  }, true);
+
+  // blur 시점 — 이메일 소문자 정규화.
+  document.addEventListener('blur', (e) => {
+    const t = e.target;
+    if (!t || !t.matches) return;
+    if (!t.closest('form[data-consult-form]')) return;
+    if (t.matches('input[type="email"], input[name="email"]')) {
+      t.value = normalizeEmail(t.value);
+    }
+  }, true);
 
   document.addEventListener('submit', async (e) => {
     const form = e.target.closest('form[data-consult-form]');

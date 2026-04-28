@@ -6,6 +6,7 @@ import { sendAutoReply, isEmailEnabled } from '../lib/email.js';
 import { api } from '../lib/api.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd, faqLd } from '../lib/seo.js';
+import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 
 const CONTACT_FAQS = [
   { q: '상담은 어떻게 신청하나요?', a: '본 페이지의 카테고리를 선택하고 폼을 작성해 주시면, 1–2 영업일 내 담당 매니저가 회신합니다.' },
@@ -93,7 +94,16 @@ export default function Contact() {
   });
 
   const isEtc = active === '기타 문의';
-  const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // 입력 정규화 — phone 은 010-1234-5678 자동 포맷, email 은 trim+lowercase.
+  // 그 외는 그대로 setState.
+  const update = (k) => (e) => {
+    const raw = e.target.value;
+    const v = k === 'phone' ? formatPhone(raw)
+            : k === 'email' ? raw.replace(/\s/g, '')
+            : raw;
+    setForm((f) => ({ ...f, [k]: v }));
+  };
+  const onEmailBlur = () => setForm((f) => ({ ...f, email: normalizeEmail(f.email) }));
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -203,8 +213,8 @@ export default function Contact() {
               {isEtc ? (
                 <div className="form-grid">
                   <div className="field full"><input type="text" placeholder="이름" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
-                  <div className="field"><input type="tel" inputMode="tel" placeholder="연락처(선택)" autoComplete="tel" value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} required /></div>
+                  <div className="field"><input type="tel" inputMode="numeric" placeholder="연락처 (예: 010-1234-5678)" autoComplete="tel" maxLength={13} value={form.phone} onChange={update('phone')} /></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
                   <div className="field full"><input type="text" placeholder="문의 제목" value={form.topic} onChange={update('topic')} required /></div>
                   <div className="field full"><textarea placeholder="자유롭게 문의 내용을 적어주세요" value={form.msg} onChange={update('msg')} required></textarea></div>
                   <ConsentRow consent={consent} setConsent={setConsent} />

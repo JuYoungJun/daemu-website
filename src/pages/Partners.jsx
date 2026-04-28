@@ -8,6 +8,7 @@ import { breadcrumbLd } from '../lib/seo.js';
 import { api } from '../lib/api.js';
 import PartnerPromotions from '../components/PartnerPromotions.jsx';
 import { validateCoupon, consumeCoupon, describeDiscount } from '../lib/coupons.js';
+import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 
 export default function Partners() {
   useFadeUp([]);
@@ -145,7 +146,14 @@ function LoginForm({ onLogin }) {
 function SignupForm({ onDone }) {
   const [form, setForm] = useState({ company:'', person:'', phone:'', email:'', type:'', message:'' });
   const [submitted, setSubmitted] = useState(false);
-  const u = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // phone 은 자동 dash 포맷, email 은 공백 제거. 기타는 그대로.
+  const u = (k) => (e) => {
+    const raw = e.target.value;
+    const v = k === 'phone' ? formatPhone(raw)
+            : k === 'email' ? raw.replace(/\s/g, '')
+            : raw;
+    setForm((f) => ({ ...f, [k]: v }));
+  };
 
   const submit = (e) => {
     e.preventDefault();

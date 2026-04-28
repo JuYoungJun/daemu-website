@@ -20,6 +20,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { PartnerBrandLogoImg } from '../components/PartnerBrandLogo.jsx';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
+import { ensureHttps } from '../lib/inputFormat.js';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
@@ -263,7 +264,9 @@ function BrandEditor({ data, onClose, onSave }) {
             )}
           </Field>
           <Field label="파트너사 링크 URL (선택)">
-            <input type="url" value={form.url} onChange={set('url')} placeholder="https://example.com" />
+            <input type="url" value={form.url} onChange={set('url')}
+              onBlur={(e) => setForm((f) => ({ ...f, url: ensureHttps(e.target.value) }))}
+              placeholder="https://example.com (https:// 자동 부착)" />
           </Field>
           <Field label="노출 순서">
             <input type="number" value={form.order} onChange={set('order')} min={1} max={999} />

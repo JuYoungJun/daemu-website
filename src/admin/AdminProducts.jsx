@@ -22,6 +22,7 @@ import { safeMediaUrl } from '../lib/safe.js';
 import ProductThumb from './ProductThumb.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
+import { formatCurrencyTyping, unformatNumber } from '../lib/inputFormat.js';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -340,11 +341,17 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
             </label>
             <label className="adm-inline-field">
               <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>단가 (원)</span>
-              <input type="number" min="0" value={form.price} onChange={setNum('price')} />
+              <input type="text" inputMode="numeric"
+                value={formatCurrencyTyping(form.price)}
+                onChange={(e) => setForm((f) => ({ ...f, price: unformatNumber(e.target.value) }))}
+                placeholder="예: 1,500" />
             </label>
             <label className="adm-inline-field">
               <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>재고</span>
-              <input type="number" min="0" value={form.stock} onChange={setNum('stock')} />
+              <input type="text" inputMode="numeric"
+                value={formatCurrencyTyping(form.stock)}
+                onChange={(e) => setForm((f) => ({ ...f, stock: unformatNumber(e.target.value) }))}
+                placeholder="예: 100" />
             </label>
           </div>
           <label className="adm-inline-field">

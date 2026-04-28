@@ -21,6 +21,7 @@ import { DB } from '../lib/db.js';
 import { sendAdminReply, isEmailEnabled } from '../lib/email.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
+import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -314,7 +315,13 @@ function InquiryEditor({ data, onClose, onSave }) {
     msg: data?.msg || '',
     reply: data?.reply || '',
   });
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    const raw = e.target.value;
+    const v = k === 'phone' ? formatPhone(raw)
+            : k === 'email' ? raw.replace(/\s/g, '')
+            : raw;
+    setForm((f) => ({ ...f, [k]: v }));
+  };
 
   return (
     <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -325,8 +332,8 @@ function InquiryEditor({ data, onClose, onSave }) {
         </div>
         <div style={{ display: 'grid', gap: 10 }}>
           <Field label="이름"><input type="text" value={form.name} onChange={set('name')} required /></Field>
-          <Field label="연락처"><input type="tel" value={form.phone} onChange={set('phone')} /></Field>
-          <Field label="이메일"><input type="email" value={form.email} onChange={set('email')} /></Field>
+          <Field label="연락처"><input type="tel" inputMode="numeric" maxLength={13} placeholder="010-1234-5678" value={form.phone} onChange={set('phone')} /></Field>
+          <Field label="이메일"><input type="email" inputMode="email" value={form.email} onChange={set('email')} onBlur={() => setForm((f) => ({ ...f, email: normalizeEmail(f.email) }))} /></Field>
           <Field label="카테고리">
             <select value={form.type} onChange={set('type')}>
               {TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}

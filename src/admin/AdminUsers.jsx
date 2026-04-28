@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
+import { normalizeEmail } from '../lib/inputFormat.js';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_DESC = {
@@ -110,7 +111,9 @@ export default function AdminUsers() {
           <h3 className="admin-section-title">신규 계정 추가</h3>
           <form onSubmit={onCreate} className="adm-user-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 32 }}>
             <input type="email" required placeholder="이메일" autoComplete="off"
-              value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s/g, '') })}
+              onBlur={(e) => setForm({ ...form, email: normalizeEmail(e.target.value) })}
               style={inputStyle} />
             <input type="text" placeholder="이름" autoComplete="off"
               value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
