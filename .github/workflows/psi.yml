@@ -1,0 +1,78 @@
+name: PageSpeed Insights
+
+on:
+  schedule:
+    # Daily 09:00 KST = 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  psi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run PSI on key routes
+        env:
+          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
+        run: |
+          set -e
+          BASE="https://juyoungjun.github.io/daemu-website"
+          mkdir -p psi-reports
+
+          echo "=== Mobile (PSI) ==="
+          for path in "" "/about" "/service" "/process" "/contact" "/work"; do
+            URL="${BASE}${path}"
+            SAFE=$(echo "${path:-home}" | sed 's|/|_|g')
+            echo "→ $URL"
+            curl -fsSL -o "psi-reports/mobile${SAFE}.json" \
+              "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse;print(urllib.parse.quote('${URL}'))")&strategy=MOBILE&category=PERFORMANCE&category=ACCESSIBILITY&category=SEO&category=BEST_PRACTICES&key=${PSI_API_KEY}"
+          done
+
+          echo "=== Desktop (PSI) ==="
+          for path in "" "/about" "/service" "/contact"; do
+            URL="${BASE}${path}"
+            SAFE=$(echo "${path:-home}" | sed 's|/|_|g')
+            echo "→ $URL"
+            curl -fsSL -o "psi-reports/desktop${SAFE}.json" \
+              "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=$(python3 -c "import urllib.parse;print(urllib.parse.quote('${URL}'))")&strategy=DESKTOP&category=PERFORMANCE&category=ACCESSIBILITY&category=SEO&category=BEST_PRACTICES&key=${PSI_API_KEY}"
+          done
+
+      - name: Summarize scores
+        run: |
+          python3 << 'PYEOF'
+          import json, glob, os
+          rows = []
+          for path in sorted(glob.glob("psi-reports/*.json")):
+              base = os.path.basename(path).replace(".json","")
+              try:
+                  data = json.load(open(path))
+                  cats = data.get("lighthouseResult", {}).get("categories", {})
+                  rows.append({
+                      "page": base,
+                      "perf": cats.get("performance",{}).get("score"),
+                      "a11y": cats.get("accessibility",{}).get("score"),
+                      "bp":   cats.get("best-practices",{}).get("score"),
+                      "seo":  cats.get("seo",{}).get("score"),
+                  })
+              except Exception as e:
+                  rows.append({"page": base, "error": str(e)})
+
+          print("\n| Route | Perf | A11y | BP | SEO |")
+          print("|---|---|---|---|---|")
+          for r in rows:
+              if "error" in r:
+                  print(f"| {r['page']} | ERROR: {r['error'][:40]} |")
+                  continue
+              fmt = lambda v: f"{int(v*100)}" if isinstance(v,(int,float)) else "-"
+              print(f"| {r['page']} | {fmt(r['perf'])} | {fmt(r['a11y'])} | {fmt(r['bp'])} | {fmt(r['seo'])} |")
+          PYEOF
+
+      - name: Upload PSI reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: psi-reports
+          path: psi-reports/
+          retention-days: 30
