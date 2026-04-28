@@ -21,6 +21,7 @@ import { ensureSeededProducts, getActiveCatalog } from '../lib/partnerProducts.j
 import { safeMediaUrl } from '../lib/safe.js';
 import ProductThumb from './ProductThumb.jsx';
 import { downloadCSV } from '../lib/csv.js';
+import { siteAlert, siteConfirm } from '../lib/dialog.js';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -67,11 +68,13 @@ export default function AdminProducts() {
     setCatalog(next);
     setEditingCategory(null);
   };
-  const deleteCategory = (idx) => {
+  const deleteCategory = async (idx) => {
     const cat = catalog[idx];
     const itemCount = (cat.items || []).length;
-    if (itemCount && !confirm(`"${cat.category}" 카테고리에 ${itemCount}개 상품이 있습니다. 카테고리와 상품 모두 삭제할까요?`)) return;
-    if (!itemCount && !confirm(`"${cat.category}" 카테고리를 삭제할까요?`)) return;
+    const msg = itemCount
+      ? `"${cat.category}" 카테고리에 ${itemCount}개 상품이 있습니다. 카테고리와 상품 모두 삭제할까요?`
+      : `"${cat.category}" 카테고리를 삭제할까요?`;
+    if (!(await siteConfirm(msg))) return;
     const next = catalog.filter((_, i) => i !== idx);
     saveCatalog(next);
     setCatalog(next);
@@ -79,13 +82,13 @@ export default function AdminProducts() {
 
   // -------- 상품 --------
   const saveProduct = (catIdx, item, originalSku) => {
-    if (!item.sku?.trim()) { alert('SKU(상품 코드)를 입력하세요.'); return; }
-    if (!item.name?.trim()) { alert('상품명을 입력하세요.'); return; }
+    if (!item.sku?.trim()) { siteAlert('SKU(상품 코드)를 입력하세요.'); return; }
+    if (!item.name?.trim()) { siteAlert('상품명을 입력하세요.'); return; }
     // 다른 카테고리의 SKU 중복 검사
     const dup = catalog.some((c, ci) =>
       (c.items || []).some((x) => x.sku === item.sku && (ci !== catIdx || x.sku !== originalSku))
     );
-    if (dup) { alert('이미 사용 중인 SKU 입니다. 다른 코드를 입력하세요.'); return; }
+    if (dup) { siteAlert('이미 사용 중인 SKU 입니다. 다른 코드를 입력하세요.'); return; }
 
     const next = catalog.map((c, i) => {
       if (i !== catIdx) return c;
@@ -109,8 +112,8 @@ export default function AdminProducts() {
     setCatalog(next);
     setEditingProduct(null);
   };
-  const deleteProduct = (catIdx, sku) => {
-    if (!confirm(`상품 "${sku}"를 삭제할까요?`)) return;
+  const deleteProduct = async (catIdx, sku) => {
+    if (!(await siteConfirm(`상품 "${sku}"를 삭제할까요?`))) return;
     const next = catalog.map((c, i) =>
       i !== catIdx ? c : { ...c, items: (c.items || []).filter((x) => x.sku !== sku) }
     );
@@ -309,7 +312,7 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
       const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
       if (url) setForm((f) => ({ ...f, image: url }));
     } else {
-      alert('미디어 라이브러리를 불러올 수 없습니다.');
+      siteAlert('미디어 라이브러리를 불러올 수 없습니다.');
     }
   };
 

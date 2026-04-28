@@ -20,6 +20,7 @@ import { api } from '../lib/api.js';
 import { DB } from '../lib/db.js';
 import { sendAdminReply, isEmailEnabled } from '../lib/email.js';
 import { downloadCSV } from '../lib/csv.js';
+import { siteAlert, siteConfirm } from '../lib/dialog.js';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -115,7 +116,7 @@ export default function AdminInquiries() {
         replied: status === '답변완료',
       });
       if (!r.ok) {
-        alert('백엔드 동기화 실패: ' + (r.error || ''));
+        siteAlert('백엔드 동기화 실패: ' + (r.error || ''));
         setItems((prev) => prev.map((x) => x.id === id ? { ...x, status: target.status } : x));
         DB.update(STORAGE_KEY, id, { status: target.status });
         return;
@@ -123,7 +124,7 @@ export default function AdminInquiries() {
     }
 
     if (status === '답변완료' && target.email && target.reply && target.reply.trim() && isEmailEnabled()) {
-      if (confirm('회신 메모 내용을 ' + target.email + ' 로 발송할까요?')) {
+      if (await siteConfirm('회신 메모 내용을 ' + target.email + ' 로 발송할까요?')) {
         try {
           const r = await sendAdminReply({
             to_email: target.email,
@@ -131,23 +132,23 @@ export default function AdminInquiries() {
             subject: '[대무] 문의 회신',
             body: target.reply,
           });
-          alert(r.ok ? '회신 메일 발송 완료' : '메일 발송 실패: ' + (r.error || r.reason || ''));
+          siteAlert(r.ok ? '회신 메일 발송 완료' : '메일 발송 실패: ' + (r.error || r.reason || ''));
         } catch (err) {
-          alert('메일 발송 실패: ' + err);
+          siteAlert('메일 발송 실패: ' + err);
         }
       }
     }
   };
 
   const remove = async (id) => {
-    if (!confirm('이 문의를 삭제하시겠습니까?')) return;
+    if (!(await siteConfirm('이 문의를 삭제하시겠습니까?'))) return;
     const target = items.find((x) => x.id === id);
     if (!target) return;
 
     if (target._backend && api.isConfigured()) {
       const r = await api.del('/api/inquiries/' + id);
       if (!r.ok && r.status !== 204) {
-        alert('백엔드 삭제 실패: ' + (r.error || ''));
+        siteAlert('백엔드 삭제 실패: ' + (r.error || ''));
         return;
       }
     }
@@ -156,7 +157,7 @@ export default function AdminInquiries() {
   };
 
   const saveEdit = async (form) => {
-    if (!form.name?.trim()) { alert('이름을 입력하세요.'); return; }
+    if (!form.name?.trim()) { siteAlert('이름을 입력하세요.'); return; }
     if (form.id) {
       const target = items.find((x) => x.id === form.id);
       const next = { ...target, ...form };
@@ -168,7 +169,7 @@ export default function AdminInquiries() {
           note: form.reply,
           replied: form.status === '답변완료',
         });
-        if (!r.ok) alert('백엔드 동기화 실패: ' + (r.error || ''));
+        if (!r.ok) siteAlert('백엔드 동기화 실패: ' + (r.error || ''));
       }
     } else {
       const newRow = DB.add(STORAGE_KEY, form);

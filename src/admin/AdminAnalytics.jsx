@@ -20,6 +20,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { loadAllEvents, clearAllEvents } from '../lib/marketingAnalytics.js';
 import { downloadCSV } from '../lib/csv.js';
+import { siteConfirm } from '../lib/dialog.js';
 
 function tally(events, keyFn) {
   const m = new Map();
@@ -163,8 +164,8 @@ export default function AdminAnalytics() {
     ]);
   };
 
-  const clearAll = () => {
-    if (!confirm('수집된 이벤트를 모두 삭제하시겠습니까? 되돌릴 수 없습니다.')) return;
+  const clearAll = async () => {
+    if (!(await siteConfirm('수집된 이벤트를 모두 삭제하시겠습니까? 되돌릴 수 없습니다.'))) return;
     clearAllEvents();
     setEvents([]);
   };

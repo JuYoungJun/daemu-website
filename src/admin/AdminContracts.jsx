@@ -13,6 +13,7 @@ import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { downloadCSV } from '../lib/csv.js';
+import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 
 const KIND_LABEL = { contract: '계약서', purchase_order: '발주서' };
 const STATUS_LABEL = {
@@ -474,7 +475,7 @@ function TemplatesPane({ templates, onChange, isAdmin }) {
               <div style={{ marginTop: 12, display: 'flex', gap: 6 }}>
                 <button type="button" className="adm-btn-sm" onClick={() => setEditing(t)}>수정</button>
                 <button type="button" className="adm-btn-sm danger" onClick={async () => {
-                  if (!confirm('이 템플릿을 삭제할까요?')) return;
+                  if (!(await siteConfirm('이 템플릿을 삭제할까요?'))) return;
                   if (api.isConfigured()) {
                     await api.del('/api/document-templates/' + t.id);
                   } else {
@@ -964,14 +965,14 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
   useEffect(() => { load(); /* eslint-disable-line */ }, [docId]);
 
   const send = async () => {
-    if (!confirm('수신자에게 문서를 발송할까요?\n발송 후 서명 링크가 함께 전달됩니다.')) return;
+    if (!(await siteConfirm('수신자에게 문서를 발송할까요?\n발송 후 서명 링크가 함께 전달됩니다.'))) return;
     if (api.isConfigured()) {
       const r = await api.post('/api/documents/' + docId + '/send', { sign_required: true, extra_message: '' });
       if (r.ok) {
-        alert('발송 결과 — 성공: ' + r.sent + ', 실패: ' + r.failed + '\n서명 URL: ' + (r.sign_url || '(없음)'));
+        siteAlert('발송 결과 — 성공: ' + r.sent + ', 실패: ' + r.failed + '\n서명 URL: ' + (r.sign_url || '(없음)'));
         await load(); onChange();
       } else {
-        alert('발송 실패: ' + (r.error || ''));
+        siteAlert('발송 실패: ' + (r.error || ''));
       }
     } else {
       // Demo — mark as sent and create a fake token.
@@ -983,18 +984,18 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         list[idx].sign_token = 'demo-' + Math.random().toString(36).slice(2);
         list[idx].history = [...(list[idx].history || []), { ts: isoNow(), action: 'sent' }];
         localSet('documents', list);
-        alert('데모 모드 — 발송 시뮬레이션 완료. 서명 URL: ' + window.location.origin + '/sign/' + list[idx].sign_token);
+        siteAlert('데모 모드 — 발송 시뮬레이션 완료. 서명 URL: ' + window.location.origin + '/sign/' + list[idx].sign_token);
         await load(); onChange();
       }
     }
   };
 
   const cancel = async () => {
-    const reason = prompt('취소 사유를 입력하세요 (선택):', '') || '';
+    const reason = (await sitePrompt('취소 사유를 입력하세요 (선택):', '', { placeholder: '예: 클라이언트 요청' })) || '';
     if (api.isConfigured()) {
       const r = await api.post('/api/documents/' + docId + '/cancel', { reason });
       if (r.ok) { await load(); onChange(); }
-      else alert('취소 실패: ' + (r.error || ''));
+      else siteAlert('취소 실패: ' + (r.error || ''));
     } else {
       const list = localStore('documents', []);
       const idx = list.findIndex((x) => x.id === docId);
@@ -1010,7 +1011,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
   };
 
   const remove = async () => {
-    if (!confirm('이 문서를 삭제할까요? 복구할 수 없습니다.')) return;
+    if (!(await siteConfirm('이 문서를 삭제할까요? 복구할 수 없습니다.'))) return;
     if (api.isConfigured()) {
       await api.del('/api/documents/' + docId);
     } else {
@@ -1028,7 +1029,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
     // **"PDF로 저장"** (또는 "Save as PDF")로 선택하면 실제 PDF 파일이
     // 다운로드됩니다. 한국어 OS는 보통 "PDF로 저장"이라고 표기됩니다.
     const w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) { alert('팝업 차단으로 PDF 창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도해 주세요.'); return; }
+    if (!w) { siteAlert('팝업 차단으로 PDF 창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도해 주세요.'); return; }
 
     const wDoc = w.document;
     wDoc.documentElement.lang = 'ko';

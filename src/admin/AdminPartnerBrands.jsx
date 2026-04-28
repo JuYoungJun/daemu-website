@@ -19,6 +19,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { PartnerBrandLogoImg } from '../components/PartnerBrandLogo.jsx';
+import { siteAlert, siteConfirm } from '../lib/dialog.js';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
@@ -62,7 +63,7 @@ export default function AdminPartnerBrands() {
   const activeCount = brands.filter((b) => b.active).length;
 
   const upsert = (form) => {
-    if (!form.name?.trim()) { alert('파트너사 이름을 입력하세요.'); return; }
+    if (!form.name?.trim()) { siteAlert('파트너사 이름을 입력하세요.'); return; }
     const next = [...brands];
     if (form.id) {
       const i = next.findIndex((x) => x.id === form.id);
@@ -76,8 +77,8 @@ export default function AdminPartnerBrands() {
     setCreating(false);
   };
 
-  const remove = (id) => {
-    if (!confirm('이 파트너사를 삭제하시겠습니까?')) return;
+  const remove = async (id) => {
+    if (!(await siteConfirm('이 파트너사를 삭제하시겠습니까?'))) return;
     const next = brands.filter((x) => x.id !== id);
     setBrands(next);
     saveBrands(next);
@@ -226,7 +227,7 @@ function BrandEditor({ data, onClose, onSave }) {
 
   const pickLogo = async () => {
     if (!window.openMediaPicker) {
-      alert('미디어 라이브러리를 사용할 수 없습니다.');
+      siteAlert('미디어 라이브러리를 사용할 수 없습니다.');
       return;
     }
     const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AdminShell from '../components/AdminShell.jsx';
 import { Link } from 'react-router-dom';
 import { downloadCSV } from '../lib/csv.js';
+import { siteConfirm } from '../lib/dialog.js';
 
 const STATUS_LABEL = {
   simulated: '시뮬레이션',
@@ -36,8 +37,8 @@ export default function AdminOutbox() {
     return JSON.stringify(e).toLowerCase().includes(filter.toLowerCase());
   });
 
-  const clear = () => {
-    if (!confirm('Outbox 로그를 모두 지우시겠습니까? 실제 발송 이력에는 영향 없습니다.')) return;
+  const clear = async () => {
+    if (!(await siteConfirm('Outbox 로그를 모두 지우시겠습니까? 실제 발송 이력에는 영향 없습니다.'))) return;
     localStorage.removeItem('daemu_outbox');
     setLog([]);
   };

@@ -7,6 +7,7 @@ import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
 import TwoFactorPanel from './TwoFactorPanel.jsx';
 import EmailVerifyForm from './EmailVerifyForm.jsx';
+import { siteAlert } from '../lib/dialog.js';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -163,7 +164,7 @@ export default function AdminGate() {
               onDone={() => {
                 setMustChange(false);
                 setShowChange(false);
-                alert('비밀번호가 변경되었습니다.');
+                siteAlert('비밀번호가 변경되었습니다.');
               }}
             />
             {!mustChange && (

@@ -22,6 +22,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { api } from '../lib/api.js';
 import { isEmailEnabled } from '../lib/email.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
+import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -278,8 +279,8 @@ export default function AdminMailTemplates() {
   }, [templates, filter]);
 
   const upsert = (form) => {
-    if (!form.name?.trim()) { alert('템플릿 이름을 입력하세요.'); return; }
-    if (!form.subject?.trim()) { alert('메일 제목을 입력하세요.'); return; }
+    if (!form.name?.trim()) { siteAlert('템플릿 이름을 입력하세요.'); return; }
+    if (!form.subject?.trim()) { siteAlert('메일 제목을 입력하세요.'); return; }
     const next = [...templates];
     const now = new Date().toISOString();
     if (form.id) {
@@ -294,8 +295,9 @@ export default function AdminMailTemplates() {
     setCreating(false);
   };
 
-  const remove = (id) => {
-    if (!confirm('이 템플릿을 삭제하시겠습니까?')) return;
+  const remove = async (id) => {
+    const ok = await siteConfirm('이 템플릿을 삭제하시겠습니까?');
+    if (!ok) return;
     const next = templates.filter((x) => x.id !== id);
     setTemplates(next);
     saveTemplates(next);
@@ -411,6 +413,30 @@ export default function AdminMailTemplates() {
   );
 }
 
+// 메일 템플릿에서 자주 쓰이는 미리 정의된 변수 목록.
+// 운영자가 이 chip 을 누르면 본문 커서 위치에 {{변수명}} 이 자동 삽입됩니다.
+// 자동회신(/admin/mail) 의 변수 패널과 같은 사용성으로 통일.
+const COMMON_VARIABLES = [
+  { name: '이름',       label: '수신자 이름' },
+  { name: '이메일',     label: '수신자 이메일' },
+  { name: '전화',       label: '연락처' },
+  { name: '회사',       label: '회사/브랜드' },
+  { name: '발주번호',   label: '발주서/계약 번호' },
+  { name: '접수일',     label: '접수 일자' },
+  { name: '출고예정일', label: '출고 예정일' },
+  { name: '합계금액',   label: '합계 금액 (₩)' },
+  { name: '일시',       label: '미팅·이벤트 일시' },
+  { name: '장소',       label: '미팅·이벤트 장소' },
+  { name: '참석자',     label: '참석자 명단' },
+  { name: '안건',       label: '미팅 안건' },
+  { name: '이벤트명',   label: '이벤트/공지명' },
+  { name: '시작일',     label: '시작일' },
+  { name: '종료일',     label: '종료일' },
+  { name: '대상',       label: '대상 안내' },
+  { name: '혜택',       label: '혜택/내용' },
+  { name: '상세링크',   label: '상세 페이지 URL' },
+];
+
 function TemplateEditor({ data, onClose, onSave }) {
   const [form, setForm] = useState({
     id: data?.id,
@@ -421,15 +447,20 @@ function TemplateEditor({ data, onClose, onSave }) {
     active: data?.active !== false,
   });
   const [showLivePreview, setShowLivePreview] = useState(true);
+  const [activeField, setActiveField] = useState('body'); // 'subject' | 'body'
   const bodyRef = useRef(null);
+  const subjectRef = useRef(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const vars = extractVariables(form.subject + ' ' + form.body);
 
-  // 커서 위치에 마크다운 토큰 삽입.
-  const insertAtCursor = (insertion) => {
-    const ta = bodyRef.current;
+  // 활성 필드(제목/본문)의 커서 위치에 토큰 삽입.
+  // 변수 chip 은 제목·본문 어디든 마지막으로 포커스된 곳에 들어가게 함.
+  const insertAtCursor = (insertion, fieldOverride) => {
+    const field = fieldOverride || activeField;
+    const ta = field === 'subject' ? subjectRef.current : bodyRef.current;
+    const key = field === 'subject' ? 'subject' : 'body';
     if (!ta) {
-      setForm((f) => ({ ...f, body: (f.body || '') + insertion }));
+      setForm((f) => ({ ...f, [key]: (f[key] || '') + insertion }));
       return;
     }
     const start = ta.selectionStart || 0;
@@ -438,8 +469,7 @@ function TemplateEditor({ data, onClose, onSave }) {
     const before = value.slice(0, start);
     const after = value.slice(end);
     const newValue = before + insertion + after;
-    setForm((f) => ({ ...f, body: newValue }));
-    // 다음 tick 에 포커스/커서 위치 복원
+    setForm((f) => ({ ...f, [key]: newValue }));
     setTimeout(() => {
       try {
         ta.focus();
@@ -451,37 +481,42 @@ function TemplateEditor({ data, onClose, onSave }) {
 
   const onInsertImage = async () => {
     if (!window.openMediaPicker) {
-      alert('미디어 라이브러리를 사용할 수 없습니다.');
+      siteAlert('미디어 라이브러리를 사용할 수 없습니다.');
       return;
     }
     const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
     if (!url) return;
     const safe = safeMediaUrl(url);
     if (!safe) {
-      alert('선택한 이미지 URL 이 안전하지 않아 삽입을 취소했습니다.');
+      siteAlert('선택한 이미지 URL 이 안전하지 않아 삽입을 취소했습니다.');
       return;
     }
-    insertAtCursor(`\n![](${String(safe)})\n`);
+    insertAtCursor(`\n![](${String(safe)})\n`, 'body');
   };
 
-  const onInsertLink = () => {
-    const raw = prompt('링크 URL 을 입력하세요 (https://...)');
+  const onInsertLink = async () => {
+    const raw = await sitePrompt('링크 URL 을 입력하세요 (https://...)', '', { placeholder: 'https://daemu.kr/page', required: true });
     if (!raw) return;
     const safe = validateOutboundUrl(raw);
     if (!safe) {
-      alert('허용되지 않은 URL 입니다 (http/https/mailto/tel 만 가능).');
+      siteAlert('허용되지 않은 URL 입니다 (http/https/mailto/tel 만 가능).');
       return;
     }
-    const text = prompt('링크 텍스트 (눌렀을 때 보일 글자):', '자세히 보기') || '자세히 보기';
+    const text = (await sitePrompt('링크 텍스트 (눌렀을 때 보일 글자)', '자세히 보기', { placeholder: '예: 자세히 보기' })) || '자세히 보기';
     insertAtCursor(`[${text}](${String(safe)})`);
   };
 
-  const onInsertVariable = () => {
-    const name = prompt('변수 이름 (예: 이름, 발주번호, 합계금액)');
+  const onInsertCustomVariable = async () => {
+    const name = await sitePrompt('변수 이름을 입력하세요 (예: 직책, 첨부파일명)', '', { placeholder: '한글·영문 모두 가능', required: true });
     if (!name) return;
     const clean = String(name).trim().replace(/[\s{}]/g, '');
     if (!clean) return;
     insertAtCursor(`{{${clean}}}`);
+  };
+
+  // 미리 정의된 변수 chip 클릭 — 마지막으로 포커스된 필드에 삽입.
+  const onInsertCommonVariable = (varName) => {
+    insertAtCursor(`{{${varName}}}`);
   };
 
   return (
@@ -503,8 +538,43 @@ function TemplateEditor({ data, onClose, onSave }) {
             </Field>
           </div>
           <Field label="메일 제목">
-            <input type="text" value={form.subject} onChange={set('subject')} placeholder="예: [대무] {{이름}}님께 신메뉴 소식" required />
+            <input ref={subjectRef} type="text" value={form.subject} onChange={set('subject')}
+              onFocus={() => setActiveField('subject')}
+              placeholder="예: [대무] {{이름}}님께 신메뉴 소식" required />
           </Field>
+
+          {/* 변수 chip 패널 — 자동회신(/admin/mail) 과 같은 사용성.
+              마지막으로 포커스된 필드(제목/본문)에 클릭한 변수가 들어감. */}
+          <div style={{ background: '#f6f4f0', border: '1px solid #e6e3dd', padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
+              변수 (클릭하면 {activeField === 'subject' ? '제목' : '본문'} 의 커서 위치에 삽입됩니다)
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {COMMON_VARIABLES.map((v) => (
+                <button key={v.name} type="button"
+                  className="adm-mail-var-item"
+                  onClick={() => onInsertCommonVariable(v.name)}
+                  title={v.label}
+                  style={{
+                    display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start',
+                    background: '#fff', border: '1px solid #d7d4cf', padding: '4px 10px',
+                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                    transition: 'all .15s ease',
+                  }}>
+                  <code style={{ background: 'transparent', fontSize: 11.5, color: '#1f5e7c' }}>{`{{${v.name}}}`}</code>
+                  <span style={{ fontSize: 10.5, color: '#8c867d' }}>{v.label}</span>
+                </button>
+              ))}
+              <button type="button" className="adm-btn-sm" onClick={onInsertCustomVariable}
+                style={{ alignSelf: 'flex-start', height: 'auto', padding: '6px 10px' }}>
+                + 사용자 정의 변수
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#8c867d', marginTop: 8 }}>
+              발송 시 수신자 데이터의 같은 이름 필드 값으로 자동 치환됩니다. (수신자 데이터 미입력 시 자리표시자 그대로 발송)
+            </div>
+          </div>
+
           <div>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -512,9 +582,8 @@ function TemplateEditor({ data, onClose, onSave }) {
             }}>
               <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>본문</span>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                <button type="button" className="adm-btn-sm" onClick={onInsertImage}>+ 이미지</button>
-                <button type="button" className="adm-btn-sm" onClick={onInsertLink}>+ 링크</button>
-                <button type="button" className="adm-btn-sm" onClick={onInsertVariable}>+ 변수</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertImage}>+ 이미지 삽입</button>
+                <button type="button" className="adm-btn-sm" onClick={onInsertLink}>+ 링크 삽입</button>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#5a534b', marginLeft: 8 }}>
                   <input type="checkbox" checked={showLivePreview} onChange={(e) => setShowLivePreview(e.target.checked)} />
                   실시간 미리보기
@@ -522,12 +591,13 @@ function TemplateEditor({ data, onClose, onSave }) {
               </div>
             </div>
             <textarea ref={bodyRef} rows={14} value={form.body} onChange={set('body')}
-              placeholder={'안녕하세요 {{이름}}님,\n\n대무가 새로 출시한 봄 메뉴를 소개드립니다.\n\n![](https://...)\n\n[자세히 보기](https://...)\n\n대무 드림'}
+              onFocus={() => setActiveField('body')}
+              placeholder={'안녕하세요 {{이름}}님,\n\n대무가 새로 출시한 봄 메뉴를 소개드립니다.\n\n(상단 변수 chip 으로 {{이름}}, {{발주번호}} 등을 삽입할 수 있습니다.)\n\n위 + 이미지 삽입 버튼으로 미디어 라이브러리에서 사진을 추가하세요.\n\n대무 드림'}
               style={{ fontFamily: 'inherit', lineHeight: 1.7, width: '100%' }} />
             <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
-              이미지 삽입: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>![](URL)</code>{' · '}
-              링크: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>[글자](URL)</code>{' · '}
-              변수: <code style={{ background: '#f6f4f0', padding: '1px 6px' }}>{`{{이름}}`}</code>
+              · 이미지: 위 <strong>+ 이미지 삽입</strong> → 라이브러리에서 선택<br/>
+              · 링크: 위 <strong>+ 링크 삽입</strong> → URL/텍스트 입력<br/>
+              · 변수: 위 변수 chip 클릭 또는 <strong>+ 사용자 정의 변수</strong>
             </div>
           </div>
 
@@ -647,9 +717,10 @@ function BulkSendPanel({ templates }) {
   }, [recipientsRaw]);
 
   const send = async () => {
-    if (!tpl) { alert('발송할 템플릿을 선택하세요.'); return; }
-    if (!recipients.length) { alert('수신자 이메일을 1명 이상 입력하세요. (한 줄에 하나)'); return; }
-    if (!confirm(`${recipients.length}명에게 "${tpl.name}" 템플릿으로 발송하시겠습니까?`)) return;
+    if (!tpl) { siteAlert('발송할 템플릿을 선택하세요.'); return; }
+    if (!recipients.length) { siteAlert('수신자 이메일을 1명 이상 입력하세요. (한 줄에 하나)'); return; }
+    const ok = await siteConfirm(`${recipients.length}명에게 "${tpl.name}" 템플릿으로 발송하시겠습니까?`);
+    if (!ok) return;
     setSending(true);
     setResult(null);
     try {

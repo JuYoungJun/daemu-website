@@ -3,6 +3,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 import { downloadCSV } from '../lib/csv.js';
+import { siteAlert, siteConfirm } from '../lib/dialog.js';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_DESC = {
@@ -58,7 +59,7 @@ export default function AdminUsers() {
     if (!isAdmin) return;
     const r = await api.patch(`/api/users/${id}`, patch);
     if (!r.ok) {
-      alert(r.error || '업데이트 실패');
+      siteAlert(r.error || '업데이트 실패');
       return;
     }
     await load();
@@ -66,10 +67,10 @@ export default function AdminUsers() {
 
   async function onDelete(id) {
     if (!isAdmin) return;
-    if (!confirm('이 계정을 삭제하시겠습니까?')) return;
+    if (!(await siteConfirm('이 계정을 삭제하시겠습니까?'))) return;
     const r = await api.del(`/api/users/${id}`);
     if (!r.ok) {
-      alert(r.error || '삭제 실패');
+      siteAlert(r.error || '삭제 실패');
       return;
     }
     await load();

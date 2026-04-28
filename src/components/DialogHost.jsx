@@ -1,32 +1,51 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-// Replaces window.alert / window.confirm with site-styled modals.
-// - alert(msg) → fire-and-forget, queued, OK button closes.
-// - confirm(msg) → returns a Promise<boolean> (async). For inline admin scripts
-//   that call sync confirm(), we keep a synchronous fallback to native.
-//   The siteConfirm helper exposes the async version for new code.
+// Replaces window.alert / confirm / prompt with site-styled modals.
+//
+// 동작 요약:
+//   alert(msg)              — fire-and-forget. window.alert 자동 override.
+//   window.siteAlert(msg)   — 동일.
+//   window.siteConfirm(msg) — Promise<boolean>. 새 코드는 await 로 사용.
+//   window.sitePrompt(msg,
+//                     def,
+//                     opts) — Promise<string|null>. 취소 시 null.
+//   window.siteToast(msg)   — 우하단 자동 사라짐.
+//
+// window.confirm 자체는 레거시 raw script(public/admin-*-page.js) 호환을
+// 위해 *native* 그대로 둡니다. React 측 새 코드는 siteConfirm 사용을 권장.
 export default function DialogHost() {
   const [queue, setQueue] = useState([]);
 
   useEffect(() => {
     const nativeAlert = window.alert.bind(window);
     const nativeConfirm = window.confirm.bind(window);
+    const nativePrompt = window.prompt ? window.prompt.bind(window) : null;
 
-    // Async alert (custom modal)
     window.alert = (msg) => {
       setQueue((q) => [...q, { type: 'alert', msg: String(msg ?? ''), id: rand() }]);
     };
 
-    // confirm() must remain synchronous for legacy admin inline scripts
-    // that use `if (confirm(...))`. So override is kept as native confirm.
-    // Code wanting async UX should use window.siteConfirm.
     window.confirm = (msg) => nativeConfirm(String(msg ?? ''));
 
     window.siteAlert = window.alert;
     window.siteConfirm = (msg) => new Promise((resolve) => {
       setQueue((q) => [...q, { type: 'confirm', msg: String(msg ?? ''), id: rand(), resolve }]);
     });
+
+    window.sitePrompt = (msg, defaultValue = '', opts = {}) => new Promise((resolve) => {
+      setQueue((q) => [...q, {
+        type: 'prompt',
+        msg: String(msg ?? ''),
+        defaultValue: String(defaultValue ?? ''),
+        placeholder: opts.placeholder ? String(opts.placeholder) : '',
+        inputType: opts.inputType || 'text',
+        required: !!opts.required,
+        id: rand(),
+        resolve,
+      }]);
+    });
+
     window.siteToast = (msg, opts = {}) => {
       const id = rand();
       setQueue((q) => [...q, { type: 'toast', msg: String(msg ?? ''), id, tone: opts.tone || 'default' }]);
@@ -36,8 +55,10 @@ export default function DialogHost() {
     return () => {
       window.alert = nativeAlert;
       window.confirm = nativeConfirm;
+      if (nativePrompt) window.prompt = nativePrompt;
       delete window.siteAlert;
       delete window.siteConfirm;
+      delete window.sitePrompt;
       delete window.siteToast;
     };
   }, []);
@@ -59,17 +80,25 @@ export default function DialogHost() {
   return createPortal(
     <>
       {top && (
-        <div className="site-dialog-overlay" onClick={() => top.type === 'alert' && close(top.id)}>
+        <div className="site-dialog-overlay"
+          onClick={() => top.type === 'alert' && close(top.id)}>
           <div className="site-dialog-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <p className="site-dialog-msg">{top.msg}</p>
-            <div className="site-dialog-actions">
-              {top.type === 'confirm' && (
-                <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={() => close(top.id, false)}>취소</button>
+            {top.type === 'prompt'
+              ? <PromptBody item={top} onSubmit={(v) => close(top.id, v)} onCancel={() => close(top.id, null)} />
+              : (
+                <>
+                  <p className="site-dialog-msg">{top.msg}</p>
+                  <div className="site-dialog-actions">
+                    {top.type === 'confirm' && (
+                      <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={() => close(top.id, false)}>취소</button>
+                    )}
+                    <button type="button" className="site-dialog-btn"
+                      onClick={() => close(top.id, top.type === 'confirm' ? true : undefined)} autoFocus>
+                      확인
+                    </button>
+                  </div>
+                </>
               )}
-              <button type="button" className="site-dialog-btn" onClick={() => close(top.id, top.type === 'confirm' ? true : undefined)} autoFocus>
-                확인
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -84,6 +113,41 @@ export default function DialogHost() {
       )}
     </>,
     document.body
+  );
+}
+
+function PromptBody({ item, onSubmit, onCancel }) {
+  const [value, setValue] = useState(item.defaultValue || '');
+  const inputRef = useRef(null);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { inputRef.current?.focus(); inputRef.current?.select(); } catch { /* ignore */ }
+    }, 30);
+    return () => clearTimeout(t);
+  }, []);
+  const submit = (e) => {
+    e?.preventDefault?.();
+    if (item.required && !value.trim()) return;
+    onSubmit(value);
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="site-dialog-msg">{item.msg}</p>
+      <input
+        ref={inputRef}
+        type={item.inputType}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={item.placeholder || ''}
+        required={item.required}
+        className="site-dialog-input"
+        onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
+      />
+      <div className="site-dialog-actions">
+        <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={onCancel}>취소</button>
+        <button type="submit" className="site-dialog-btn">확인</button>
+      </div>
+    </form>
   );
 }
 
