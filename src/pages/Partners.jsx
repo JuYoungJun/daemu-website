@@ -6,6 +6,7 @@ import { DB } from '../lib/db.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd } from '../lib/seo.js';
 import { api } from '../lib/api.js';
+import PartnerPromotions from '../components/PartnerPromotions.jsx';
 
 export default function Partners() {
   useFadeUp([]);
@@ -250,6 +251,9 @@ function PartnerPortal({ partner, onLogout }) {
           <button type="button" className="btn" onClick={onLogout}>로그아웃</button>
         </div>
 
+        {/* 관리자가 등록한 공지/이벤트/쿠폰/프로모션 — 모든 탭에서 상단에 노출 */}
+        <PartnerPromotions />
+
         <div style={{display:'flex',gap:32,borderBottom:'1px solid #e6e3dd',marginBottom:36,flexWrap:'wrap'}}>
           {[['shop','상품 발주'],['history','발주 이력'],['account','계정 / 비밀번호']].map(([k,l]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
@@ -360,27 +364,75 @@ function Shop({ partner, onSubmitted }) {
             검색 결과가 없습니다. 다른 키워드로 시도해 주세요.
           </p>
         ) : filteredCatalog.map((cat) => (
-          <div key={cat.category} style={{marginBottom:36}}>
+          <div key={cat.category} style={{marginBottom:40}}>
             <h3 style={{fontSize:11,letterSpacing:'.18em',textTransform:'uppercase',color:'#8c867d',margin:'0 0 14px',fontWeight:500}}>{cat.category} <span style={{color:'#b9b5ae',marginLeft:6}}>· {cat.items.length}개</span></h3>
-            <div style={{borderTop:'1px solid #d7d4cf'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
               {cat.items.map((p) => (
-                <div key={p.sku} style={{display:'grid',gridTemplateColumns:'1fr 90px 110px 120px',gap:12,alignItems:'center',padding:'18px 0',borderBottom:'1px solid #e6e3dd'}}>
-                  <div>
-                    <div style={{fontSize:14,color:'#222',fontWeight:500}}>{p.name}</div>
-                    <div style={{fontSize:11,color:'#8c867d',marginTop:2,letterSpacing:'.04em'}}>{p.sku} · {p.unit}</div>
+                <article key={p.sku}
+                  style={{
+                    background:'#fff',
+                    border:'1px solid #e6e3dd',
+                    borderRadius:4,
+                    overflow:'hidden',
+                    display:'flex',
+                    flexDirection:'column',
+                    transition:'border-color .18s ease, transform .18s ease, box-shadow .18s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor='#2a2724'; e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 22px rgba(35,24,21,.08)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor='#e6e3dd'; e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='none'; }}>
+                  {/* 이미지 영역 — 사진 자산이 있으면 사진, 없으면 카테고리 색 + emoji */}
+                  <div style={{
+                    position:'relative',
+                    height:140,
+                    background: p.image ? `url(${p.image}) center / cover no-repeat` : (cat.accent || '#f6f4f0'),
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                  }}>
+                    {!p.image && (
+                      <span style={{fontSize:54,filter:'grayscale(.1) saturate(1.1)'}}>{p.emoji || '📦'}</span>
+                    )}
+                    <span style={{
+                      position:'absolute',top:10,right:10,
+                      fontSize:10,letterSpacing:'.08em',
+                      padding:'3px 8px',
+                      background:'rgba(255,255,255,.92)',
+                      color:'#5a534b',
+                      borderRadius:3,
+                      fontFamily:'monospace',
+                    }}>{p.sku}</span>
                   </div>
-                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:18,color:'#111'}}>{p.price.toLocaleString('ko')}<span style={{fontSize:11,marginLeft:4,color:'#6f6b68',fontFamily:'inherit',fontStyle:'normal'}}>원</span></div>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <button type="button" onClick={() => addToCart(p.sku, -1)} style={qtyBtnStyle}>−</button>
-                    <input type="number" min="0" value={cart[p.sku] || 0} onChange={(e) => setQty(p.sku, e.target.value)}
-                      style={{width:42,padding:'4px 0',textAlign:'center',border:'1px solid #d7d4cf',background:'#fff',fontSize:13,fontFamily:'inherit'}} />
-                    <button type="button" onClick={() => addToCart(p.sku, 1)} style={qtyBtnStyle}>+</button>
+
+                  {/* 본문 */}
+                  <div style={{padding:14,display:'flex',flexDirection:'column',gap:6,flex:1}}>
+                    <div style={{fontSize:14,color:'#231815',fontWeight:500,lineHeight:1.4}}>{p.name}</div>
+                    {p.desc && <div style={{fontSize:12,color:'#6f6b68',lineHeight:1.55}}>{p.desc}</div>}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:6}}>
+                      <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.04em'}}>{p.unit}</span>
+                      <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:20,color:'#111'}}>
+                        {p.price.toLocaleString('ko')}<span style={{fontSize:11,marginLeft:4,color:'#6f6b68',fontFamily:'inherit',fontStyle:'normal'}}>원</span>
+                      </span>
+                    </div>
                   </div>
-                  <button type="button" onClick={() => addToCart(p.sku, 1)} className="adm-btn-sm"
-                    style={{padding:'6px 12px',fontSize:11,border:'1px solid #b9b5ae',background:'transparent',cursor:'pointer',justifySelf:'end'}}>
-                    + 담기
-                  </button>
-                </div>
+
+                  {/* 수량 + 담기 */}
+                  <div style={{
+                    display:'grid',gridTemplateColumns:'1fr auto',gap:8,
+                    padding:'10px 14px',
+                    borderTop:'1px solid #f0ede7',background:'#fdfcfa',alignItems:'center',
+                  }}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,justifyContent:'center'}}>
+                      <button type="button" onClick={() => addToCart(p.sku, -1)} style={qtyBtnStyle}>−</button>
+                      <input type="number" min="0" value={cart[p.sku] || 0} onChange={(e) => setQty(p.sku, e.target.value)}
+                        style={{width:50,padding:'4px 0',textAlign:'center',border:'1px solid #d7d4cf',background:'#fff',fontSize:13,fontFamily:'inherit'}} />
+                      <button type="button" onClick={() => addToCart(p.sku, 1)} style={qtyBtnStyle}>+</button>
+                    </div>
+                    <button type="button" onClick={() => addToCart(p.sku, 1)} className="btn"
+                      style={{padding:'8px 16px',fontSize:12,minWidth:80}}>
+                      + 담기
+                    </button>
+                  </div>
+                </article>
               ))}
             </div>
           </div>
@@ -411,7 +463,8 @@ function Shop({ partner, onSubmitted }) {
               <span style={{fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase'}}>합계</span>
               <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:24,color:'#111'}}>{total.toLocaleString('ko')}원</span>
             </div>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="배송 메모, 요청사항 (선택)" rows={3}
+            <textarea value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="배송 메모, 요청사항, 쿠폰 코드 등 (선택). 예: COUPON: WELCOME10" rows={3}
               style={{width:'100%',padding:10,fontFamily:'inherit',fontSize:12,border:'1px solid #d7d4cf',background:'#fff',marginBottom:12,resize:'vertical',boxSizing:'border-box'}} />
             <button type="button" onClick={submit} className="btn" style={{width:'100%'}}>발주 제출</button>
           </>

@@ -1265,3 +1265,25 @@
   }
 }
 
+
+/* Inline form fields used by AdminInquiries / AdminContracts editor modals */
+.adm-inline-field input,
+.adm-inline-field select,
+.adm-inline-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #d7d4cf;
+  background: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  color: #2a2724;
+  resize: vertical;
+}
+.adm-inline-field input:focus,
+.adm-inline-field select:focus,
+.adm-inline-field textarea:focus {
+  outline: none;
+  border-color: #2a2724;
+}
+
