@@ -113,11 +113,57 @@ function installRuntimeListeners() {
   });
 }
 
+// 사이트 전체 핵심 GET 엔드포인트 — 1분 주기로 probe 해 가용성/지연을 본다.
+// 모든 항목은 idempotent 한 read-only 라우트만. probe 자체로 데이터가 변하지
+// 않도록 mutating 라우트(POST/DELETE/PATCH)는 절대 포함하지 않는다.
+const API_PROBE_TARGETS = [
+  { key: 'health',         path: '/api/health',                  label: '헬스 체크',       group: 'core',     publicProbe: true },
+  { key: 'summary',        path: '/api/monitoring/summary',      label: '운영 요약',       group: 'core' },
+  { key: 'inquiries',      path: '/api/inquiries?limit=1',       label: '문의',            group: 'business' },
+  { key: 'users',          path: '/api/users?limit=1',           label: '사용자',          group: 'business' },
+  { key: 'contracts',      path: '/api/contracts?limit=1',       label: '계약/PO',         group: 'business' },
+  { key: 'short-links',    path: '/api/short-links?limit=1',     label: '단축 링크',       group: 'business' },
+  { key: 'partner-brands', path: '/api/partner-brands',          label: '파트너 브랜드',   group: 'content' },
+  { key: 'products',       path: '/api/products',                label: '상품',            group: 'content' },
+  { key: 'works',          path: '/api/works',                   label: '작업 사례',       group: 'content' },
+  { key: 'popups',         path: '/api/popups',                  label: '팝업',            group: 'content' },
+  { key: 'newsletter',     path: '/api/newsletter/subscribers?limit=1', label: '뉴스레터', group: 'content' },
+  { key: 'audit-logs',     path: '/api/audit-logs?limit=1',      label: '감사 로그',       group: 'security' },
+];
+const PROBE_GROUP_LABEL = {
+  core:     '코어',
+  business: '비즈니스',
+  content:  '콘텐츠',
+  security: '보안',
+};
+// 200 ms 미만 = 정상, 1 s 미만 = 느림, 그 이상 = 문제.
+function probeColor(p) {
+  if (!p) return '#8c867d';
+  if (p.error || (p.status && p.status >= 500)) return '#c0392b';
+  if (p.status === 401 || p.status === 403) return '#b87333';  // auth required — page-level concern
+  if (p.status && p.status >= 400) return '#b87333';
+  if (p.latency == null) return '#6f6b68';
+  if (p.latency < 200) return '#2e7d32';
+  if (p.latency < 1000) return '#b87333';
+  return '#c0392b';
+}
+function probeLabel(p) {
+  if (!p) return '—';
+  if (p.error) return 'ERR';
+  if (p.status === 401 || p.status === 403) return 'AUTH';
+  if (p.status && p.status >= 400) return String(p.status);
+  if (p.latency == null) return '—';
+  return p.latency + ' ms';
+}
+
 export default function AdminMonitoring() {
   const [outbox, setOutbox] = useState(() => loadOutbox());
   const [errors, setErrors] = useState(() => loadRuntimeErrors());
   const [health, setHealth] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [probeResults, setProbeResults] = useState({});  // { key: { status, latency, error, ts } }
+  const [probeRunning, setProbeRunning] = useState(false);
+  const [probeLastRun, setProbeLastRun] = useState(null);
 
   useEffect(() => {
     installRuntimeListeners();
@@ -154,6 +200,118 @@ export default function AdminMonitoring() {
     const id = setInterval(probe, 60_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
+
+  // 사이트 전체 API 가용성 probe — 60초 주기, mount 시 즉시 1회.
+  // GET only · 동시성 제한 4 · 결과는 state 와 localStorage(history)에 저장.
+  // 탭이 숨겨진 동안에는 probe 를 멈춰 Render 무료 tier 사용량을 절약한다.
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+    const runProbes = async () => {
+      if (!api.isConfigured()) {
+        if (alive) setProbeResults({});
+        return;
+      }
+      if (typeof document !== 'undefined' && document.hidden) return; // skip when tab hidden
+      if (alive) setProbeRunning(true);
+      const startedAll = Date.now();
+      const results = {};
+      const queue = [...API_PROBE_TARGETS];
+      const workers = Array.from({ length: 4 }, async () => {
+        while (queue.length) {
+          const tgt = queue.shift();
+          if (!tgt) break;
+          const t0 = performance.now();
+          let entry = { ts: Date.now() };
+          try {
+            const r = await api.get(tgt.path, tgt.publicProbe ? { skipAuth: true } : {});
+            entry.latency = Math.round(performance.now() - t0);
+            entry.status = r.status || (r.ok ? 200 : 0);
+            entry.ok = !!r.ok;
+            if (!r.ok && r.error) entry.error = String(r.error).slice(0, 200);
+          } catch (e) {
+            entry.latency = Math.round(performance.now() - t0);
+            entry.error = String(e?.message || e).slice(0, 200);
+            entry.ok = false;
+          }
+          results[tgt.key] = entry;
+        }
+      });
+      await Promise.all(workers);
+      if (!alive) return;
+      setProbeResults(results);
+      setProbeLastRun(Date.now());
+      setProbeRunning(false);
+      // 작은 history (마지막 10회 평균 latency 추세용).
+      try {
+        const hist = JSON.parse(localStorage.getItem('daemu_api_probe_history') || '[]');
+        hist.unshift({ ts: startedAll, results });
+        localStorage.setItem('daemu_api_probe_history', JSON.stringify(hist.slice(0, 20)));
+      } catch { /* ignore */ }
+    };
+    runProbes();
+    timer = setInterval(runProbes, 60_000);
+    return () => { alive = false; if (timer) clearInterval(timer); };
+  }, []);
+
+  // probe history 에서 마지막 10회 평균 latency 추출.
+  const probeHistory = useMemo(() => {
+    try {
+      const hist = JSON.parse(localStorage.getItem('daemu_api_probe_history') || '[]').slice(0, 10);
+      const acc = {};
+      for (const tgt of API_PROBE_TARGETS) acc[tgt.key] = { sum: 0, n: 0, fail: 0 };
+      for (const h of hist) {
+        for (const k of Object.keys(h.results || {})) {
+          const r = h.results[k];
+          if (!acc[k]) continue;
+          if (typeof r.latency === 'number') { acc[k].sum += r.latency; acc[k].n++; }
+          if (!r.ok) acc[k].fail++;
+        }
+      }
+      const out = {};
+      for (const k of Object.keys(acc)) {
+        out[k] = {
+          avgLatency: acc[k].n > 0 ? Math.round(acc[k].sum / acc[k].n) : null,
+          failRate: hist.length ? Math.round((acc[k].fail / hist.length) * 100) : 0,
+          samples: hist.length,
+        };
+      }
+      return out;
+    } catch { return {}; }
+  }, [probeLastRun]);
+
+  // outbox 기반 API 호출 통계 — 시간창별 total/failed/error.
+  const apiStats = useMemo(() => {
+    const now = Date.now();
+    const windows = { '1h': 3600 * 1000, '24h': 24 * 3600 * 1000, '7d': 7 * 24 * 3600 * 1000 };
+    const out = {};
+    for (const [label, ms] of Object.entries(windows)) {
+      const arr = outbox.filter((e) => now - new Date(e.ts).getTime() < ms);
+      const failed = arr.filter((e) => e.status === 'failed' || e.status === 'error').length;
+      out[label] = {
+        total: arr.length,
+        failed,
+        rate: arr.length ? Math.round((failed / arr.length) * 100) : 0,
+      };
+    }
+    return out;
+  }, [outbox]);
+
+  // 가장 자주 실패한 endpoint top 5 (24h).
+  const topFailingEndpoints = useMemo(() => {
+    const now = Date.now();
+    const counter = new Map();
+    for (const e of outbox) {
+      if (now - new Date(e.ts).getTime() > 24 * 3600 * 1000) continue;
+      if (e.status !== 'failed' && e.status !== 'error') continue;
+      const key = (e.path || '?') + ' ' + (e.method || '');
+      counter.set(key, (counter.get(key) || 0) + 1);
+    }
+    return [...counter.entries()]
+      .map(([path, count]) => ({ path, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [outbox]);
 
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [resolved, setResolved] = useState(() => {
@@ -456,6 +614,107 @@ export default function AdminMonitoring() {
               value={String(summary?.newInquiries ?? '—')}
               color={(summary?.newInquiries ?? 0) > 5 ? '#c0392b' : '#6f6b68'} />
           </div>
+
+          {/* API 엔드포인트 가용성 probe — 사이트 전체 GET 라우트 */}
+          <h3 className="admin-section-title" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>API 엔드포인트 상태</span>
+            <span style={{ fontSize: 11, color: '#8c867d', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>
+              {probeRunning ? '확인 중…' : probeLastRun
+                ? '마지막 확인 ' + new Date(probeLastRun).toLocaleTimeString('ko')
+                : '대기 중'}
+              {' · 60초 주기'}
+            </span>
+          </h3>
+          {!api.isConfigured() ? (
+            <div style={{ background: '#f4f1ea', border: '1px solid #d7d4cf', padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#5a534b' }}>
+              백엔드 미연결 (데모 모드) — VITE_API_BASE 환경변수가 설정되지 않아 probe 를 건너뜁니다.
+            </div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              {Object.keys(PROBE_GROUP_LABEL).map((group) => {
+                const targets = API_PROBE_TARGETS.filter((t) => t.group === group);
+                if (!targets.length) return null;
+                return (
+                  <div key={group} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 6 }}>
+                      {PROBE_GROUP_LABEL[group]}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+                      {targets.map((tgt) => {
+                        const p = probeResults[tgt.key];
+                        const hist = probeHistory[tgt.key];
+                        const color = probeColor(p);
+                        return (
+                          <div key={tgt.key} style={{
+                            background: '#fff',
+                            border: '1px solid #e6e3dd',
+                            borderLeft: '3px solid ' + color,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                            fontSize: 12,
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                              <span style={{ fontWeight: 600, color: '#231815' }}>{tgt.label}</span>
+                              <span style={{ color, fontFamily: 'SF Mono, Menlo, monospace', fontSize: 11, fontWeight: 600 }}>
+                                {probeLabel(p)}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#8c867d' }}>
+                              <code style={{ fontFamily: 'SF Mono, Menlo, monospace' }}>{tgt.path}</code>
+                              {hist && hist.samples > 0 && (
+                                <span title={`최근 ${hist.samples}회 평균`}>
+                                  ~{hist.avgLatency ?? '—'}{hist.avgLatency != null ? 'ms' : ''}
+                                  {hist.failRate > 0 ? ` · 실패 ${hist.failRate}%` : ''}
+                                </span>
+                              )}
+                            </div>
+                            {p?.error && (
+                              <div style={{ fontSize: 10.5, color: '#c0392b', marginTop: 2, wordBreak: 'break-all' }}>
+                                {p.error}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
+                AUTH 표시는 인증 토큰이 필요한 GET 라우트인데 권한이 부족하다는 뜻입니다(슈퍼 관리자가 아닐 때 정상). ERR/5xx는 실제 장애 신호로 간주.
+              </div>
+            </div>
+          )}
+
+          {/* API 호출 에러율 — outbox 집계 */}
+          <h3 className="admin-section-title">API 호출 에러율 (Outbox 기반)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
+            {['1h', '24h', '7d'].map((w) => {
+              const s = apiStats[w];
+              const color = s.rate >= 10 ? '#c0392b' : s.rate >= 3 ? '#b87333' : s.total === 0 ? '#8c867d' : '#2e7d32';
+              return (
+                <Card key={w}
+                  label={`최근 ${w} (${s.total}건)`}
+                  value={s.total === 0 ? '—' : `${s.failed} 실패 / ${s.rate}%`}
+                  color={color} />
+              );
+            })}
+          </div>
+          {topFailingEndpoints.length > 0 && (
+            <div style={{ background: '#fff', border: '1px solid #f0d6d2', padding: '10px 14px', marginBottom: 14, fontSize: 12 }}>
+              <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 6 }}>
+                실패 빈도 상위 (24h)
+              </div>
+              {topFailingEndpoints.map((e) => (
+                <div key={e.path} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px dashed #f4ebe9' }}>
+                  <code style={{ fontFamily: 'SF Mono, Menlo, monospace', fontSize: 11.5, color: '#7a1a14' }}>{e.path}</code>
+                  <strong style={{ color: '#c0392b' }}>×{e.count}</strong>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* 3행 — 비즈니스 데이터 */}
           <h3 className="admin-section-title">비즈니스 데이터</h3>
