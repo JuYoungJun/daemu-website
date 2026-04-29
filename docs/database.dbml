@@ -1,0 +1,370 @@
+// DAEMU 백엔드 데이터베이스 스키마 — DBML
+// https://dbdiagram.io 에 통째로 붙여넣어 ERD 시각화.
+//
+// 출처: backend-py/models.py (SQLAlchemy 2.0). 컬럼/관계는 ORM 정의 기준.
+// 환경:
+//   default — sqlite+aiosqlite (Render free tier 데모)
+//   prod    — mysql+aiomysql (Aiven for MySQL)
+
+Project daemu_db {
+  database_type: 'MySQL'
+  Note: '''
+    DAEMU 사이트 백엔드 — 어드민 콘솔 + 공개 사이트 데이터.
+    PII (이메일, 전화, IP) 는 audit_logs 와 short_link_clicks 에서
+    hash 형태로 저장. 보존 기간 ≥ 1년 (개인정보보호법 제29조).
+  '''
+}
+
+// ───────── 인증 / 사용자 ─────────
+
+Table admin_users {
+  id int [pk, increment]
+  email varchar(190) [unique, not null]
+  password_hash varchar(255) [not null]
+  name varchar(80) [default: '']
+  role varchar(24) [default: 'tester', note: 'admin | tester | developer']
+  active boolean [default: true]
+  must_change_password boolean [default: false]
+  email_verified_at datetime
+  totp_enabled boolean [default: false]
+  totp_secret varchar(64) [default: '']
+  recovery_codes json [note: '백업 코드 8개. bcrypt hash 로 저장']
+  last_login_at datetime
+  password_changed_at datetime
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+  Note: '어드민 콘솔 사용자. 일반 방문자/파트너와 별도 풀.'
+}
+
+Table admin_email_otp {
+  id int [pk, increment]
+  user_id int [ref: > admin_users.id]
+  email varchar(190) [not null]
+  code_hash varchar(255) [not null, note: 'bcrypt(OTP 6자리)']
+  purpose varchar(24) [note: 'verify | password_reset']
+  attempts int [default: 0]
+  expires_at datetime [not null]
+  consumed_at datetime
+  ip varchar(45) [default: '']
+  created_at datetime [default: `current_timestamp`]
+  Note: '이메일 OTP — 인증/비밀번호 재설정. 10분 만료, 5회 실패 시 lock.'
+}
+
+// ───────── 공개 사이트 ─────────
+
+Table inquiries {
+  id int [pk, increment]
+  name varchar(80) [default: '']
+  email varchar(190) [default: '']
+  phone varchar(40) [default: '']
+  type varchar(40) [default: '']
+  status varchar(20) [default: '신규', note: '신규 | 처리중 | 답변완료']
+  region varchar(40) [default: '']
+  open_period varchar(40) [default: '']
+  brand varchar(60) [default: '']
+  message text
+  reply_memo text
+  created_at datetime [default: `current_timestamp`]
+  Note: 'Contact 폼에서 들어온 상담/문의. PIPA 보존 3년.'
+}
+
+Table partners {
+  id int [pk, increment]
+  name varchar(120) [not null, note: '회사명']
+  person varchar(80) [default: '']
+  phone varchar(40) [default: '']
+  email varchar(190) [default: '']
+  type varchar(40) [default: '', note: '업종']
+  role varchar(40) [default: '발주 전용']
+  active varchar(20) [default: 'active']
+  note text
+  created_at datetime [default: `current_timestamp`]
+  Note: 'B2B 파트너 계정. /partners 포털 로그인용.'
+}
+
+Table newsletter_subscribers {
+  id int [pk, increment]
+  email varchar(190) [unique, not null]
+  name varchar(80) [default: '']
+  status varchar(20) [default: 'active', note: 'active | unsubscribed']
+  unsubscribed_at datetime
+  consent_at datetime [default: `current_timestamp`]
+  source varchar(40) [default: '', note: 'partners_form | footer | etc']
+  Note: '뉴스레터 옵트인 명단.'
+}
+
+// ───────── 발주 / 상품 / 계약 ─────────
+
+Table orders {
+  id int [pk, increment]
+  partner_id int [ref: > partners.id]
+  title varchar(190)
+  status varchar(24) [default: '접수', note: '접수 | 처리중 | 출고완료']
+  amount int [default: 0, note: '합계금액 (원)']
+  items json
+  due_date datetime
+  note text
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+}
+
+Table document_templates {
+  id int [pk, increment]
+  name varchar(190)
+  kind varchar(24) [default: 'contract', note: 'contract | purchase_order | nda | etc']
+  subject varchar(255)
+  body text
+  variables json [note: '변수 정의 [{key,label,group,placeholder}]']
+  active boolean [default: true]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+}
+
+Table documents {
+  id int [pk, increment]
+  template_id int [ref: > document_templates.id]
+  kind varchar(24) [default: 'contract']
+  title varchar(255)
+  subject varchar(255) [default: '']
+  body text [note: '변수 치환된 final body']
+  variables json [note: '입력된 변수 값']
+  recipients json [note: '[{name,email,role}]']
+  crm_id int [ref: > crm_customers.id]
+  partner_id int [ref: > partners.id]
+  order_id int [ref: > orders.id]
+  work_id int [ref: > works.id]
+  status varchar(24) [default: 'draft', note: 'draft | sent | viewed | signed | canceled']
+  sign_token varchar(64) [unique]
+  sent_at datetime
+  first_viewed_at datetime
+  signed_at datetime
+  canceled_at datetime
+  canceled_reason varchar(255) [default: '']
+  history json [note: '이벤트 audit trail']
+  created_by int [ref: > admin_users.id]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+}
+
+Table document_signatures {
+  id int [pk, increment]
+  document_id int [ref: > documents.id]
+  signer_email varchar(190)
+  signer_name varchar(80) [default: '']
+  signer_role varchar(40) [default: '']
+  signature_image_url text
+  signed_ip varchar(45)
+  signed_user_agent varchar(255) [default: '']
+  signed_at datetime [default: `current_timestamp`]
+  Note: 'e-Sign 서명 기록. 한 문서에 여러 서명자 가능 (별도 row).'
+}
+
+// ───────── 콘텐츠 / 미디어 ─────────
+
+Table works {
+  id int [pk, increment]
+  slug varchar(120) [unique, not null]
+  title varchar(190) [not null]
+  category varchar(60) [default: '']
+  summary varchar(500) [default: '']
+  content_md text
+  hero_image_url varchar(500) [default: '']
+  gallery json
+  tags json
+  location varchar(120) [default: '']
+  year varchar(8) [default: '']
+  size_label varchar(40) [default: '']
+  floor_label varchar(40) [default: '']
+  published boolean [default: true]
+  sort_order int [default: 0]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+  Note: '/work 포트폴리오 항목.'
+}
+
+Table content_blocks {
+  id int [pk, increment]
+  section_key varchar(60) [unique, not null, note: 'home_about | service_intro 등']
+  title varchar(255) [default: '']
+  body_md text
+  meta json
+  updated_at datetime
+}
+
+Table site_popups {
+  id int [pk, increment]
+  title varchar(120)
+  image_url varchar(500) [default: '']
+  body text [default: '']
+  cta_label varchar(80) [default: '']
+  cta_url varchar(500) [default: '']
+  position varchar(20) [default: 'center', note: 'center | bottom-right | top']
+  frequency varchar(20) [default: 'always', note: 'always | once-per-day | once-forever']
+  target_pages json
+  status varchar(20) [default: 'active', note: 'active | paused | expired']
+  date_from date
+  date_to date
+  impressions int [default: 0]
+  clicks int [default: 0]
+  created_at datetime [default: `current_timestamp`]
+}
+
+// ───────── 메일 / 캠페인 ─────────
+
+Table mail_templates {
+  id int [pk, increment]
+  kind varchar(40) [unique, not null, note: 'auto-reply | admin-reply | document']
+  subject varchar(255)
+  body text [default: '']
+  html text
+  images json
+  active boolean [default: true]
+  category varchar(60) [default: 'all']
+  updated_at datetime
+}
+
+Table mail_template_lib {
+  id int [pk, increment]
+  name varchar(120)
+  subject varchar(255) [default: '']
+  body text [default: '']
+  category varchar(40) [default: 'general']
+  active boolean [default: true]
+  uses_count int [default: 0]
+  last_used_at datetime
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+  Note: '운영자가 단체 발송용으로 저장하는 템플릿. {{변수}} 치환.'
+}
+
+Table campaigns {
+  id int [pk, increment]
+  name varchar(120)
+  channel varchar(20) [default: 'email', note: 'email | sms | kakao']
+  status varchar(20) [default: 'draft', note: 'draft | scheduled | sent | failed']
+  subject varchar(255)
+  body text
+  target json [note: '세그먼트 정의']
+  recipients_count int [default: 0]
+  sent_count int [default: 0]
+  opened_count int [default: 0]
+  clicked_count int [default: 0]
+  scheduled_at datetime
+  sent_at datetime
+  created_at datetime [default: `current_timestamp`]
+}
+
+Table outbox {
+  id int [pk, increment]
+  ts datetime [default: `current_timestamp`]
+  path varchar(120)
+  to_email varchar(190) [default: '']
+  to_name varchar(80) [default: '']
+  subject varchar(255) [default: '']
+  body_preview text
+  status varchar(20) [note: 'sent | failed | error | simulated']
+  error varchar(500) [default: '']
+  Note: '모든 이메일 발송 이력 (운영 로그).'
+}
+
+Table promotions {
+  id int [pk, increment]
+  code varchar(40) [unique]
+  type varchar(20) [note: 'percent | fixed | bogo']
+  discount int [default: 0]
+  valid_from date
+  valid_until date
+  max_uses int
+  used int [default: 0]
+  active boolean [default: true]
+  note text
+  created_at datetime [default: `current_timestamp`]
+}
+
+// ───────── CRM ─────────
+
+Table crm_customers {
+  id int [pk, increment]
+  name varchar(80)
+  company varchar(120) [default: '']
+  email varchar(190) [default: '']
+  phone varchar(40) [default: '']
+  source varchar(60) [default: '']
+  status varchar(20) [default: 'lead', note: 'lead | qualified | customer | lost']
+  estimated_value int [default: 0]
+  tags json
+  summary text
+  notes json [note: '활동 메모 타임라인 [{ts,text}]']
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime
+}
+
+// ───────── 단축 링크 (UTM 캠페인) ─────────
+
+Table short_links {
+  id int [pk, increment]
+  short_id varchar(16) [unique, not null, note: 'URL safe 8자']
+  target_url text [not null]
+  sig varchar(64) [not null, note: 'HMAC-SHA256(target_url+short_id, secret)']
+  expires_at datetime
+  max_clicks int
+  click_count int [default: 0]
+  last_clicked_at datetime
+  revoked_at datetime
+  revoked_reason varchar(255) [default: '']
+  label varchar(120) [default: '']
+  created_by int [ref: > admin_users.id]
+  created_at datetime [default: `current_timestamp`]
+  Note: 'QR 보안 (Stage 2) — HMAC 서명으로 위변조 방지.'
+}
+
+Table short_link_clicks {
+  id int [pk, increment]
+  short_link_id int [ref: > short_links.id, not null]
+  clicked_at datetime [default: `current_timestamp`]
+  ip_hash varchar(64) [default: '', note: 'HMAC-SHA256(IP) — PII 최소화']
+  ua_family varchar(40) [default: '', note: 'chrome | safari | mobile-chrome 등']
+  referer_host varchar(120) [default: '']
+  Note: 'click 통계 — 익명화 형태.'
+}
+
+// ───────── 보안 / 감사 ─────────
+
+Table audit_logs {
+  id int [pk, increment]
+  actor_user_id int [ref: > admin_users.id]
+  actor_email varchar(190) [default: '']
+  action varchar(60) [not null, note: 'login.success | login.failure | password.change | role.change | user.create | inquiry.delete | endpoint.access ...']
+  target_type varchar(40) [default: '']
+  target_id varchar(60) [default: '']
+  ip varchar(45) [default: '']
+  user_agent varchar(255) [default: '']
+  request_id varchar(40) [default: '']
+  detail json
+  created_at datetime [default: `current_timestamp`]
+  Note: 'PIPA 제29조 안전성 확보 — 보존 ≥ 1년. cron 이 자동 sweep 안 함.'
+}
+
+Table suspicious_events {
+  id int [pk, increment]
+  ts datetime [default: `current_timestamp`]
+  kind varchar(40) [note: 'token_leak | brute_force | rate_limit | bot ...']
+  severity varchar(12) [default: 'medium', note: 'low | medium | high | critical']
+  ip varchar(45) [default: '']
+  user_agent varchar(255) [default: '']
+  detail json
+  resolved_at datetime
+  resolved_by int [ref: > admin_users.id]
+  resolution_note varchar(500) [default: '']
+  Note: '의심 이벤트 — 운영자가 검토 후 resolve. 90일/365일 보존 정책.'
+}
+
+// ───────── 관계 인덱스 ─────────
+
+Ref: documents.template_id > document_templates.id
+Ref: document_signatures.document_id > documents.id
+Ref: orders.partner_id > partners.id
+Ref: short_link_clicks.short_link_id > short_links.id
+Ref: audit_logs.actor_user_id > admin_users.id
+Ref: suspicious_events.resolved_by > admin_users.id
+Ref: admin_email_otp.user_id > admin_users.id
