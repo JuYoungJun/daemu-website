@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
+import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
