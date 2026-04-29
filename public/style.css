@@ -3406,20 +3406,21 @@ body{background:var(--bg)}
 body[data-page="admin"]{overflow-y:auto !important}
 body[data-page="admin"] main.page{min-height:auto;overflow:visible}
 
-/* 어드민 페이지 액션 바 — 페이지 우측 상단에 CSV / 가이드 등 버튼들을 같은
-   줄에 정렬. wide 컨테이너(.wide / .admin-page) 와 같은 max-width 1200px 로
-   정렬해 페이지 제목과 같은 좌우 여백을 갖는다. */
+/* 어드민 페이지 액션 바 — 페이지 본문(.wide; max 1040px, 좌우 87px 여백)
+   과 정확히 같은 좌우 정렬. 이전엔 max-width 1200px 라 본문보다 양 끝으로
+   더 펼쳐져 우상단에 붙어 보였음. */
 .adm-page-actions{
   display:flex;
   justify-content:flex-end;
   align-items:center;
   gap:8px;
-  margin:0 auto 14px;
+  margin:20px auto 14px;
   flex-wrap:wrap;
-  max-width:1200px;
-  width:100%;
-  padding:14px 20px 0;
+  width:min(calc(100% - 174px), 1040px);
   box-sizing:border-box;
+}
+@media (max-width:768px){
+  .adm-page-actions{width:min(calc(100% - 48px), 100%);margin-top:14px}
 }
 .adm-page-action-btn{
   display:inline-flex;
