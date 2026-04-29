@@ -9,6 +9,7 @@ export default function ErrorPage({
   illustration = null,
   primaryAction,
   meta,
+  extra,
 }) {
   const navigate = useNavigate();
 
@@ -50,6 +51,7 @@ export default function ErrorPage({
       </div>
 
       <p className="err-meta">{meta || `Error · ${code}`}</p>
+      {extra}
     </main>
   );
 }
