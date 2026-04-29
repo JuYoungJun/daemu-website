@@ -29,6 +29,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(dt: datetime | None) -> datetime | None:
+    """MySQL DATETIME 컬럼은 tzinfo 를 저장하지 않아 SQLAlchemy 가 naive 로
+    되돌려 준다. 우리 코드의 utcnow() 는 tz-aware UTC 라 비교 시 TypeError.
+    DB 에서 읽은 datetime 을 tz-aware (UTC) 로 보정하는 헬퍼.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 # ---------------------------------------------------------------------------
 # Auth
 

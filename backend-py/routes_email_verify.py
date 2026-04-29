@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import require_user as get_current_user
 from db import get_session
-from models import AdminEmailOtp, AdminUser
+from models import AdminEmailOtp, AdminUser, as_utc
 
 router = APIRouter(prefix="/api/auth/email-verify", tags=["email-verify"])
 
@@ -118,14 +118,16 @@ async def send_verification_code(
     )
     existing = q.scalar_one_or_none()
 
-    if existing and existing.locked_until and existing.locked_until > now:
+    _existing_lock = as_utc(existing.locked_until) if existing else None
+    if _existing_lock and _existing_lock > now:
         raise HTTPException(
             429,
-            detail=f"잠금 상태입니다. {int((existing.locked_until - now).total_seconds())}초 후 재시도하세요.",
+            detail=f"잠금 상태입니다. {int((_existing_lock - now).total_seconds())}초 후 재시도하세요.",
         )
 
     if existing and existing.last_sent_at:
-        elapsed = (now - existing.last_sent_at).total_seconds()
+        _last_sent = as_utc(existing.last_sent_at)
+        elapsed = (now - _last_sent).total_seconds()
         if elapsed < SEND_COOLDOWN_SECONDS:
             raise HTTPException(
                 429,
@@ -203,13 +205,15 @@ async def confirm_verification_code(
     if row is None:
         raise HTTPException(404, detail="발송된 인증 코드가 없습니다. 다시 발송하세요.")
 
-    if row.locked_until and row.locked_until > now:
+    _row_lock = as_utc(row.locked_until)
+    if _row_lock and _row_lock > now:
         raise HTTPException(
             429,
-            detail=f"잠금 상태입니다. {int((row.locked_until - now).total_seconds())}초 후 재시도하세요.",
+            detail=f"잠금 상태입니다. {int((_row_lock - now).total_seconds())}초 후 재시도하세요.",
         )
 
-    if row.expires_at < now:
+    _row_expires = as_utc(row.expires_at)
+    if _row_expires and _row_expires < now:
         raise HTTPException(410, detail="코드가 만료되었습니다. 다시 발송하세요.")
 
     if row.code_hash != _hash_code(code):

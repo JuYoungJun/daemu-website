@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import require_user, require_admin
 from db import get_session, session_scope
-from models import AdminUser, ShortLink, ShortLinkClick
+from models import AdminUser, ShortLink, ShortLinkClick, as_utc
 
 
 # ── 설정 ──────────────────────────────────────────────────────────
@@ -116,6 +116,8 @@ def extract_host(referer: str) -> str:
         return ""
     m = re.match(r"^https?://([^/?#]+)", referer, re.IGNORECASE)
     return (m.group(1) if m else "")[:120]
+
+
 
 
 # ── 단순 in-memory rate limit ─────────────────────────────────────
@@ -368,7 +370,8 @@ async def follow_short_link(short_id: str, request: Request):
                 raise HTTPException(404, "short link not found")
             if row.revoked_at is not None:
                 raise HTTPException(410, "이 링크는 더 이상 사용할 수 없습니다.")
-            if row.expires_at and row.expires_at < datetime.now(timezone.utc):
+            _exp = as_utc(row.expires_at)
+            if _exp and _exp < datetime.now(timezone.utc):
                 raise HTTPException(410, "만료된 링크입니다.")
             if row.max_clicks is not None and (row.click_count or 0) >= row.max_clicks:
                 raise HTTPException(410, "사용 가능 횟수가 소진된 링크입니다.")
