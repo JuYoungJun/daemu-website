@@ -666,6 +666,13 @@ class UserUpdateIn(BaseModel):
     # Allow super-admin to clear/set the must_change_password flag without
     # going through the full password reset flow (useful for QA accounts).
     must_change_password: bool | None = None
+    # 어드민이 사용자 이메일 인증 상태를 강제로 토글:
+    #   true  → email_verified_at 을 utcnow() 로 채움 (인증 우회)
+    #   false → null 로 초기화 (다음 로그인 시 인증 다시 요구)
+    email_verified: bool | None = None
+    # 어드민이 사용자 2FA 를 강제 비활성화 (사용자가 디바이스 분실 시 사용).
+    # totp_secret/recovery_codes 모두 비움. 활성화는 사용자 본인 절차로만 가능.
+    reset_totp: bool | None = None
 
 
 users_router = APIRouter(prefix="/api/users", tags=["users"])
@@ -678,10 +685,17 @@ async def list_users(session: AsyncSession = Depends(get_session), _u: AdminUser
     return {
         "ok": True,
         "items": [
-            {"id": r.id, "email": r.email, "name": r.name, "role": r.role, "active": r.active,
-             "must_change_password": bool(r.must_change_password),
-             "last_login_at": r.last_login_at.isoformat() if r.last_login_at else None,
-             "created_at": r.created_at.isoformat() if r.created_at else None}
+            {
+                "id": r.id, "email": r.email, "name": r.name, "role": r.role, "active": r.active,
+                "must_change_password": bool(r.must_change_password),
+                "totp_enabled": bool(r.totp_enabled),
+                "email_verified_at": r.email_verified_at.isoformat() if r.email_verified_at else None,
+                "last_login_at": r.last_login_at.isoformat() if r.last_login_at else None,
+                "password_changed_at": r.password_changed_at.isoformat() if r.password_changed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                # recovery_codes 개수만 노출 — 코드 자체는 절대 안 노출.
+                "recovery_codes_count": len(r.recovery_codes or []) if hasattr(r, "recovery_codes") else 0,
+            }
             for r in rows
         ],
     }
@@ -754,10 +768,25 @@ async def update_user(user_id: int, payload: UserUpdateIn, session: AsyncSession
     elif payload.must_change_password is not None:
         # Standalone toggle of the flag (no password change).
         target.must_change_password = bool(payload.must_change_password)
+    if payload.email_verified is not None:
+        # true → 인증된 것으로 표시 / false → 다음 로그인 시 재인증 요구.
+        target.email_verified_at = (
+            datetime.now(timezone.utc) if payload.email_verified else None
+        )
+    if payload.reset_totp:
+        # 디바이스 분실 등으로 2FA 잠긴 사용자를 어드민이 강제 해제.
+        # 활성화는 사용자 본인이 다시 설정해야 함. PATCH 호출 자체는 기존
+        # audit middleware 가 endpoint.access 로 기록하므로 별도 log_event
+        # 호출은 생략 — 그래도 reset_totp 액션은 PATCH body 에 남음.
+        target.totp_enabled = False
+        target.totp_secret = ""
+        target.recovery_codes = []
     await session.flush()
     return {"ok": True, "user": {
         "id": target.id, "email": target.email, "name": target.name, "role": target.role,
         "active": target.active, "must_change_password": target.must_change_password,
+        "totp_enabled": target.totp_enabled,
+        "email_verified_at": target.email_verified_at.isoformat() if target.email_verified_at else None,
     }}
 
 
