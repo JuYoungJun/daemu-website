@@ -24,18 +24,34 @@ export function rowsToCSV(rows, columns) {
 }
 
 export function downloadCSV(filename, rows, columns) {
-  const csv = rowsToCSV(rows, columns);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  // Force the .csv extension after sanitizing — caller may have stripped it.
-  let name = sanitizeFilename(filename || 'download', 'export');
-  if (!/\.csv$/i.test(name)) name += '.csv';
-  const ok = triggerDownload(name, blob);
-  // 백업 시점 기록 — AdminMonitoring 의 "데이터 백업 상태" 카드가 이 값을 표시.
-  if (ok) {
-    try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
-    catch { /* ignore */ }
+  console.log('[downloadCSV]', { filename, rowCount: rows?.length, colCount: columns?.length });
+  try {
+    if (!Array.isArray(rows)) {
+      console.warn('[downloadCSV] rows is not an array', rows);
+      try { window.alert('내보낼 데이터가 올바르지 않습니다.'); } catch { /* ignore */ }
+      return false;
+    }
+    if (!Array.isArray(columns) || !columns.length) {
+      console.warn('[downloadCSV] columns missing');
+      try { window.alert('컬럼 정의가 비어있어 CSV 를 만들 수 없습니다.'); } catch { /* ignore */ }
+      return false;
+    }
+    const csv = rowsToCSV(rows, columns);
+    console.log('[downloadCSV] csv length:', csv.length);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    let name = sanitizeFilename(filename || 'download', 'export');
+    if (!/\.csv$/i.test(name)) name += '.csv';
+    const ok = triggerDownload(name, blob);
+    if (ok) {
+      try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
+      catch { /* ignore */ }
+    }
+    return ok;
+  } catch (e) {
+    console.error('[downloadCSV] failed', e);
+    try { window.alert('CSV 생성 실패: ' + (e?.message || String(e))); } catch { /* ignore */ }
+    return false;
   }
-  return ok;
 }
 
 // Re-export so legacy callers can pull the same primitives from one place.

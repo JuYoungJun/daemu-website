@@ -17,6 +17,7 @@ import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
 import { validateOutboundUrl } from '../lib/safe.js';
 import { SafeOpenLink } from '../components/SafeOpenLink.jsx';
+import { generateQrSvg, generateQrPngDataUrl } from '../lib/qrCode.js';
 
 const HISTORY_KEY = 'daemu_utm_history';
 const MAX_HISTORY = 50;
@@ -94,6 +95,12 @@ export default function AdminUtmBuilder() {
   });
   const [history, setHistory] = useState(() => readHistory());
   const [copied, setCopied] = useState(false);
+  const [shortLinks, setShortLinks] = useState([]);
+  const [shortLoading, setShortLoading] = useState(false);
+  const [shortError, setShortError] = useState('');
+  const [creatingShort, setCreatingShort] = useState(false);
+  const [qrTarget, setQrTarget] = useState(null); // {short_url, label} or null
+  const [statsTarget, setStatsTarget] = useState(null); // ShortLink id or null
 
   useEffect(() => {
     const refresh = () => setHistory(readHistory());
@@ -104,6 +111,20 @@ export default function AdminUtmBuilder() {
       window.removeEventListener('daemu-db-change', refresh);
     };
   }, []);
+
+  const loadShortLinks = async () => {
+    if (!api.isConfigured()) {
+      setShortError('Short link 은 백엔드 연결 시에만 동작합니다 (현재 데모 모드).');
+      return;
+    }
+    setShortLoading(true); setShortError('');
+    const r = await api.get('/api/short-links');
+    setShortLoading(false);
+    if (!r.ok) { setShortError(r.error || '불러오기 실패'); return; }
+    setShortLinks(r.items || []);
+  };
+
+  useEffect(() => { loadShortLinks(); /* eslint-disable-next-line */ }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -188,6 +209,79 @@ export default function AdminUtmBuilder() {
     setHistory([]);
     saveHistory([]);
   };
+
+  // 현재 builder 의 url 을 short link 로 발급.
+  // 백엔드가 HMAC 서명 + secret-redirect short_id 발행 후 응답.
+  const onCreateShortLink = async () => {
+    if (!url) {
+      siteAlert('먼저 URL 을 만든 뒤 short link 를 발급할 수 있습니다.');
+      return;
+    }
+    if (!api.isConfigured()) {
+      siteAlert('Short link 은 백엔드 연결 시에만 동작합니다.');
+      return;
+    }
+    setCreatingShort(true);
+    const label = (form.campaign || '') + (form.source ? ' / ' + form.source : '');
+    const r = await api.post('/api/short-links', {
+      target_url: url,
+      label: label.slice(0, 120),
+    });
+    setCreatingShort(false);
+    if (!r.ok) {
+      siteAlert(r.error || r.detail || 'Short link 발급 실패');
+      return;
+    }
+    const created = r.item;
+    siteToast(`Short link 발급: ${created.short_url}`, { tone: 'success' });
+    await loadShortLinks();
+    // 자동으로 QR 모달 띄움.
+    setQrTarget({ short_url: created.short_url, label: created.label, id: created.id });
+  };
+
+  const onRevokeShortLink = async (id, isRevoked) => {
+    const msg = isRevoked
+      ? '이 short link 를 다시 활성화하시겠습니까?'
+      : '이 short link 를 무효화하시겠습니까? 이후 클릭 시 410 Gone 응답.';
+    if (!(await siteConfirm(msg))) return;
+    const r = await api.patch(`/api/short-links/${id}`, { revoke: !isRevoked });
+    if (!r.ok) { siteAlert(r.error || '실패'); return; }
+    await loadShortLinks();
+  };
+
+  const onDeleteShortLink = async (id) => {
+    if (!(await siteConfirm('Short link 을 영구 삭제하시겠습니까? (관리자만 가능, 클릭 이력도 함께 삭제)'))) return;
+    const r = await api.del(`/api/short-links/${id}`);
+    if (r.ok || r.status === 204) {
+      await loadShortLinks();
+      siteToast('삭제 완료', { tone: 'success' });
+    } else {
+      siteAlert(r.error || '삭제 실패');
+    }
+  };
+
+  const onCopyShort = async (shortUrl) => {
+    try {
+      await navigator.clipboard.writeText(shortUrl);
+      siteToast('복사됨', { tone: 'success', duration: 1200 });
+    } catch { siteAlert('복사 실패. 직접 선택해 복사하세요.'); }
+  };
+
+  // 모니터링 KPI — 모든 short link 합산.
+  const monitoringKpi = useMemo(() => {
+    if (!shortLinks.length) return null;
+    const active = shortLinks.filter((l) => !l.revoked_at && (!l.expires_at || new Date(l.expires_at) > new Date()));
+    const totalClicks = shortLinks.reduce((a, l) => a + (l.click_count || 0), 0);
+    const last24h = shortLinks.filter((l) => l.last_clicked_at && (Date.now() - new Date(l.last_clicked_at).getTime()) < 86400000).length;
+    const revoked = shortLinks.filter((l) => l.revoked_at).length;
+    return {
+      total: shortLinks.length,
+      active: active.length,
+      totalClicks,
+      last24h,
+      revoked,
+    };
+  }, [shortLinks]);
 
   const exportCsv = () => {
     if (!history.length) return;
@@ -288,6 +382,12 @@ export default function AdminUtmBuilder() {
                   <button type="button" className="adm-btn-sm" onClick={onSave} disabled={!requiredOk}>
                     이력에 저장
                   </button>
+                  <button type="button" className="adm-btn-sm"
+                    onClick={onCreateShortLink}
+                    disabled={!url || creatingShort || !api.isConfigured()}
+                    title={!api.isConfigured() ? '백엔드 연결 시에만 사용 가능' : 'HMAC 서명된 보안 short link + QR 발급'}>
+                    {creatingShort ? '발급 중…' : '+ Short Link & QR 발급'}
+                  </button>
                   <span style={{ flex: 1 }} />
                   <SafeOpenLink
                     verifiedHref={verifiedOpenHref}
@@ -363,9 +463,318 @@ export default function AdminUtmBuilder() {
               )}
             </div>
           </div>
+
+          {/* ── Short Link & 모니터링 ─────────────────────────────────── */}
+          <h3 className="admin-section-title" style={{ marginTop: 36 }}>
+            보안 Short Link & 클릭 모니터링
+          </h3>
+          {!api.isConfigured() ? (
+            <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '12px 16px', fontSize: 13, color: '#5a4a2a' }}>
+              Short link & 클릭 모니터링은 백엔드 연결 시에만 동작합니다 (현재 데모 모드). UTM 빌더 자체는 정상 사용 가능.
+            </div>
+          ) : (
+            <>
+              {monitoringKpi && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
+                  <KpiCard label="전체 link" value={monitoringKpi.total} />
+                  <KpiCard label="활성" value={monitoringKpi.active} color="#2e7d32" />
+                  <KpiCard label="총 클릭" value={monitoringKpi.totalClicks.toLocaleString('ko')} color="#1f5e7c" />
+                  <KpiCard label="24h 활동" value={monitoringKpi.last24h}
+                    color={monitoringKpi.last24h > 0 ? '#2e7d32' : '#8c867d'} />
+                  <KpiCard label="무효화" value={monitoringKpi.revoked} color="#c0392b" />
+                </div>
+              )}
+
+              {shortError && (
+                <p style={{ color: '#c0392b', fontSize: 12, marginBottom: 8 }}>{shortError}</p>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+                  Short Links ({shortLinks.length})
+                </span>
+                <span style={{ flex: 1 }} />
+                <button type="button" className="adm-btn-sm" onClick={loadShortLinks} disabled={shortLoading}>
+                  {shortLoading ? '불러오는 중…' : '새로고침'}
+                </button>
+              </div>
+
+              {!shortLinks.length ? (
+                <div className="adm-doc-empty" style={{ padding: '24px 16px' }}>
+                  <strong>발급된 short link 가 없습니다</strong>
+                  위 빌더에서 URL 만든 뒤 <em>+ Short Link & QR 발급</em> 으로 첫 link 를 만들어보세요.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #2a2724', background: '#faf8f5' }}>
+                        <th style={shortTh}>라벨</th>
+                        <th style={shortTh}>Short URL</th>
+                        <th style={shortTh}>대상</th>
+                        <th style={shortTh}>클릭</th>
+                        <th style={shortTh}>마지막 클릭</th>
+                        <th style={shortTh}>상태</th>
+                        <th style={shortTh}>관리</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shortLinks.map((l) => {
+                        const isExpired = l.expires_at && new Date(l.expires_at) < new Date();
+                        const isRevoked = !!l.revoked_at;
+                        const isOverQuota = l.max_clicks != null && (l.click_count || 0) >= l.max_clicks;
+                        return (
+                          <tr key={l.id} style={{ borderBottom: '1px solid #e6e3dd', opacity: (isRevoked || isExpired) ? 0.55 : 1 }}>
+                            <td style={shortTd}>
+                              <strong>{l.label || '(라벨 없음)'}</strong>
+                              <div style={{ fontSize: 10, color: '#8c867d' }}>
+                                {l.created_at ? new Date(l.created_at).toLocaleString('ko') : ''}
+                              </div>
+                            </td>
+                            <td style={shortTd}>
+                              <code style={{ fontSize: 11, color: '#1f5e7c', wordBreak: 'break-all' }}>
+                                {l.short_url}
+                              </code>
+                            </td>
+                            <td style={shortTd}>
+                              <span style={{ fontSize: 11, color: '#5a534b', wordBreak: 'break-all', display: 'inline-block', maxWidth: 220 }}>
+                                {(l.target_url || '').slice(0, 60)}
+                                {(l.target_url || '').length > 60 ? '…' : ''}
+                              </span>
+                            </td>
+                            <td style={shortTd}>
+                              <strong>{l.click_count || 0}</strong>
+                              {l.max_clicks != null && (
+                                <span style={{ fontSize: 10, color: '#8c867d' }}> / {l.max_clicks}</span>
+                              )}
+                            </td>
+                            <td style={{ ...shortTd, fontSize: 11, color: '#5a534b' }}>
+                              {l.last_clicked_at ? new Date(l.last_clicked_at).toLocaleString('ko') : '—'}
+                            </td>
+                            <td style={shortTd}>
+                              {isRevoked ? (
+                                <span style={{ fontSize: 11, color: '#c0392b' }}>무효</span>
+                              ) : isExpired ? (
+                                <span style={{ fontSize: 11, color: '#b87333' }}>만료</span>
+                              ) : isOverQuota ? (
+                                <span style={{ fontSize: 11, color: '#b87333' }}>한도 도달</span>
+                              ) : (
+                                <span style={{ fontSize: 11, color: '#2e7d32' }}>활성</span>
+                              )}
+                            </td>
+                            <td style={shortTd}>
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                <button type="button" className="adm-btn-sm" onClick={() => onCopyShort(l.short_url)}>복사</button>
+                                <button type="button" className="adm-btn-sm" onClick={() => setQrTarget({ short_url: l.short_url, label: l.label, id: l.id })}>QR</button>
+                                <button type="button" className="adm-btn-sm" onClick={() => setStatsTarget(l.id)}>통계</button>
+                                <button type="button" className="adm-btn-sm" onClick={() => onRevokeShortLink(l.id, isRevoked)}>
+                                  {isRevoked ? '재활성' : '무효화'}
+                                </button>
+                                <button type="button" className="adm-btn-sm danger" onClick={() => onDeleteShortLink(l.id)}>삭제</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </section>
       </main>
+
+      {qrTarget && <QrModal target={qrTarget} onClose={() => setQrTarget(null)} />}
+      {statsTarget && (
+        <ShortLinkStatsModal
+          linkId={statsTarget}
+          onClose={() => setStatsTarget(null)}
+        />
+      )}
     </AdminShell>
+  );
+}
+
+function KpiCard({ label, value, color }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: '#8c867d', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: color || '#231815' }}>{value}</div>
+    </div>
+  );
+}
+
+const shortTh = { textAlign: 'left', padding: '10px 8px', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: '#5f5b57' };
+const shortTd = { padding: '10px 8px', verticalAlign: 'top' };
+
+function QrModal({ target, onClose }) {
+  const [svg, setSvg] = useState('');
+  const [pngUrl, setPngUrl] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [s, p] = await Promise.all([
+          generateQrSvg(target.short_url, { cellSize: 8, margin: 4 }),
+          generateQrPngDataUrl(target.short_url, { size: 480 }),
+        ]);
+        if (!alive) return;
+        setSvg(s);
+        setPngUrl(p);
+      } catch (e) {
+        if (!alive) return;
+        setError(String(e?.message || e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [target.short_url]);
+
+  const downloadPng = () => {
+    if (!pngUrl) return;
+    const a = document.createElement('a');
+    a.href = pngUrl;
+    a.download = 'qr-' + (target.label || 'short').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) + '.png';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 500);
+  };
+
+  const downloadSvg = () => {
+    if (!svg) return;
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'qr-' + (target.label || 'short').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) + '.svg';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+  };
+
+  return (
+    <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="adm-modal-box is-narrow">
+        <div className="adm-modal-head">
+          <h2>QR 코드 — {target.label || target.short_url}</h2>
+          <button type="button" className="adm-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div style={{ background: '#f6f4f0', padding: 20, textAlign: 'center', marginBottom: 14 }}>
+          {loading && <div style={{ padding: 40, color: '#8c867d' }}>QR 생성 중…</div>}
+          {error && <div style={{ padding: 20, color: '#c0392b', fontSize: 13 }}>QR 생성 실패: {error}</div>}
+          {pngUrl && !error && (
+            <img src={pngUrl} alt="QR" style={{ maxWidth: 280, width: '100%', background: '#fff', border: '1px solid #d7d4cf' }} />
+          )}
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e6e3dd', padding: 12, fontSize: 12, marginBottom: 14, wordBreak: 'break-all' }}>
+          <strong style={{ color: '#8c867d', fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>스캔 시 이동</strong>
+          <code style={{ color: '#1f5e7c' }}>{target.short_url}</code>
+        </div>
+        <p style={{ fontSize: 11, color: '#8c867d', marginTop: 0 }}>
+          QR 은 우리 도메인의 short link 만 인코딩합니다. 서버가 HMAC 서명을 검증한 뒤
+          실제 캠페인 URL 로 redirect 하므로 위변조·재사용·과다 클릭이 차단됩니다.
+        </p>
+        <div className="adm-action-row">
+          <button type="button" className="adm-btn-sm" onClick={onClose}>닫기</button>
+          <button type="button" className="adm-btn-sm" onClick={downloadSvg} disabled={!svg}>SVG 다운로드</button>
+          <button type="button" className="btn" onClick={downloadPng} disabled={!pngUrl}>PNG 다운로드</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShortLinkStatsModal({ linkId, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const r = await api.get(`/api/short-links/${linkId}/stats`);
+      if (!alive) return;
+      if (!r.ok) { setError(r.error || '불러오기 실패'); return; }
+      setData(r);
+    })();
+    return () => { alive = false; };
+  }, [linkId]);
+
+  return (
+    <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="adm-modal-box is-wide">
+        <div className="adm-modal-head">
+          <h2>클릭 통계 {data?.link?.label ? '— ' + data.link.label : ''}</h2>
+          <button type="button" className="adm-modal-close" onClick={onClose}>×</button>
+        </div>
+        {error && <p style={{ color: '#c0392b', fontSize: 13 }}>{error}</p>}
+        {!data && !error && <p style={{ color: '#8c867d' }}>불러오는 중…</p>}
+        {data && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+              <KpiCard label="총 클릭" value={data.link.click_count || 0} color="#1f5e7c" />
+              <KpiCard label="최근 클릭" value={data.link.last_clicked_at ? new Date(data.link.last_clicked_at).toLocaleString('ko') : '—'} />
+              <KpiCard label="상태" value={data.link.revoked_at ? '무효' : '활성'} color={data.link.revoked_at ? '#c0392b' : '#2e7d32'} />
+            </div>
+
+            {data.daily?.length > 0 && (
+              <>
+                <h3 className="admin-section-title" style={{ fontSize: 12 }}>일자별 클릭 (30일)</h3>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 110, background: '#fff', border: '1px solid #d7d4cf', padding: 12, marginBottom: 14 }}>
+                  {data.daily.map((d) => {
+                    const max = Math.max(...data.daily.map((x) => x.count));
+                    return (
+                      <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                        <span style={{ fontSize: 9, color: '#5a534b' }}>{d.count}</span>
+                        <div style={{ width: '100%', background: '#231815', height: Math.max(2, (d.count / max) * 80) + 'px' }}
+                          title={`${d.date}: ${d.count}회`} />
+                        <span style={{ fontSize: 8, color: '#b9b5ae' }}>{d.date.slice(5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {data.ua_breakdown?.length > 0 && (
+              <>
+                <h3 className="admin-section-title" style={{ fontSize: 12 }}>브라우저·디바이스</h3>
+                <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 12, marginBottom: 14 }}>
+                  {data.ua_breakdown.map((u) => (
+                    <div key={u.family} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
+                      <span>{u.family}</span>
+                      <strong>{u.count}</strong>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {data.recent?.length > 0 && (
+              <>
+                <h3 className="admin-section-title" style={{ fontSize: 12 }}>최근 클릭 10건</h3>
+                <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 12, fontSize: 11.5, maxHeight: 200, overflowY: 'auto' }}>
+                  {data.recent.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 12, padding: '4px 0', borderBottom: i < data.recent.length - 1 ? '1px solid #f0ede7' : 'none' }}>
+                      <span style={{ color: '#8c867d', minWidth: 140 }}>{new Date(c.clicked_at).toLocaleString('ko')}</span>
+                      <span style={{ color: '#5a534b', minWidth: 100 }}>{c.ua_family || 'unknown'}</span>
+                      <span style={{ color: '#5a534b', flex: 1 }}>{c.referer_host || 'direct'}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+        <div className="adm-action-row">
+          <button type="button" className="btn" onClick={onClose}>닫기</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -419,6 +419,57 @@ class MailTemplateLib(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ShortLink(Base):
+    """UTM 캠페인용 보안 short link (QR_SECURITY.md Stage 2).
+
+    QR 에 우리 도메인의 short URL 만 인코딩해 위변조·재사용·피싱을 막는
+    구조. target_url 자체는 서버측에만 존재. HMAC 서명으로 무결성 보장.
+
+    필드:
+      short_id: 추측 불가 8자 (URL-safe). PK 가 아니라 lookup 키.
+      target_url: 실제 redirect 대상 (UTM 쿼리 포함된 URL).
+      sig: HMAC-SHA256(target_url + short_id, server_secret) — DB 유출
+           시에도 위조 불가. 검증 실패 시 자동 revoke.
+      expires_at: 만료 일시 (None=무기한).
+      max_clicks: 최대 클릭 수 한도 (None=무제한).
+      click_count: 누적 클릭 — analytics 기본 단위.
+      last_clicked_at: 마지막 클릭 일시 — 모니터링.
+      revoked_at / revoked_reason: 운영자가 무효화 시 채움.
+      label: 운영자 표시용 캠페인 라벨.
+    """
+    __tablename__ = "short_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    short_id: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    target_url: Mapped[str] = mapped_column(Text)
+    sig: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    max_clicks: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    click_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_reason: Mapped[str] = mapped_column(String(255), default="")
+    label: Mapped[str] = mapped_column(String(120), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ShortLinkClick(Base):
+    """ShortLink 클릭 이벤트 — PII 최소화 형태로만 기록.
+
+    IP 와 UA 는 hash 로만 보관 (개인정보보호법 익명화 원칙).
+    referer 는 host 부분만 저장.
+    """
+    __tablename__ = "short_link_clicks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    short_link_id: Mapped[int] = mapped_column(ForeignKey("short_links.id"), index=True)
+    clicked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    ip_hash: Mapped[str] = mapped_column(String(64), default="")
+    ua_family: Mapped[str] = mapped_column(String(40), default="")  # "chrome" / "safari" / "mobile-chrome" 등
+    referer_host: Mapped[str] = mapped_column(String(120), default="")
+
+
 class AuditLog(Base):
     """접속기록 / 권한변경 / 인증이력 — 개인정보 보호법 제29조 안전성 확보 조치 준수.
     Retain ≥ 1년. The retention cron in main.py keeps these untouched so they

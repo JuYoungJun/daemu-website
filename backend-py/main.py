@@ -438,6 +438,14 @@ app.include_router(documents_router)
 from routes_email_verify import router as email_verify_router  # noqa: E402
 app.include_router(email_verify_router)
 
+# QR 캠페인 보안 short link (QR_SECURITY.md Stage 2).
+from routes_short_links import (  # noqa: E402
+    admin_router as short_links_admin_router,
+    public_router as short_links_public_router,
+)
+app.include_router(short_links_admin_router)
+app.include_router(short_links_public_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
