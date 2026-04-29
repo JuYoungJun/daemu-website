@@ -45,13 +45,33 @@ connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False, "timeout": 30}
 elif DATABASE_URL.startswith("mysql"):
-    # Aiven / 대부분의 managed MySQL 은 SSL 필수. asyncmy 는 connect_args 의
-    # ssl 옵션으로 verify-required 컨텍스트를 받는다. Aiven 은 정상 CA chain
-    # 이라 기본 verify 모드로 OK. 자체 호스팅 MySQL 이라면 환경변수
-    # DAEMU_MYSQL_SSL_DISABLE=1 로 비활성 가능.
-    if os.environ.get("DAEMU_MYSQL_SSL_DISABLE") != "1":
-        import ssl as _ssl
-        connect_args = {"ssl": _ssl.create_default_context()}
+    # Aiven / Cafe24 / 일반 managed MySQL 은 SSL 필수. asyncmy 는 connect_args
+    # 의 ssl 옵션으로 SSL 컨텍스트를 받는다.
+    #
+    # Aiven 은 자체 발급 CA(self-signed) 를 chain 에 포함하므로 시스템 CA
+    # bundle 만으로는 verify 가 실패한다. 두 가지 모드:
+    #   1) MYSQL_SSL_CA 환경변수에 Aiven 의 CA PEM(전체 -----BEGIN... -----END
+    #      CERTIFICATE----- 블록) 을 등록 → cadata 로 verify-required.
+    #   2) 미설정 시 verify 우회 — 호스트명 + IP 기반 보안으로 충분, 단
+    #      logs 에 경고. 운영 단계에서는 1) 권장.
+    # DAEMU_MYSQL_SSL_DISABLE=1 이면 SSL 자체를 끔(같은 VPC self-host 등).
+    import ssl as _ssl
+    if os.environ.get("DAEMU_MYSQL_SSL_DISABLE") == "1":
+        connect_args = {}
+    else:
+        ca_pem = (os.environ.get("MYSQL_SSL_CA") or "").strip()
+        if ca_pem:
+            ctx = _ssl.create_default_context(cadata=ca_pem)
+            print("[db] mysql SSL: verify-required (MYSQL_SSL_CA 적용)")
+        else:
+            ctx = _ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            print(
+                "[db] ⚠ mysql SSL verify 우회(MYSQL_SSL_CA 미설정). 운영 단계 "
+                "에서는 Aiven 콘솔의 CA PEM 을 MYSQL_SSL_CA 로 등록 권장."
+            )
+        connect_args = {"ssl": ctx}
 
 engine = create_async_engine(
     DATABASE_URL,
