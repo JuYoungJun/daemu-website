@@ -39,6 +39,25 @@ if DATABASE_URL.startswith("mysql+") and "?ssl-mode=" in DATABASE_URL:
 if DATABASE_URL.startswith("mysql+") and "&ssl-mode=" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.split("&ssl-mode=")[0]
 
+# 비밀번호 자동 URL-encode — Aiven 의 reset 후 비밀번호에 +/=/&/% 같은
+# url-unsafe 문자가 포함될 수 있다. 사용자가 raw 그대로 붙여넣어도 동작
+# 하도록, 이미 인코딩 안 된 경우 자동 quote 한다.
+if DATABASE_URL.startswith("mysql+"):
+    from urllib.parse import urlparse, urlunparse, quote
+    try:
+        _parsed = urlparse(DATABASE_URL)
+        if _parsed.password and "%" not in _parsed.password:
+            _encoded = quote(_parsed.password, safe="")
+            if _encoded != _parsed.password:
+                _user = _parsed.username or ""
+                _host = _parsed.hostname or ""
+                _port = f":{_parsed.port}" if _parsed.port else ""
+                _new_netloc = f"{_user}:{_encoded}@{_host}{_port}"
+                DATABASE_URL = urlunparse(_parsed._replace(netloc=_new_netloc))
+                print("[db] mysql password 자동 URL-encode 적용 (특수문자 포함)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"[db] URL parse 경고: {_e}")
+
 # SQLite needs check_same_thread=False to be safe across async contexts;
 # MySQL doesn't take that arg.
 connect_args = {}
