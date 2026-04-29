@@ -174,78 +174,93 @@ function CsvPreviewBody({ item, onConfirm, onCancel }) {
   const sample = rows.slice(0, sampleSize);
   const cellValue = (row, col) => {
     const v = typeof col.key === 'function' ? col.key(row) : row[col.key];
-    if (v == null) return '';
-    if (Array.isArray(v)) return v.join(' | ');
+    if (v == null || v === '') return '—';
+    if (Array.isArray(v)) return v.join(', ');
     if (typeof v === 'object') return JSON.stringify(v);
     const s = String(v);
-    return s.length > 60 ? s.slice(0, 57) + '…' : s;
+    return s.length > 80 ? s.slice(0, 77) + '…' : s;
   };
-  const totalBytes = rows.length * columns.length * 16; // 거친 추정
-  const sizeLabel = totalBytes > 1024 * 1024
-    ? (totalBytes / 1024 / 1024).toFixed(1) + ' MB'
-    : (totalBytes / 1024).toFixed(1) + ' KB';
+  // 추정 크기 — UTF-8 평균 문자 길이 + 컬럼 구분자.
+  const approxBytes = rows.length * (columns.length * 16 + 4) + 80;
+  const sizeLabel = approxBytes > 1024 * 1024
+    ? (approxBytes / 1024 / 1024).toFixed(1) + ' MB'
+    : Math.max(1, Math.round(approxBytes / 1024)) + ' KB';
 
   return (
-    <>
-      <div className="csv-preview-head">
-        <div>
-          <p className="site-dialog-msg" style={{ marginBottom: 4 }}>CSV 다운로드 미리보기</p>
-          <div style={{ fontSize: 11, color: '#8c867d', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <span><strong style={{ color: '#5a534b' }}>{filename}</strong></span>
-            <span>총 <strong style={{ color: '#1f5e7c' }}>{rows.length.toLocaleString('ko')}</strong> 행</span>
-            <span>{columns.length} 컬럼</span>
-            <span>~{sizeLabel}</span>
-          </div>
+    <div className="csv-preview">
+      <div className="csv-preview__head">
+        <div className="csv-preview__title">
+          <span className="csv-preview__eyebrow">CSV 다운로드 미리보기</span>
+          <code className="csv-preview__filename">{filename}</code>
+        </div>
+        <div className="csv-preview__meta">
+          <span><strong>{rows.length.toLocaleString('ko')}</strong> 행</span>
+          <span className="csv-preview__sep">·</span>
+          <span><strong>{columns.length}</strong> 컬럼</span>
+          <span className="csv-preview__sep">·</span>
+          <span>약 <strong>{sizeLabel}</strong></span>
         </div>
       </div>
-      <div className="csv-preview-table-wrap">
-        {!rows.length ? (
-          <div style={{ padding: '24px 12px', textAlign: 'center', color: '#8c867d', fontSize: 13 }}>
-            내보낼 데이터가 없습니다.
+
+      {!rows.length ? (
+        <div className="csv-preview__empty">
+          <strong>내보낼 데이터가 없습니다</strong>
+          <span>현재 필터 조건에 맞는 행이 0건입니다. 필터를 조정한 뒤 다시 시도해 주세요.</span>
+        </div>
+      ) : (
+        <>
+          <div className="csv-preview__sample-label">
+            <span>상위 {Math.min(sampleSize, rows.length)}행 미리보기</span>
+            {rows.length > sampleSize && (
+              <span className="csv-preview__sample-rest">
+                + {(rows.length - sampleSize).toLocaleString('ko')}행 추가 (CSV 에 모두 포함)
+              </span>
+            )}
           </div>
-        ) : (
-          <table className="csv-preview-table">
-            <thead>
-              <tr>
-                <th style={{ width: 36, color: '#8c867d', fontSize: 10 }}>#</th>
-                {columns.map((c, i) => (
-                  <th key={i}>{c.label || c.key}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sample.map((row, i) => (
-                <tr key={i}>
-                  <td style={{ color: '#8c867d', fontSize: 10, fontFamily: 'SF Mono, Menlo, monospace' }}>{i + 1}</td>
-                  {columns.map((c, j) => (
-                    <td key={j} title={String(typeof c.key === 'function' ? c.key(row) : row[c.key] ?? '')}>
-                      {cellValue(row, c)}
-                    </td>
+          <div className="csv-preview__table-wrap">
+            <table className="csv-preview__table">
+              <thead>
+                <tr>
+                  <th className="csv-preview__num-col">#</th>
+                  {columns.map((c, i) => (
+                    <th key={i}>{c.label || c.key}</th>
                   ))}
                 </tr>
-              ))}
-              {rows.length > sampleSize && (
-                <tr>
-                  <td colSpan={columns.length + 1} style={{ textAlign: 'center', fontSize: 11, color: '#8c867d', padding: 8 }}>
-                    … 이하 {(rows.length - sampleSize).toLocaleString('ko')} 행 생략
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-      <div className="csv-preview-note">
-        Excel 호환을 위해 UTF-8 BOM 이 포함됩니다. 셀 값에 =/+/-/@ 로 시작하는 항목은
+              </thead>
+              <tbody>
+                {sample.map((row, i) => (
+                  <tr key={i}>
+                    <td className="csv-preview__num-col">{i + 1}</td>
+                    {columns.map((c, j) => {
+                      const raw = typeof c.key === 'function' ? c.key(row) : row[c.key];
+                      const display = cellValue(row, c);
+                      return (
+                        <td key={j} title={raw == null ? '' : String(raw)}>{display}</td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <p className="csv-preview__note">
+        Excel 호환을 위해 UTF-8 BOM 이 포함됩니다. =/+/-/@ 로 시작하는 셀은
         formula injection 방지를 위해 자동으로 작은따옴표가 붙습니다.
-      </div>
-      <div className="site-dialog-actions">
-        <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={onCancel}>취소</button>
-        <button type="button" className="site-dialog-btn" onClick={onConfirm} disabled={!rows.length} autoFocus>
-          다운로드
+      </p>
+
+      <div className="site-dialog-actions csv-preview__actions">
+        <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={onCancel}>
+          취소
+        </button>
+        <button type="button" className="site-dialog-btn" onClick={onConfirm}
+          disabled={!rows.length} autoFocus>
+          {rows.length ? `다운로드 (${rows.length.toLocaleString('ko')}행)` : '다운로드'}
         </button>
       </div>
-    </>
+    </div>
   );
 }
 

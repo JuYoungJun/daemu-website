@@ -1,51 +1,34 @@
-// Admin auth — backed by /api/auth/login + JWT.
+// 어드민 인증 — /api/auth/login + JWT.
 //
-// Security posture (revised 2026-04 — balanced for usability):
-//  - Token lives in localStorage. Survives reload, tab close, browser
-//    restart. Lost only by explicit logout, inactivity timeout, or backend
-//    rejection (token expired / user deactivated).
-//  - 60-minute inactivity timeout. Each authenticated API call refreshes
-//    the activity timestamp; once expired, the next isLoggedIn() check
-//    forces a logout + re-login.
-//  - Backend JWT TTL is 12h, but the frontend gate is more conservative:
-//    even if the token is still server-valid, the frontend forces re-login
-//    after inactivity.
-//  - Explicit logout button on the dashboard is the primary "leave the
-//    admin area cleanly" mechanism. We do NOT auto-logout on:
-//      · navigation between admin pages (that obviously breaks the UX)
-//      · page reload (F5) — that would wipe the session every time
-//      · brief excursions to public pages and back
-//
-// Anything stronger than this (e.g. wipe on tab close) is implemented in a
-// shared computer environment, not a single-operator dashboard. If the
-// owner ever needs harder isolation, switch back to sessionStorage and
-// add a beforeunload handler — but expect the F5/back-button friction.
+// 보안 정책:
+//  · 토큰은 localStorage 보관 — reload/탭 종료/브라우저 재시작 후에도 유지.
+//    명시적 logout, 60분 inactivity 타임아웃, 백엔드 거절(토큰 만료·계정 비활성)
+//    셋 중 하나로만 끊긴다.
+//  · 인증 호출마다 활동 타임스탬프 갱신. 60분 지나면 isLoggedIn() 이 강제 logout.
+//  · 백엔드 JWT TTL 은 12h 지만 프론트가 더 보수적으로 60분 inactivity 적용.
+//  · 페이지 이동/F5/공개 페이지 왕복 시에는 자동 logout 하지 않음 — 1인 운영
+//    대시보드의 UX 우선. 공용 PC 환경이 필요하면 sessionStorage + beforeunload 로
+//    교체.
 
 import { api } from './api.js';
 
-// NOTE: These are BROWSER STORAGE KEY NAMES used by window.localStorage
-// to identify which slot holds the admin's auth state. They are NOT
-// secrets — anyone reading this source already knows where the JWT
-// lives. The _STORAGE_KEY suffix exists to make Snyk's CWE-547 pattern
-// matcher recognize them as labels rather than credentials.
+// 브라우저 storage 슬롯 식별자(값 자체가 비밀 아님). _STORAGE_KEY 접미는
+// Snyk CWE-547 의 "KEY" 패턴 매칭이 credential 로 오인하지 않게 의도 명시.
 const ADMIN_TOKEN_STORAGE_KEY = 'daemu_admin_token';
 const ADMIN_USER_STORAGE_KEY = 'daemu_admin_user';
 const ADMIN_ACTIVITY_STORAGE_KEY = 'daemu_admin_last_activity';
 const ADMIN_LEGACY_FLAG_STORAGE_KEY = 'daemu_admin_auth';
-// Back-compat aliases — these are removed once every callsite is migrated.
 const TOKEN_KEY = ADMIN_TOKEN_STORAGE_KEY;
 const USER_KEY = ADMIN_USER_STORAGE_KEY;
 const ACTIVITY_KEY = ADMIN_ACTIVITY_STORAGE_KEY;
 const LEGACY_KEY = ADMIN_LEGACY_FLAG_STORAGE_KEY;
 
-// 60 minutes of inactivity → forced re-login.
 export const ADMIN_INACTIVITY_MS = 60 * 60 * 1000;
 
 function _now() { return Date.now(); }
 
-// Earlier (overly-strict) builds stored tokens in sessionStorage. Migrate any
-// leftover tokens so an existing logged-in admin doesn't get bounced after the
-// build update.
+// 과거 빌드는 sessionStorage 에 토큰을 보관했음. 빌드 업데이트로 로그인 세션이
+// 끊기는 일을 막기 위해 1회 마이그레이션.
 function _migrateFromSession() {
   try {
     const t = sessionStorage.getItem(TOKEN_KEY);
@@ -68,7 +51,6 @@ export const Auth = {
     const tok = localStorage.getItem(TOKEN_KEY);
     const flag = localStorage.getItem(LEGACY_KEY);
     if (!tok && flag !== '1') return false;
-    // Inactivity check — if last activity is too old, force logout.
     const last = parseInt(localStorage.getItem(ACTIVITY_KEY) || '0', 10);
     if (last && _now() - last > ADMIN_INACTIVITY_MS) {
       this.logout();
@@ -84,18 +66,16 @@ export const Auth = {
     catch { return null; }
   },
 
-  // Refresh activity stamp. Called from api.js on every authenticated call.
   touch() {
     if (localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_KEY) === '1') {
       localStorage.setItem(ACTIVITY_KEY, String(_now()));
     }
   },
 
-  // Backend login. Returns:
-  //   { ok: true, mustChangePassword }                       — success
-  //   { ok: false, needTotp: true, message }                 — 2FA required
-  //   { ok: false, error }                                   — other failure
-  // The caller can re-call login(email, password, totpCode) to satisfy 2FA.
+  // 반환:
+  //   { ok: true, mustChangePassword }      — 성공
+  //   { ok: false, needTotp: true, message } — 2FA 필요. 호출자가 totpCode 같이 재호출.
+  //   { ok: false, error }                   — 그 외 실패
   async login(email, password, totpCode) {
     if (!api.isConfigured()) {
       if (!email || !password) return { ok: false, error: 'enter credentials' };
@@ -108,7 +88,7 @@ export const Auth = {
     const res = await api.post('/api/auth/login', body);
     if (!res || !res.ok) {
       if (res?.status === 429) return { ok: false, error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.' };
-      // 2FA 필요 케이스: detail이 객체이고 need_totp:true
+      // 2FA 필요 케이스: detail 이 객체이고 need_totp:true.
       const detail = res?.detail || res?.error;
       if (detail && typeof detail === 'object' && detail.need_totp) {
         return { ok: false, needTotp: true, message: detail.message || '인증 코드를 입력해 주세요.' };

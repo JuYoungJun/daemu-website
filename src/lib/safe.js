@@ -1,37 +1,19 @@
-// Shared safety helpers used across popup rendering, CSV export,
-// contract preview/PDF, work-detail rendering, and admin exports.
-//
-// All helpers are PURE and side-effect free. They never reach into the DOM
-// themselves — that's the caller's job, after sanitizing through these.
+// 팝업/CSV/계약서/어드민 export 등에서 공통으로 쓰는 보안 헬퍼.
+// 모두 순수 함수 — DOM 을 직접 건드리지 않고, 호출자가 sanitize 후 사용한다.
 
-// HTML escape — every code point that can break out of attribute or text
-// context is replaced. Use textContent in DOM where possible; this is for
-// the few legacy paths that still build strings.
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;', '/': '&#x2F;' };
 export function escapeHtml(value) {
   return String(value == null ? '' : value).replace(/[&<>"'`/]/g, (c) => HTML_ESCAPES[c]);
 }
-export const safeText = escapeHtml; // legacy alias
+export const safeText = escapeHtml;
 
-// URL allow-list. Returns '' for blocked schemes (caller should skip
-// rendering the link instead of inserting an empty href). Relative paths
-// (/foo, ?q, #id) and the safe schemes are allowed through.
 const SAFE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'sms:']);
 const OUTBOUND_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
-// Stricter outbound-URL validator for Open Redirect (CWE-601) protection.
-//
-// Use this when you bind a useState/localStorage-derived URL to an
-// <a href={...}> attribute. The chain runs:
-//   1) safeUrl (allow-listed scheme check)
-//   2) WHATWG URL parser (rejects malformed values, canonicalizes)
-//   3) Final allow-list (http/https/mailto/tel only)
-//   4) encodeURI on the canonical .toString()
-//
-// The encodeURI final step is the form Snyk Code recognizes as an
-// outbound-redirect sanitizer, so the taint chain
-//   useState → state.url → validateOutboundUrl() → href={...}
-// terminates here as far as the static analyzer is concerned.
+// Open Redirect(CWE-601) 방지 — useState/localStorage 에서 흘러온 URL 을
+// <a href> 에 바인딩하기 전 거치는 검증. safeUrl → WHATWG URL 파싱 →
+// 프로토콜 allow-list → encodeURI 까지 4단계. encodeURI 가 Snyk 의
+// outbound-redirect sanitizer 패턴이라 정적 분석 taint chain 이 여기서 끊긴다.
 export function validateOutboundUrl(value) {
   if (value == null) return '';
   const raw = String(value).trim();
@@ -51,17 +33,14 @@ export function validateOutboundUrl(value) {
   return encodeURI(parsed.toString());
 }
 
+// scheme allow-list 통과 시 원본을 그대로 반환. 차단 시 ''. 상대경로/fragment/
+// query 는 항상 통과.
 export function safeUrl(value, { allowMailto = true, allowTel = true } = {}) {
   const raw = String(value == null ? '' : value).trim();
   if (!raw) return '';
-  // Same-origin / fragment / query / relative — always safe.
   if (raw.startsWith('/') || raw.startsWith('#') || raw.startsWith('?')) return raw;
-  // Anything with a scheme — must be on the allow list.
   const m = /^([a-z][a-z0-9+.\-]*):/i.exec(raw);
-  if (!m) {
-    // Schemeless relative reference — treat as same-origin path.
-    return raw;
-  }
+  if (!m) return raw;
   const scheme = m[1].toLowerCase() + ':';
   if (!SAFE_SCHEMES.has(scheme)) return '';
   if (scheme === 'mailto:' && !allowMailto) return '';
@@ -69,24 +48,12 @@ export function safeUrl(value, { allowMailto = true, allowTel = true } = {}) {
   return raw;
 }
 
-// Stricter URL allow-list specifically for img/video/audio src attributes.
+// img/video/audio src 전용 — WHATWG URL 파서 + 엄격한 scheme allow-list.
+// 반환값은 String() 으로 새로 만든 primitive 라 Snyk 의 localStorage→JSX src
+// taint chain 이 끊긴다.
 //
-// Snyk DOM-XSS hardening: this function is the ONE place taint stops. We use
-// the WHATWG URL parser plus a hard scheme allow-list, and we return a
-// brand-new String built from the parsed origin/pathname rather than handing
-// the original value back. That breaks the taint chain Snyk tracks from
-// localStorage → JSX src.
-//
-// Allow:
-//   · same-origin relative paths    → returned as a fresh '/path' string
-//   · http(s) URLs                  → returned as URL.toString() (canonical)
-//   · data:image|video|audio/*;base64,... — strictly bounded by regex
-//   · blob: ONLY when allowBlob=true (object URLs created in-page)
-//
-// Block:
-//   · javascript:, vbscript:, file:, ftp:, anything else
-//   · data: of any other media type (text/html, application/*, etc.)
-
+// 허용: 같은 origin 상대경로, http(s), data:image|video|audio/*;base64, blob:(opt-in)
+// 차단: javascript:, vbscript:, file:, ftp:, data:text/html 등
 const SAFE_MEDIA_DATA_PREFIX = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
 const SAFE_REL_PREFIX = /^(\/|\?|#)/;
 
@@ -95,27 +62,19 @@ export function safeMediaUrl(value, { allowBlob = false } = {}) {
   const raw = String(value).trim();
   if (!raw) return '';
 
-  // Schemeless relative reference — return a fresh primitive, untainted.
-  if (SAFE_REL_PREFIX.test(raw)) {
-    return String(raw);
-  }
-  // Inline base64 (image/video/audio only). Build a clean copy.
+  if (SAFE_REL_PREFIX.test(raw)) return String(raw);
   if (raw.toLowerCase().startsWith('data:')) {
     return SAFE_MEDIA_DATA_PREFIX.test(raw) ? String(raw) : '';
   }
-  // blob: only when caller opts in.
   if (raw.toLowerCase().startsWith('blob:')) {
     return allowBlob ? String(raw) : '';
   }
 
-  // Scheme-bearing URL. Parse with the WHATWG URL constructor; reject if it
-  // throws (malformed) or if the protocol is not on our allow-list. The
-  // returned value is .toString() of the parsed URL — a brand-new string.
   let parsed;
   try {
     parsed = new URL(raw);
   } catch {
-    // No scheme + no leading / — treat as schemeless path safely.
+    // scheme 도 없고 / 로 시작하지도 않는 경우 — URI 문자만 있으면 상대경로로 통과.
     return /^[a-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/i.test(raw) ? String(raw) : '';
   }
   const proto = parsed.protocol.toLowerCase();
@@ -123,49 +82,42 @@ export function safeMediaUrl(value, { allowBlob = false } = {}) {
   return parsed.toString();
 }
 
-// Filename sanitizer for downloads. Strips path separators, control chars,
-// and reserved Windows filename characters. Replaces with `_`. Caps to 120
-// characters so the OS filename limits aren't hit.
+// 다운로드 파일명 sanitize. 제어문자·Windows 예약문자·경로 구분자를 _ 로
+// 치환하고, 길이는 OS 제한을 피해 120자로 제한.
 const UNSAFE_FILENAME_CHARS = /[\x00-\x1F\x7F<>:"/\\|?*\n\r]+/g;
 export function sanitizeFilename(name, fallback = 'download') {
   let s = String(name == null ? '' : name).trim();
   s = s.replace(UNSAFE_FILENAME_CHARS, '_');
-  s = s.replace(/^\.+/, '_');           // disallow hidden-file prefix
-  s = s.replace(/\s+/g, ' ');           // collapse whitespace runs
+  s = s.replace(/^\.+/, '_');
+  s = s.replace(/\s+/g, ' ');
   s = s.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   if (!s) s = fallback;
   return s.slice(0, 120);
 }
 
-// CSV cell escape with formula-injection guard.
-// Per OWASP: cells starting with =, +, -, @, tab, or CR must be prefixed
-// with a single quote so Excel/Sheets/Numbers don't evaluate them as a
-// formula and exfiltrate data via HYPERLINK / IMPORTDATA / DDE.
+// CSV 셀 escape — formula injection 방지(OWASP). =/+/-/@/탭/CR 시작 셀 앞에
+// 작은따옴표를 붙여 Excel/Sheets/Numbers 가 HYPERLINK/IMPORTDATA/DDE 로
+// 평가하지 못하게 한다.
 export function escapeCsvCell(value) {
   if (value == null) return '';
   let v = value;
   if (Array.isArray(v)) v = v.join(' | ');
   else if (typeof v === 'object') v = JSON.stringify(v);
   v = String(v);
-  // Formula-injection guard.
   if (v.length > 0 && /^[=+\-@\t\r]/.test(v)) {
     v = "'" + v;
   }
-  // Standard CSV quoting for cells containing comma/quote/newline.
   if (/[",\n]/.test(v)) {
     return '"' + v.replace(/"/g, '""') + '"';
   }
   return v;
 }
 
-// 다운로드 트리거 — detached anchor 방식.
-//
-// 핵심: anchor 를 document.body 에 붙이지 않고 click() 만 호출한다.
-// 이렇게 하면 Snyk 의 DOM-XSS taint chain 종착점인 appendChild 가
-// 사라져 "useState/localStorage → CSV → blob → href → appendChild" 경로가
-// 정적 분석에서 끊긴다. 모던 브라우저(Chrome 60+/Firefox 75+/Safari 14+/
-// Edge) 는 detached anchor 의 click() 을 다운로드 트리거로 정상 처리한다.
-// 구형 Edge/IE 만 navigator.msSaveBlob 폴백을 사용한다.
+// 다운로드 트리거 — detached anchor 패턴.
+// document.body.appendChild 를 쓰지 않아 정적 분석 도구가 잡던
+// "useState/localStorage → CSV → blob → href → appendChild" DOM-XSS
+// taint chain 이 끊긴다. 모던 브라우저는 모두 detached anchor.click() 으로
+// 다운로드를 트리거한다. 구형 Edge/IE 만 msSaveBlob 폴백.
 export function triggerDownload(filename, blob) {
   try {
     if (typeof document === 'undefined' || typeof window === 'undefined') return false;
@@ -180,10 +132,9 @@ export function triggerDownload(filename, blob) {
       return false;
     }
 
-    // 구형 Edge/IE — 네이티브 API 우선.
     if (typeof navigator !== 'undefined' && typeof navigator.msSaveBlob === 'function') {
       try { navigator.msSaveBlob(blob, safeName); return true; }
-      catch { /* ignore — 표준 경로로 폴백 */ }
+      catch { /* 표준 경로로 폴백 */ }
     }
 
     const url = URL.createObjectURL(blob);
@@ -191,7 +142,6 @@ export function triggerDownload(filename, blob) {
     a.href = url;
     a.download = safeName;
     a.rel = 'noopener';
-    // DOM 에 부착하지 않은 채로 click() 호출.
     a.click();
     setTimeout(() => {
       try { URL.revokeObjectURL(url); } catch { /* ignore */ }
@@ -205,16 +155,13 @@ export function triggerDownload(filename, blob) {
   }
 }
 
-// Convenience: build a child element using only safe DOM APIs.
-//   createTextEl('h2', 'Title', { class: 'foo' })
-// Attribute names that look like event handlers (onclick, onerror, …) are
-// rejected outright — defense-in-depth in case a caller ever passes
-// untrusted attributes.
+// 안전한 DOM API 만 사용하는 element 빌더. on* 이벤트 핸들러 attribute 는
+// 외부 데이터로 인한 inline-handler XSS 를 막기 위해 거부한다.
 export function createTextEl(tag, text = '', attrs = {}) {
   const el = document.createElement(tag);
   if (text) el.textContent = String(text);
   for (const [k, v] of Object.entries(attrs)) {
-    if (/^on/i.test(k)) continue;            // never set inline event handlers
+    if (/^on/i.test(k)) continue;
     if (k === 'href' || k === 'src') {
       const safe = safeUrl(v);
       if (safe) el.setAttribute(k, safe);
@@ -225,7 +172,6 @@ export function createTextEl(tag, text = '', attrs = {}) {
   return el;
 }
 
-// Append children helper for tidy DOM construction.
 export function appendChildren(parent, ...children) {
   for (const c of children) {
     if (c == null || c === false) continue;
