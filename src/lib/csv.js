@@ -48,16 +48,16 @@ export function downloadCSV(filename, rows, columns) {
 
     // 미리보기 동의 후에만 실제 blob 생성 + 다운로드 트리거.
     Promise.resolve(siteCsvPreview({ filename: name, rows, columns, sampleSize: 10 }))
-      .then((ok) => {
+      .then(async (ok) => {
         if (!ok) return;
         try {
           const csv = rowsToCSV(rows, columns);
           const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-          const triggered = triggerDownload(name, blob);
+          const triggered = await triggerDownload(name, blob);
           if (triggered) {
             try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
             catch { /* ignore */ }
-            try { siteToast(`CSV 다운로드 시작 — ${name} (${rows.length}행)`); } catch { /* ignore */ }
+            try { siteToast(`CSV 다운로드 완료 — ${name} (${rows.length}행)`); } catch { /* ignore */ }
           }
         } catch (e) {
           try { window.alert('CSV 생성 실패: ' + (e?.message || String(e))); } catch { /* ignore */ }

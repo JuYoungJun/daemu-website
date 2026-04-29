@@ -38,6 +38,12 @@ export default function AdminGate() {
     try { return localStorage.getItem('daemu_csv_filename_prefix') || 'daemu-'; }
     catch { return 'daemu-'; }
   });
+  const [csvPickLocation, setCsvPickLocation] = useState(() => {
+    try { return localStorage.getItem('daemu_csv_pick_location') === '1'; }
+    catch { return false; }
+  });
+  // 모던 브라우저(Chrome/Edge/Opera 86+) 만 File System Access API 지원.
+  const supportsPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
   // 2FA login flow state — when backend says need_totp, we keep email/password
   // around (NOT in storage) so the user can submit the 6-digit code without
   // re-typing credentials.
@@ -327,30 +333,51 @@ export default function AdminGate() {
               <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">발송된 캠페인</span></div>
             </div>
 
-            {/* CSV 다운로드 설정 — 모든 어드민 페이지의 export 파일명 prefix. */}
-            <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 240px' }}>
-                <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>CSV 다운로드 설정</div>
-                <div style={{ fontSize: 12.5, color: '#5a534b', lineHeight: 1.6 }}>
-                  파일명 prefix(예: <code>daemu-</code>) — 모든 어드민 export 파일 앞에 붙습니다. 저장 위치는 브라우저 기본 다운로드 폴더(보통 <code>~/Downloads</code>) — 변경은 브라우저 설정에서.
+            {/* CSV 다운로드 설정 — 파일명 prefix + 저장 위치 매번 묻기 토글. */}
+            <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 28 }}>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 10 }}>CSV 다운로드 설정</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, flex: '0 0 auto' }}>
+                  <span style={{ color: '#5a534b' }}>파일명 prefix</span>
+                  <input type="text" value={csvPrefix}
+                    onChange={(e) => setCsvPrefix(e.target.value)}
+                    onBlur={() => {
+                      try {
+                        const v = String(csvPrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
+                        const final = v ? (v.endsWith('-') ? v : v + '-') : 'daemu-';
+                        setCsvPrefix(final);
+                        localStorage.setItem('daemu_csv_filename_prefix', final);
+                        try { siteToast(`CSV 파일명 prefix 저장됨: ${final}`); } catch { /* ignore */ }
+                      } catch { /* ignore */ }
+                    }}
+                    placeholder="daemu-"
+                    style={{ padding: '6px 10px', border: '1px solid #d7d4cf', background: '#fff', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, minWidth: 160 }} />
+                </label>
+
+                <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#231815', cursor: supportsPicker ? 'pointer' : 'not-allowed', opacity: supportsPicker ? 1 : 0.55 }}>
+                    <input type="checkbox" checked={csvPickLocation && supportsPicker}
+                      disabled={!supportsPicker}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setCsvPickLocation(v);
+                        try {
+                          localStorage.setItem('daemu_csv_pick_location', v ? '1' : '0');
+                          siteToast(v ? '저장 위치 매번 묻기: ON' : '저장 위치 매번 묻기: OFF');
+                        } catch { /* ignore */ }
+                      }} />
+                    <span><strong>저장 위치 매번 묻기</strong> — 다운로드할 때마다 폴더 선택 다이얼로그가 열립니다.</span>
+                  </label>
+                  <div style={{ fontSize: 11.5, color: '#8c867d', lineHeight: 1.6, paddingLeft: 24 }}>
+                    {supportsPicker
+                      ? '브라우저: File System Access API 지원 ✓. 체크 시 매 다운로드마다 위치를 직접 선택할 수 있습니다.'
+                      : '본 브라우저는 미지원(Firefox / iOS Safari). Chrome·Edge·Opera 에서만 동작합니다 — 그 외에는 기본 다운로드 폴더(보통 ~/Downloads) 로 자동 저장됩니다.'}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#8c867d', lineHeight: 1.6, paddingLeft: 24 }}>
+                    OFF 일 때 기본 다운로드 폴더 변경: 브라우저 설정 → 다운로드 → 위치 변경.
+                  </div>
                 </div>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                <span style={{ color: '#8c867d' }}>파일명 prefix</span>
-                <input type="text" value={csvPrefix}
-                  onChange={(e) => setCsvPrefix(e.target.value)}
-                  onBlur={() => {
-                    try {
-                      const v = String(csvPrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
-                      const final = v ? (v.endsWith('-') ? v : v + '-') : 'daemu-';
-                      setCsvPrefix(final);
-                      localStorage.setItem('daemu_csv_filename_prefix', final);
-                      try { siteToast(`CSV 파일명 prefix 저장됨: ${final}`); } catch { /* ignore */ }
-                    } catch { /* ignore */ }
-                  }}
-                  placeholder="daemu-"
-                  style={{ padding: '6px 10px', border: '1px solid #d7d4cf', background: '#fff', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, minWidth: 140 }} />
-              </label>
             </div>
 
             <h3 className="admin-section-title">관리 메뉴</h3>

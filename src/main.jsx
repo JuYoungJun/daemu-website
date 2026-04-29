@@ -8,6 +8,12 @@ import App from './App.jsx';
 import { installInputFormatHandler } from './lib/inputFormatGlobal.js';
 installInputFormatHandler();
 
+// Render free tier 슬립 방어 — 사이트 방문자가 있는 시간대에 백엔드를
+// 5분 간격으로 ping 해 dyno 가 깨어 있게 유지. 외부 cron(UptimeRobot 등)
+// + GitHub Actions cron 과 함께 3중 방어. 백엔드 미연결 시 자동 skip.
+import { startKeepAlive } from './lib/keepAlive.js';
+startKeepAlive();
+
 // FR-01 fix: defer the legacy form handler until a `data-consult-form`
 // submission actually fires. Until then, db.js / email.js / api.js stay
 // out of the public visitor's main bundle.
