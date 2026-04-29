@@ -35,31 +35,57 @@ import Partners from './pages/Partners.jsx';
 import Privacy from './pages/Privacy.jsx';
 import Unsubscribe from './pages/Unsubscribe.jsx';
 
-// Admin pages — code-split via React.lazy. Public visitors never download
-// these chunks; each /admin/* route triggers its own JS request on first nav.
-const AdminGate = lazy(() => import('./admin/AdminGate.jsx'));
-const AdminWorks = lazy(() => import('./admin/AdminWorks.jsx'));
-const AdminInquiries = lazy(() => import('./admin/AdminInquiries.jsx'));
-const AdminPartners = lazy(() => import('./admin/AdminPartners.jsx'));
-const AdminOrders = lazy(() => import('./admin/AdminOrders.jsx'));
-const AdminContent = lazy(() => import('./admin/AdminContent.jsx'));
-const AdminStats = lazy(() => import('./admin/AdminStats.jsx'));
-const AdminMedia = lazy(() => import('./admin/AdminMedia.jsx'));
-const AdminMail = lazy(() => import('./admin/AdminMail.jsx'));
-const AdminCRM = lazy(() => import('./admin/AdminCRM.jsx'));
-const AdminCampaign = lazy(() => import('./admin/AdminCampaign.jsx'));
-const AdminPromotion = lazy(() => import('./admin/AdminPromotion.jsx'));
-const AdminPopup = lazy(() => import('./admin/AdminPopup.jsx'));
-const AdminOutbox = lazy(() => import('./admin/AdminOutbox.jsx'));
-const AdminMonitoring = lazy(() => import('./admin/AdminMonitoring.jsx'));
-const AdminContracts = lazy(() => import('./admin/AdminContracts.jsx'));
-const AdminProducts = lazy(() => import('./admin/AdminProducts.jsx'));
-const AdminAnalytics = lazy(() => import('./admin/AdminAnalytics.jsx'));
-const AdminUsers = lazy(() => import('./admin/AdminUsers.jsx'));
-const AdminPartnerBrands = lazy(() => import('./admin/AdminPartnerBrands.jsx'));
-const AdminMailTemplates = lazy(() => import('./admin/AdminMailTemplates.jsx'));
-const AdminUtmBuilder = lazy(() => import('./admin/AdminUtmBuilder.jsx'));
-const SignDocument = lazy(() => import('./pages/SignDocument.jsx'));
+// 어드민 페이지 — React.lazy 로 code-split. 일반 방문자는 이 chunk 들을
+// 다운받지 않고, /admin/* 진입 시 처음으로 요청한다.
+//
+// lazyWithReload: 새 빌드가 deploy 되면 옛 chunk URL 의 hash 가 바뀌어
+// 이미 로드돼 있던 메인 번들이 옛 chunk 를 fetch 하다 404 가 난다. 그
+// 결과 ErrorBoundary 가 ServerError(500) 를 띄우게 되는데, 사용자 입장
+// 에서는 "어드민 페이지가 500 만 뜬다" 로 보인다. dynamic import 가 실패
+// 하면 sessionStorage one-shot marker 로 한 번만 자동 reload 해서 새
+// chunk hash 를 받아오도록 한다(무한 루프 방지).
+const lazyWithReload = (importer) => lazy(() =>
+  importer().catch((err) => {
+    const msg = String(err?.message || err || '');
+    const isChunkFail = /chunk|Failed to fetch dynamically|Loading.*chunk|Importing a module script failed/i.test(msg);
+    if (isChunkFail && typeof window !== 'undefined') {
+      try {
+        const KEY = 'daemu_chunk_reload_ts';
+        const last = Number(sessionStorage.getItem(KEY) || 0);
+        // 1분 안에 한 번만 reload — 같은 세션에서 무한 루프 방지.
+        if (!last || Date.now() - last > 60_000) {
+          sessionStorage.setItem(KEY, String(Date.now()));
+          window.location.reload();
+          return new Promise(() => {}); // hang until reload
+        }
+      } catch { /* ignore */ }
+    }
+    throw err;
+  })
+);
+const AdminGate = lazyWithReload(() => import('./admin/AdminGate.jsx'));
+const AdminWorks = lazyWithReload(() => import('./admin/AdminWorks.jsx'));
+const AdminInquiries = lazyWithReload(() => import('./admin/AdminInquiries.jsx'));
+const AdminPartners = lazyWithReload(() => import('./admin/AdminPartners.jsx'));
+const AdminOrders = lazyWithReload(() => import('./admin/AdminOrders.jsx'));
+const AdminContent = lazyWithReload(() => import('./admin/AdminContent.jsx'));
+const AdminStats = lazyWithReload(() => import('./admin/AdminStats.jsx'));
+const AdminMedia = lazyWithReload(() => import('./admin/AdminMedia.jsx'));
+const AdminMail = lazyWithReload(() => import('./admin/AdminMail.jsx'));
+const AdminCRM = lazyWithReload(() => import('./admin/AdminCRM.jsx'));
+const AdminCampaign = lazyWithReload(() => import('./admin/AdminCampaign.jsx'));
+const AdminPromotion = lazyWithReload(() => import('./admin/AdminPromotion.jsx'));
+const AdminPopup = lazyWithReload(() => import('./admin/AdminPopup.jsx'));
+const AdminOutbox = lazyWithReload(() => import('./admin/AdminOutbox.jsx'));
+const AdminMonitoring = lazyWithReload(() => import('./admin/AdminMonitoring.jsx'));
+const AdminContracts = lazyWithReload(() => import('./admin/AdminContracts.jsx'));
+const AdminProducts = lazyWithReload(() => import('./admin/AdminProducts.jsx'));
+const AdminAnalytics = lazyWithReload(() => import('./admin/AdminAnalytics.jsx'));
+const AdminUsers = lazyWithReload(() => import('./admin/AdminUsers.jsx'));
+const AdminPartnerBrands = lazyWithReload(() => import('./admin/AdminPartnerBrands.jsx'));
+const AdminMailTemplates = lazyWithReload(() => import('./admin/AdminMailTemplates.jsx'));
+const AdminUtmBuilder = lazyWithReload(() => import('./admin/AdminUtmBuilder.jsx'));
+const SignDocument = lazyWithReload(() => import('./pages/SignDocument.jsx'));
 
 const AdminFallback = () => (
   <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5f5b57', fontSize: 13 }}>

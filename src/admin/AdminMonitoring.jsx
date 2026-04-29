@@ -255,29 +255,39 @@ export default function AdminMonitoring() {
   }, []);
 
   // probe history 에서 마지막 10회 평균 latency 추출.
+  //
+  // 보안: localStorage 에서 읽은 데이터의 key 를 그대로 객체 인덱싱에
+  // 사용하지 않는다. API_PROBE_TARGETS allow-list 에 포함된 key 만 처리하고,
+  // accumulator 도 prototype-less object 로 만들어 prototype pollution 차단.
   const probeHistory = useMemo(() => {
     try {
-      const hist = JSON.parse(localStorage.getItem('daemu_api_probe_history') || '[]').slice(0, 10);
-      const acc = {};
+      const raw = JSON.parse(localStorage.getItem('daemu_api_probe_history') || '[]');
+      const hist = Array.isArray(raw) ? raw.slice(0, 10) : [];
+      const acc = Object.create(null);
       for (const tgt of API_PROBE_TARGETS) acc[tgt.key] = { sum: 0, n: 0, fail: 0 };
       for (const h of hist) {
-        for (const k of Object.keys(h.results || {})) {
-          const r = h.results[k];
-          if (!acc[k]) continue;
+        const results = h && typeof h === 'object' ? h.results : null;
+        if (!results || typeof results !== 'object') continue;
+        for (const tgt of API_PROBE_TARGETS) {
+          const k = tgt.key;
+          if (!Object.prototype.hasOwnProperty.call(results, k)) continue;
+          const r = results[k];
+          if (!r || typeof r !== 'object') continue;
           if (typeof r.latency === 'number') { acc[k].sum += r.latency; acc[k].n++; }
-          if (!r.ok) acc[k].fail++;
+          if (r.ok === false) acc[k].fail++;
         }
       }
-      const out = {};
-      for (const k of Object.keys(acc)) {
-        out[k] = {
-          avgLatency: acc[k].n > 0 ? Math.round(acc[k].sum / acc[k].n) : null,
-          failRate: hist.length ? Math.round((acc[k].fail / hist.length) * 100) : 0,
+      const out = Object.create(null);
+      for (const tgt of API_PROBE_TARGETS) {
+        const a = acc[tgt.key];
+        out[tgt.key] = {
+          avgLatency: a.n > 0 ? Math.round(a.sum / a.n) : null,
+          failRate: hist.length ? Math.round((a.fail / hist.length) * 100) : 0,
           samples: hist.length,
         };
       }
       return out;
-    } catch { return {}; }
+    } catch { return Object.create(null); }
   }, [probeLastRun]);
 
   // outbox 기반 API 호출 통계 — 시간창별 total/failed/error.
