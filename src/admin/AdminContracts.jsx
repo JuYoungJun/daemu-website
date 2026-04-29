@@ -426,36 +426,54 @@ function TemplatesPane({ templates, onChange, isAdmin }) {
     variables: VARIABLE_HINTS.map((v) => v.key),
     active: true,
   });
-  const startBlank = (kind) => setEditing({
+  // openPdfUpload=true 면 에디터 진입 직후 PDF 업로드 단계가 자동 활성화됨.
+  const startBlank = (kind, opts = {}) => setEditing({
     name: kind === 'contract' ? '새 계약서' : '새 발주서',
     kind,
     subject: kind === 'contract' ? '[대무] 계약서 — {{projectName}}' : '[대무] 발주서 — {{projectName}}',
-    body: kind === 'contract' ? DEFAULT_CONTRACT_TEMPLATE : DEFAULT_PO_TEMPLATE,
+    body: opts.openPdfUpload ? '' : (kind === 'contract' ? DEFAULT_CONTRACT_TEMPLATE : DEFAULT_PO_TEMPLATE),
     variables: VARIABLE_HINTS.map((v) => v.key),
     active: true,
+    _autoOpenPdf: !!opts.openPdfUpload,
   });
 
   return (
     <div>
       {isAdmin && (
-        <div style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
-          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>표준 양식에서 만들기</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {TEMPLATE_PRESETS.map((p) => (
-              <button key={p.id} type="button" className="adm-btn-sm" onClick={() => startFromPreset(p)}>
-                + {p.label}
-              </button>
-            ))}
+        <div style={{
+          display: 'grid', gap: 10, marginBottom: 18,
+          background: '#fff', border: '1px solid #d7d4cf', padding: 18,
+        }}>
+          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>
+            새 템플릿 만들기
           </div>
-          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginTop: 6 }}>또는 빈 템플릿으로 시작</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="adm-btn-sm" type="button" onClick={() => startBlank('contract')}>+ 빈 계약서</button>
-            <button className="adm-btn-sm" type="button" onClick={() => startBlank('purchase_order')}>+ 빈 발주서</button>
+          <p style={{ fontSize: 12.5, color: '#5a534b', margin: '0 0 4px', lineHeight: 1.7 }}>
+            기존에 쓰던 PDF 양식을 올리면 자동으로 텍스트를 추출해 편집 가능한 템플릿으로 변환합니다.
+            추출이 잘 안 되는 스캔본은 PDF 자체를 첨부해 그대로 사용할 수 있습니다.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn" type="button" onClick={() => startBlank('contract', { openPdfUpload: true })}>
+              + PDF 업로드 (계약서)
+            </button>
+            <button className="btn" type="button" onClick={() => startBlank('purchase_order', { openPdfUpload: true })}>
+              + PDF 업로드 (발주서)
+            </button>
+            <span style={{ flex: 1 }} />
+            <button className="adm-btn-sm" type="button" onClick={() => startBlank('contract')}>
+              빈 계약서로 시작
+            </button>
+            <button className="adm-btn-sm" type="button" onClick={() => startBlank('purchase_order')}>
+              빈 발주서로 시작
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: '#8c867d', lineHeight: 1.7 }}>
+            기존에 시드된 표준 양식 11종(컨설팅 용역·공급·NDA·디자인·공간·OJT·이미지 동의서·발주서·시공·장비 등)은 자동으로 등록되어 있어 따로 만들 필요 없습니다.
+            아래 목록에서 바로 사용·수정하세요.
           </div>
         </div>
       )}
 
-      {!templates.length && <EmptyState text="등록된 템플릿이 없습니다. 위 버튼으로 표준 양식을 만들어 보세요." />}
+      {!templates.length && <EmptyState text="등록된 템플릿이 없습니다. 위 버튼으로 PDF 업로드 또는 빈 템플릿으로 시작해 보세요." />}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px,1fr))', gap: 14 }}>
         {templates.map((t) => (
@@ -509,6 +527,19 @@ function TemplateEditor({ template, onClose, onSaved }) {
   const [pdfImporting, setPdfImporting] = useState(false);
   const [pdfImportProgress, setPdfImportProgress] = useState(null);
   const [pdfPreview, setPdfPreview] = useState(null); // { extracted, filename, dataUrl, pageInfo }
+  const pdfFileInputRef = useRef(null);
+
+  // "+ PDF 업로드" 버튼으로 진입한 경우 (_autoOpenPdf), 모달이 mount 되자마자
+  // file picker 가 열리도록 자동 클릭. 사용자가 한 번만 클릭하면 PDF 선택
+  // 단계로 바로 진입.
+  useEffect(() => {
+    if (template?._autoOpenPdf && pdfFileInputRef.current) {
+      const t = setTimeout(() => {
+        try { pdfFileInputRef.current.click(); } catch { /* ignore */ }
+      }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [template]);
 
   const save = async () => {
     setSaving(true); setErr('');
@@ -634,7 +665,7 @@ function TemplateEditor({ template, onClose, onSaved }) {
           </div>
           {!t.pdfFilename && !pdfImporting && (
             <label className="adm-btn-sm" style={{ cursor: 'pointer', display: 'inline-block' }}>
-              <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
+              <input ref={pdfFileInputRef} type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
                 onChange={(e) => { onPdfUpload(e.target.files?.[0]); e.target.value = ''; }} />
               + PDF 양식 업로드 (≤10MB)
             </label>
@@ -710,9 +741,11 @@ function TemplateEditor({ template, onClose, onSaved }) {
 function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onCancel }) {
   const hasText = preview.extracted && preview.extracted.trim().length > 30;
   const charCount = preview.extracted ? preview.extracted.length : 0;
+  const [tab, setTab] = useState(hasText ? 'converted' : 'pdf');
+
   return (
     <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className="adm-modal-box is-wide">
+      <div className="adm-modal-box is-wide" style={{ maxWidth: 1100 }}>
         <div className="adm-modal-head">
           <h2>PDF 가져오기 — {preview.filename} ({preview.sizeKb}KB)</h2>
           <button type="button" className="adm-modal-close" onClick={onCancel} aria-label="닫기">×</button>
@@ -725,26 +758,49 @@ function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onC
           </div>
         )}
 
-        {hasText ? (
-          <>
-            <div style={{ fontSize: 12, color: '#5a534b', marginBottom: 8 }}>
-              <strong>추출된 텍스트 미리보기</strong> ({charCount.toLocaleString('ko')}자) — 본문에 적용하면 직접 편집·변수화 가능합니다.
+        {/* 탭 — 변환된 텍스트 / 원본 PDF / 나란히 비교 */}
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e6e3dd', marginBottom: 14 }}>
+          <TabBtn active={tab === 'converted'} onClick={() => setTab('converted')} disabled={!hasText}>
+            변환 결과 ({charCount.toLocaleString('ko')}자)
+          </TabBtn>
+          <TabBtn active={tab === 'pdf'} onClick={() => setTab('pdf')} disabled={!preview.dataUrl}>
+            원본 PDF
+          </TabBtn>
+          <TabBtn active={tab === 'compare'} onClick={() => setTab('compare')} disabled={!hasText || !preview.dataUrl}>
+            나란히 비교
+          </TabBtn>
+        </div>
+
+        {tab === 'converted' && hasText && (
+          <ConvertedPaper extracted={preview.extracted} />
+        )}
+
+        {tab === 'pdf' && preview.dataUrl && (
+          <PdfFrame src={preview.dataUrl} />
+        )}
+
+        {tab === 'compare' && hasText && preview.dataUrl && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="adm-pdf-compare">
+            <div>
+              <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 6 }}>변환된 텍스트</div>
+              <ConvertedPaper extracted={preview.extracted} compact />
             </div>
-            <pre style={{
-              background: '#f6f4f0', border: '1px solid #e6e3dd',
-              padding: 14, fontSize: 12, lineHeight: 1.75,
-              maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap',
-              wordBreak: 'keep-all', fontFamily: 'inherit', margin: 0,
-            }}>{preview.extracted.slice(0, 5000)}{preview.extracted.length > 5000 ? '\n\n...(너무 길어 5,000자에서 잘림 — 적용 후 본문에서 전체 확인)' : ''}</pre>
-            <p style={{ fontSize: 11, color: '#8c867d', marginTop: 8 }}>
-              추출 품질이 만족스러우면 <strong>변환 결과 적용</strong>, 그대로 PDF 를 쓰고 싶으면 <strong>PDF 그대로 첨부</strong> 를 선택하세요.
-            </p>
-          </>
-        ) : (
-          <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: 14, fontSize: 13, color: '#5a4a2a' }}>
-            텍스트 추출량이 거의 없습니다 (스캔 PDF 또는 이미지 기반). PDF 그대로 첨부해서 사용하는 것을 권장합니다.
+            <div>
+              <div style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 6 }}>원본 PDF</div>
+              <PdfFrame src={preview.dataUrl} compact />
+            </div>
           </div>
         )}
+
+        {!hasText && (
+          <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: 14, fontSize: 13, color: '#5a4a2a', marginTop: 12 }}>
+            텍스트 추출량이 거의 없습니다 (스캔 PDF 또는 이미지 기반). <strong>PDF 그대로 첨부</strong> 로 사용을 권장합니다.
+          </div>
+        )}
+
+        <p style={{ fontSize: 11, color: '#8c867d', marginTop: 12 }}>
+          위 미리보기를 보고 결정하세요 — 변환 결과가 깔끔하면 <strong>변환 결과 적용</strong> (편집·변수 가능), 그대로 PDF 를 쓰고 싶으면 <strong>PDF 그대로 첨부</strong>.
+        </p>
 
         <div className="adm-action-row">
           <button type="button" className="adm-btn-sm" onClick={onCancel}>취소</button>
@@ -756,6 +812,92 @@ function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onC
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TabBtn({ active, onClick, disabled, children }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      style={{
+        background: active ? '#fff' : 'transparent',
+        border: '1px solid ' + (active ? '#d7d4cf' : 'transparent'),
+        borderBottom: active ? '1px solid #fff' : '1px solid transparent',
+        padding: '8px 16px',
+        marginBottom: -1,
+        fontSize: 12.5,
+        fontWeight: active ? 600 : 400,
+        color: disabled ? '#b9b5ae' : (active ? '#231815' : '#5a534b'),
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontFamily: 'inherit',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+// 변환 결과를 A4-style 흰 종이 미리보기로 — 조항 자동 강조.
+function ConvertedPaper({ extracted, compact }) {
+  const lines = String(extracted || '').split('\n');
+  const truncated = extracted.length > 8000;
+  const display = truncated ? extracted.slice(0, 8000) : extracted;
+  return (
+    <div style={{
+      background: '#fff',
+      border: '1px solid #d7d4cf',
+      maxHeight: compact ? 480 : 520,
+      overflowY: 'auto',
+      padding: compact ? '20px 22px' : '32px clamp(20px, 4vw, 48px)',
+      fontFamily: "'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif",
+      fontSize: 13.5,
+      lineHeight: 1.85,
+      color: '#231815',
+      wordBreak: 'keep-all',
+    }}>
+      {display.split('\n').map((line, i) => {
+        const trimmed = line.trim();
+        // 조항 헤더 강조 — 「제 N 조 (...)」
+        if (/^제\s*\d+\s*(조|장)/.test(trimmed)) {
+          return <h3 key={i} style={{
+            fontSize: 14, fontWeight: 600, color: '#231815',
+            margin: '14px 0 4px', borderBottom: '1px solid #e6e3dd',
+            paddingBottom: 4,
+          }}>{trimmed}</h3>;
+        }
+        // 큰 제목 (앞 3줄 안의 짧은 줄을 제목 후보로)
+        if (i < 3 && trimmed.length > 0 && trimmed.length < 30 && !/[.:;]/.test(trimmed)) {
+          return <h2 key={i} style={{
+            fontFamily: "'Cormorant Garamond', Georgia, serif",
+            fontSize: 22, fontWeight: 500, margin: '0 0 16px',
+            color: '#231815',
+          }}>{trimmed}</h2>;
+        }
+        if (!trimmed) return <div key={i} style={{ height: '0.7em' }} />;
+        return <p key={i} style={{ margin: '0 0 6px' }}>{line}</p>;
+      })}
+      {truncated && (
+        <p style={{ marginTop: 16, fontSize: 11, color: '#8c867d', textAlign: 'center', borderTop: '1px dashed #e6e3dd', paddingTop: 10 }}>
+          ... (8,000자에서 잘림 — 적용 후 본문 편집기에서 전체 확인)
+        </p>
+      )}
+    </div>
+  );
+}
+
+// 원본 PDF iframe 미리보기 — 브라우저 native viewer 사용.
+function PdfFrame({ src, compact }) {
+  return (
+    <div style={{ background: '#e5e1d8', padding: 8 }}>
+      <iframe
+        title="PDF 원본 미리보기"
+        src={src}
+        style={{
+          width: '100%',
+          height: compact ? 480 : 560,
+          border: '1px solid #d7d4cf',
+          background: '#fff',
+        }}
+      />
     </div>
   );
 }
