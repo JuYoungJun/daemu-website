@@ -44,11 +44,19 @@ import Unsubscribe from './pages/Unsubscribe.jsx';
 // 에서는 "어드민 페이지가 500 만 뜬다" 로 보인다. dynamic import 가 실패
 // 하면 sessionStorage one-shot marker 로 한 번만 자동 reload 해서 새
 // chunk hash 를 받아오도록 한다(무한 루프 방지).
-// sessionStorage marker 이름 — 비밀이 아니라 단순 식별자. 변수명을 KEY 로
-// 두면 Snyk CWE-547 가 hardcoded secret 으로 오인하므로 _STORAGE_KEY 접미로
-// 의도를 분명히 한다.
+// sessionStorage marker — 단순 식별자(비밀 아님). KEY 만 쓰면 Snyk CWE-547
+// 가 hardcoded secret 으로 오인하므로 _STORAGE_KEY 접미로 의도 명시.
 const CHUNK_RELOAD_STORAGE_KEY = 'daemu_chunk_reload_ts';
+const CHUNK_RELOAD_COUNT_STORAGE_KEY = 'daemu_chunk_reload_count';
 
+// stale chunk 자동 복구.
+//   1) 첫 실패 → window.location.reload() 로 그대로 재진입.
+//   2) 그래도 같은 chunk 가 stale 이면 두 번째 실패 → ?_cb=ts 쿼리 cache-bust
+//      reload. GitHub Pages CDN 또는 브라우저 캐시가 옛 index.html 을 잡고
+//      있는 경우까지 강제 우회.
+//   3) 그래도 안 되면 ErrorBoundary 가 ServerError 페이지로 fallback —
+//      거기에 수동 hard reload 안내 버튼이 있다.
+// 무한 루프 방지: count >= 3 또는 60초 안 재시도면 reload 중단.
 const lazyWithReload = (importer) => lazy(() =>
   importer().catch((err) => {
     const msg = String(err?.message || err || '');
@@ -56,9 +64,19 @@ const lazyWithReload = (importer) => lazy(() =>
     if (isChunkFail && typeof window !== 'undefined') {
       try {
         const last = Number(sessionStorage.getItem(CHUNK_RELOAD_STORAGE_KEY) || 0);
-        if (!last || Date.now() - last > 60_000) {
+        const count = Number(sessionStorage.getItem(CHUNK_RELOAD_COUNT_STORAGE_KEY) || 0);
+        const sinceLast = Date.now() - last;
+        if (count < 3 && (last === 0 || sinceLast > 60_000)) {
           sessionStorage.setItem(CHUNK_RELOAD_STORAGE_KEY, String(Date.now()));
-          window.location.reload();
+          sessionStorage.setItem(CHUNK_RELOAD_COUNT_STORAGE_KEY, String(count + 1));
+          // 첫 시도는 단순 reload, 이후엔 cache-bust 쿼리 부착.
+          if (count === 0) {
+            window.location.reload();
+          } else {
+            const cur = window.location.href.replace(/[?&]_cb=\d+/g, '');
+            const sep = cur.includes('?') ? '&' : '?';
+            window.location.href = cur + sep + '_cb=' + Date.now();
+          }
           return new Promise(() => {});
         }
       } catch { /* ignore */ }

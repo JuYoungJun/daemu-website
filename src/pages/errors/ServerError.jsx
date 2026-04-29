@@ -2,13 +2,28 @@ import ErrorPage from '../../components/ErrorPage.jsx';
 import { OvenSmoking } from '../../components/errorIllustrations.jsx';
 
 export default function ServerError({ resetError, errorMessage, componentStack }) {
+  // stale chunk 의심 — 메시지에 chunk/dynamic-import 흔적이 있으면 cache-bust
+  // 쿼리 부착 후 hard reload 안내. 일반 에러면 단순 reload.
+  const isChunkFail = /chunk|Failed to fetch dynamically|Loading.*chunk|Importing a module script failed/i.test(errorMessage || '');
+  const hardReload = () => {
+    try {
+      // 모든 chunk-reload marker 초기화 — 사용자가 명시적으로 다시 시도하므로
+      // 자동 reload 가드를 풀어준다.
+      sessionStorage.removeItem('daemu_chunk_reload_ts');
+      sessionStorage.removeItem('daemu_chunk_reload_count');
+    } catch { /* ignore */ }
+    try {
+      const cur = window.location.href.replace(/[?&]_cb=\d+/g, '');
+      const sep = cur.includes('?') ? '&' : '?';
+      window.location.href = cur + sep + '_cb=' + Date.now();
+    } catch { /* ignore */ }
+  };
   const tryAgain = (
     <button type="button" className="err-btn" onClick={() => {
       if (typeof resetError === 'function') resetError();
-      // 강한 새로고침 — service worker / 캐시 무시.
-      try { window.location.reload(); } catch { /* ignore */ }
+      hardReload();
     }}>
-      다시 시도
+      {isChunkFail ? '강제 새로고침 (캐시 무시)' : '다시 시도'}
     </button>
   );
   // 운영자 진단용 details — 평소엔 접혀있다 details 클릭 시 펼쳐짐.

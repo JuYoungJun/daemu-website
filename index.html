@@ -6,6 +6,13 @@
     <meta name="theme-color" content="#f2f0ec" />
     <meta name="referrer" content="origin-when-cross-origin" />
     <meta name="format-detection" content="telephone=no" />
+    <!-- 새 빌드 deploy 후 옛 index.html 이 브라우저/CDN 에 캐시되면 그 안의
+         옛 chunk hash 가 404 가 되어 admin 500 의 원인이 된다. index.html
+         자체는 매번 새로 받아오게 한다 — chunk 파일들은 hash 가 들어가서
+         자동 cache-bust 되므로 영향 없음. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 
     <title>대무 (DAEMU) — 베이커리 · 카페 비즈니스 파트너</title>
     <meta name="description" content="전라남도 나주 기반 베이커리·카페 전문 컨설팅. 브랜드 전략부터 메뉴 개발, 공간 설계, 운영까지 — 카페 비즈니스의 구조를 함께 설계합니다." />
