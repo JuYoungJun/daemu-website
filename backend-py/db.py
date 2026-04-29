@@ -26,6 +26,19 @@ DATABASE_URL = os.environ.get(
     "sqlite+aiosqlite:///./daemu.db",
 )
 
+# Aiven / Cafe24 등에서 발급받은 표준 'mysql://...' URI 를 그대로 등록한 경우
+# SQLAlchemy 는 sync driver(mysqldb) 를 시도하다 실패한다. 우리가 설치한 건
+# async driver(asyncmy) 이므로 자동으로 driver prefix 를 부착.
+if DATABASE_URL.startswith("mysql://"):
+    DATABASE_URL = "mysql+asyncmy://" + DATABASE_URL[len("mysql://"):]
+# Aiven Service URI 의 '?ssl-mode=REQUIRED' 쿼리는 asyncmy 가 알지 못해 무시
+# 되거나(베스트) 'unexpected keyword' 에러가 날 수 있다. db.py 의 connect_args
+# ssl 컨텍스트가 이미 SSL verify-required 로 작동하므로 제거.
+if DATABASE_URL.startswith("mysql+") and "?ssl-mode=" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("?ssl-mode=")[0]
+if DATABASE_URL.startswith("mysql+") and "&ssl-mode=" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.split("&ssl-mode=")[0]
+
 # SQLite needs check_same_thread=False to be safe across async contexts;
 # MySQL doesn't take that arg.
 connect_args = {}
