@@ -1,57 +1,66 @@
 name: Keep Render warm
 
 # Render free tier 는 15분간 트래픽이 없으면 dyno 를 sleep 상태로 내립니다.
-# sleep 후 첫 요청은 cold-start 로 30초+ 지연 + 그 동안 사용자에게 503/타임아웃이
-# 보일 수 있습니다.
+# sleep 후 첫 요청은 cold-start 로 30초+ 지연 + 그 동안 사용자에게 503/타임아웃.
 #
-# 안전성을 높이기 위해 *5분* cron 으로 변경했습니다 (이전 10분):
-#   - GitHub Actions cron 은 ±5분 변동이 있어, 10분 간격이면 최악의 경우
-#     15분 sleep 임계를 살짝 넘길 수 있었음.
-#   - 5분 cron 은 ±5분 드리프트가 있어도 최대 10분 안에는 ping 이 들어가
-#     sleep 임계 15분에 절대 닿지 않음.
+# GitHub Actions schedule cron 은 free tier 에서 hour-boundary 부하 때문에
+# 5분 cron 으로 등록해도 실제로는 30분~수 시간 지연되어 실행됩니다 (실측: 평균
+# 약 1.4시간 간격). 그래서 단순히 */5 cron 만 걸어두면 슬립이 자주 들어갑니다.
 #
-# 운영 단계 (카페24 VPS) 로 이전한 후에는 이 워크플로를 비활성화해도 됩니다.
-# 비활성화 방법: GitHub repo Settings → Actions → Disable workflow.
+# 이중 방어:
+#   1) cron 을 5개 다중 등록 — 시간을 0/1/2/3/4 분 offset 으로 분산해 GitHub
+#      의 같은 hour-boundary 부하 시점을 피한다. 하나가 지연돼도 다른 하나가
+#      먼저 트리거될 확률이 높아진다.
+#   2) trigger 된 한 run 안에서 9분 동안 30초 간격으로 18회 연속 ping. 다음
+#      cron 이 늦게 trigger 돼도 그 사이 dyno 가 깨어 있게 한다 (sleep 임계
+#      15분 안쪽).
 #
-# GitHub Actions 비용:
-#   - public repo: 무제한 무료
-#   - private repo: 월 2,000분 무료 (5분 cron 1회 ~10초 → 약 48분/일 = 1440분/월)
+# 추가 권장: 외부 무료 cron (UptimeRobot, cron-job.org, healthchecks.io) 로
+# https://daemu-py.onrender.com/api/health 를 5분 간격 ping 등록. GitHub
+# Actions 보다 훨씬 정확한 간격을 보장.
 #
-# 트래픽 부담:
-#   - /api/health 는 단순 dict 반환, DB ping 1회. 부하 무시 가능.
+# 운영 단계(카페24 VPS) 이전 후에는 이 워크플로를 비활성화해도 됩니다.
+# Settings → Actions → Disable workflow.
 
 on:
   schedule:
-    # 매 5분마다 (UTC 기준). drift 를 감안해도 sleep 임계(15분)에 절대 닿지 않게.
-    - cron: '*/5 * * * *'
-  workflow_dispatch:    # 수동 실행도 허용
+    - cron: '0/5 * * * *'      # 0,5,10,15,20,25,30,35,40,45,50,55
+    - cron: '1/5 * * * *'      # 1,6,11,16,21,26,31,36,41,46,51,56
+    - cron: '2/5 * * * *'      # 2,7,12,17,22,27,32,37,42,47,52,57
+    - cron: '3/5 * * * *'      # 3,8,13,18,23,28,33,38,43,48,53,58
+    - cron: '4/5 * * * *'      # 4,9,14,19,24,29,34,39,44,49,54,59
+  workflow_dispatch:
+
+# 같은 cron 이 동시에 실행 중이면 새 run 은 스킵 — 중복 ping 방지.
+concurrency:
+  group: keep-render-warm
+  cancel-in-progress: false
 
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 12
     steps:
-      - name: Ping backend health endpoint (cold-start 대비 60s 까지 재시도)
+      - name: Ping /api/health (cold-start 대비 6회 재시도, 최대 60초)
         run: |
           set -e
-          # 첫 요청이 cold-start 면 최대 60초까지 기다림
           for i in 1 2 3 4 5 6; do
             if curl -fsSL --max-time 30 https://daemu-py.onrender.com/api/health > /tmp/health.json; then
-              echo "health OK on attempt $i"
+              echo "::notice::health OK on attempt $i"
               cat /tmp/health.json
-              exit 0
+              break
             fi
             echo "attempt $i failed, retrying in 10s..."
             sleep 10
           done
-          echo "::warning::backend health failed after 6 attempts (cold-start may have exceeded 60s)"
-          exit 0   # workflow 는 실패시키지 않음 (다음 ping 이 또 시도)
 
-      - name: Touch /api/health 1회 더 (방금 깨운 dyno 안정화)
+      - name: 9분 동안 30초 간격으로 ping (다음 cron 이 늦게 와도 슬립 안 들어가게)
         run: |
-          sleep 5
-          curl -fsSL --max-time 10 https://daemu-py.onrender.com/api/health > /dev/null \
-            && echo "second ping OK" || echo "::warning::second ping failed"
+          for i in $(seq 1 18); do
+            sleep 30
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://daemu-py.onrender.com/api/health || echo "fail")
+            echo "ping $i: $STATUS"
+          done
 
       - name: GitHub Pages 도 함께 워밍 (CDN 캐시 유지)
         run: |

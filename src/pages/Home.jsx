@@ -44,6 +44,19 @@ export default function Home() {
       window.removeEventListener('daemu-db-change', refresh);
     };
   }, []);
+
+  // Hero LCP 이미지 preload — Home 진입 시점에만 활성화. index.html 에 두면
+  // 모든 SPA 라우트에서 preload 후 미사용 경고가 뜨므로 동적으로 처리.
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL || '/');
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = base + 'assets/home-hero-flower.png';
+    link.fetchPriority = 'high';
+    document.head.appendChild(link);
+    return () => { try { link.remove(); } catch { /* ignore */ } };
+  }, []);
   useSeo({
     title: '베이커리 · 카페 비즈니스 파트너',
     description: '대무는 전라남도 나주 기반 베이커리·카페 전문 컨설팅 회사입니다. 브랜드 전략부터 메뉴 개발, 공간 설계, 운영까지 카페 비즈니스의 구조를 함께 설계합니다.',

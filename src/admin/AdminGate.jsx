@@ -270,6 +270,7 @@ export default function AdminGate() {
     'products':      ['admin', 'tester'],
     'analytics':     ['admin', 'tester', 'developer'],
     'users':         ['admin'],
+    'api-docs':      ['admin', 'developer'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
   // 한국어 역할 라벨. admin = Super Admin (모든 권한),
@@ -342,11 +343,16 @@ export default function AdminGate() {
               {can('contracts') && <MenuCard to="/admin/contracts" title="계약서 / 발주서" desc="계약서·발주서 템플릿과 문서를 관리하고 e-Sign 서명을 추적합니다." items={['표준 템플릿 + 변수 치환','고객·프로젝트 연결','이메일 발송 + 서명 링크','캔버스 e-Sign + 감사 이력','PDF 출력 (브라우저 인쇄)']} />}
             </div>
 
-            {can('users') && (
+            {(can('users') || can('api-docs')) && (
               <>
                 <h3 className="admin-section-title" style={{marginTop:'48px'}}>시스템</h3>
                 <div className="admin-menu-grid">
-                  <MenuCard to="/admin/users" title="사용자 권한 관리" desc="관리자 / 테스트 / 개발 권한 계정을 발급하고 관리합니다." items={['신규 계정 발급','권한 변경 (admin · tester · developer)','계정 활성화 / 비활성화','자기 계정 보호 (셀프 권한 강등 차단)']} />
+                  {can('users') && (
+                    <MenuCard to="/admin/users" title="사용자 권한 관리" desc="관리자 / 테스트 / 개발 권한 계정을 발급하고 관리합니다." items={['신규 계정 발급','권한 변경 (admin · tester · developer)','계정 활성화 / 비활성화','자기 계정 보호 (셀프 권한 강등 차단)']} />
+                  )}
+                  {can('api-docs') && (
+                    <MenuCard to="/admin/api-docs" title="API 문서" desc="FastAPI /docs 자동 Swagger UI 의 사이트 디자인 대체 페이지." items={['/openapi.json 실시간 동기화','검색 + tag/method 필터','GET try-it (토큰 자동 첨부)','endpoint 별 parameters/responses 스키마 표시']} />
+                  )}
                 </div>
               </>
             )}

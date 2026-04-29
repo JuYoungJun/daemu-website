@@ -26,26 +26,34 @@ function installLazyConsultBridge() {
 }
 installLazyConsultBridge();
 
-// V3-02: globals.js drags email/upload/csv/db into the bundle for every
-// public visitor (~70 KB). Only admin pages and the legacy form handler
-// need it, so dynamic-import on the routes that actually do.
-//   - On /admin/* → load immediately (admin shell needs window.DB / Auth /
-//     escHtml / sendAutoReply etc.)
-//   - On legacy form submissions → consultForms.js already loads it via
-//     ./db.js etc., so it's resolved on the spot.
-//   - On pure public visits (Home/About/etc.) → never loaded.
+// V3-02: globals.js 는 email/upload/csv/db 를 메인 번들에 끌어들임(~70KB).
+// 어드민 페이지와 legacy 폼 핸들러만 필요로 하므로 해당 경로에서만 dynamic
+// import 한다.
+//   - /admin/* → 즉시 로드 (어드민 셸이 window.DB / Auth / escHtml / send*
+//                를 raw script 진입 시점에 이미 사용)
+//   - legacy 폼 → consultForms.js 가 ./db.js 등을 통해 자체 해소
+//   - 일반 공개 방문 → 절대 로드하지 않음
+//
+// **GitHub Pages basename 정규화** (이전 버그: `/daemu-website/admin/partners`
+// 같은 path 가 startsWith('/admin/') 매칭에 실패해 globals.js 가 로드되지
+// 않아 raw script 의 DB.get 이 ReferenceError 를 던졌음)
+function adminPathFromLocation() {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  let p = (typeof window !== 'undefined' && window.location.pathname) || '/';
+  if (base && p.startsWith(base)) p = p.slice(base.length) || '/';
+  return p;
+}
 {
-  const p = window.location.pathname;
-  if (p === '/admin' || p.startsWith('/admin/') || p.endsWith('/admin')) {
+  const p = adminPathFromLocation();
+  if (p === '/admin' || p.startsWith('/admin/')) {
     import('./lib/globals.js');
   }
 }
 
-// Pre-React: if landing directly on an admin route, swap body classes
-// synchronously so the splash-pending visibility:hidden rule never gets a
-// chance to flash hide admin content.
+// Pre-React: 어드민 경로로 직접 진입하면 splash-pending visibility:hidden 규칙
+// 이 어드민 컨텐츠를 가리는 일을 막기 위해 body class 를 동기적으로 교체.
 (function () {
-  const p = window.location.pathname;
+  const p = adminPathFromLocation();
   if (p === '/admin' || p.startsWith('/admin/')) {
     document.body.classList.remove('splash-pending');
     document.body.classList.add('splash-ready');

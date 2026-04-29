@@ -34,6 +34,15 @@ export function siteToast(msg, opts = {}) {
     window.siteToast(msg, opts);
     return;
   }
-  // No native toast — silently no-op, callers that need feedback should
-  // also call siteAlert.
+  // 네이티브 토스트는 없음 — 피드백이 필요한 호출자는 siteAlert 도 함께 사용.
+}
+
+// CSV 미리보기 — 동의 시 true, 취소 시 false 를 resolve.
+// 사용 예: const ok = await siteCsvPreview({ filename, rows, columns });
+export function siteCsvPreview(opts) {
+  if (typeof window !== 'undefined' && window.siteCsvPreview) {
+    return window.siteCsvPreview(opts);
+  }
+  // DialogHost mount 전 fallback — 그냥 통과(true) 시켜 호출자가 다운로드.
+  return Promise.resolve(true);
 }

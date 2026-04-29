@@ -51,12 +51,13 @@
     <link rel="apple-touch-icon" href="%BASE_URL%assets/logo.svg" />
     <link rel="mask-icon" href="%BASE_URL%favicon.svg" color="#231815" />
 
-    <!-- Performance: preconnect + preload critical resources.
-         LCP candidate is the hero image on / — preload it so mobile
-         doesn't wait for HTML parse → CSS → JS → image discovery. -->
+    <!-- Performance: preconnect 만 index.html 에 둔다. 히어로 LCP 이미지의
+         preload 는 Home.jsx 의 useLayoutEffect 로 이동했음 — index.html 은
+         모든 SPA 라우트가 공유하므로 여기에 hardcode 하면 /admin, /work,
+         /partners 같이 home-hero-flower.png 를 쓰지 않는 페이지에서
+         "preloaded but not used within a few seconds" 경고가 떴다. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" as="image" href="%BASE_URL%assets/home-hero-flower.png" fetchpriority="high" />
 
     <link rel="stylesheet" href="%BASE_URL%style.css" />
     <link rel="stylesheet" href="%BASE_URL%home.css" />

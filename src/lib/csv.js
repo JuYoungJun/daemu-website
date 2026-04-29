@@ -9,7 +9,7 @@
 //     도구의 DOM-XSS 체인이 끊긴다(safe.js triggerDownload 참고).
 
 import { escapeCsvCell, sanitizeFilename, triggerDownload } from './safe.js';
-import { siteToast } from './dialog.js';
+import { siteToast, siteCsvPreview } from './dialog.js';
 
 export function rowsToCSV(rows, columns) {
   const header = columns.map((c) => escapeCsvCell(c.label)).join(',');
@@ -20,6 +20,9 @@ export function rowsToCSV(rows, columns) {
   return '﻿' + header + '\n' + body;
 }
 
+// 동기 시그니처를 유지 — admin 페이지의 onClick 핸들러에서 그대로 호출 가능.
+// 내부적으로는 미리보기 모달을 띄운 뒤 사용자 동의(또는 fallback) 시 다운로드.
+// caller 가 await 할 필요는 없다 (false 를 즉시 반환하지 않고, 비동기로 진행).
 export function downloadCSV(filename, rows, columns) {
   try {
     if (!Array.isArray(rows)) {
@@ -30,19 +33,27 @@ export function downloadCSV(filename, rows, columns) {
       try { window.alert('컬럼 정의가 비어있어 CSV 를 만들 수 없습니다.'); } catch { /* ignore */ }
       return false;
     }
-    const csv = rowsToCSV(rows, columns);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     let name = sanitizeFilename(filename || 'download', 'export');
     if (!/\.csv$/i.test(name)) name += '.csv';
-    const ok = triggerDownload(name, blob);
-    if (ok) {
-      try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
-      catch { /* ignore */ }
-      // 사용자 피드백 — 다운로드가 시각적으로 안 보이는 경우(특히 모바일
-      // Safari) 가시적으로 알린다. 다운로드 자체는 OS/브라우저가 처리.
-      try { siteToast(`CSV 다운로드 시작 — ${name} (${rows.length}행)`); } catch { /* ignore */ }
-    }
-    return ok;
+
+    // 미리보기 동의 후에만 실제 blob 생성 + 다운로드 트리거.
+    Promise.resolve(siteCsvPreview({ filename: name, rows, columns, sampleSize: 10 }))
+      .then((ok) => {
+        if (!ok) return;
+        try {
+          const csv = rowsToCSV(rows, columns);
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+          const triggered = triggerDownload(name, blob);
+          if (triggered) {
+            try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
+            catch { /* ignore */ }
+            try { siteToast(`CSV 다운로드 시작 — ${name} (${rows.length}행)`); } catch { /* ignore */ }
+          }
+        } catch (e) {
+          try { window.alert('CSV 생성 실패: ' + (e?.message || String(e))); } catch { /* ignore */ }
+        }
+      });
+    return true;
   } catch (e) {
     try { window.alert('CSV 생성 실패: ' + (e?.message || String(e))); } catch { /* ignore */ }
     return false;
