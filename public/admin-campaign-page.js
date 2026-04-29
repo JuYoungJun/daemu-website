@@ -85,9 +85,31 @@ function render() {
   renderSubs();
 }
 
+// 미디어 라이브러리 픽커.
+async function pickCampaignImage() {
+  if (!window.openMediaPicker) { alert('미디어 라이브러리를 사용할 수 없습니다.'); return; }
+  const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+  if (!url) return;
+  const inp = document.getElementById('f-image'); if (inp) inp.value = url;
+  const wrap = document.getElementById('f-image-thumb'); if (wrap) renderCampaignThumb(wrap, url);
+}
+function renderCampaignThumb(wrap, url) {
+  if (!url) { wrap.innerHTML = ''; return; }
+  const safe = /^(https?:|\/|data:image\/)/i.test(url) ? url : '';
+  if (!safe) { wrap.innerHTML = '<span style="font-size:11px;color:#c0392b">URL 형식이 올바르지 않습니다</span>'; return; }
+  wrap.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = safe; img.alt = '';
+  img.style.maxHeight = '120px'; img.style.maxWidth = '100%';
+  img.style.border = '1px solid #d7d4cf'; img.style.padding = '4px';
+  img.style.background = '#fff';
+  wrap.appendChild(img);
+}
+
 function openAdd() {
   editingId = null;
-  ["f-title","f-subject","f-body","f-seg-tags"].forEach(id => document.getElementById(id).value = "");
+  ["f-title","f-subject","f-body","f-seg-tags","f-image"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const t = document.getElementById('f-image-thumb'); if (t) t.innerHTML = '';
   document.getElementById("f-channel").value = "Email";
   document.getElementById("f-when").value = "draft";
   document.getElementById("f-source-group").value = "crm";
@@ -108,6 +130,8 @@ function openEdit(id) {
   document.getElementById("f-when").value = d.status === "sent" ? "draft" : (d.scheduledFor ? "schedule" : "draft");
   document.getElementById("f-subject").value = d.subject || "";
   document.getElementById("f-body").value = d.body || "";
+  const fImg = document.getElementById("f-image"); if (fImg) fImg.value = d.image || "";
+  const fThumb = document.getElementById("f-image-thumb"); if (fThumb) renderCampaignThumb(fThumb, d.image || "");
   document.getElementById("f-source-group").value = d.segGroup || "crm";
   document.getElementById("f-seg-stage").value = d.segStage || "";
   document.getElementById("f-seg-tags").value = (d.segTags||[]).join(", ");
@@ -133,6 +157,7 @@ function buildPayload() {
     channel: document.getElementById("f-channel").value,
     subject: document.getElementById("f-subject").value,
     body: document.getElementById("f-body").value,
+    image: (document.getElementById("f-image") || {}).value || "",
     segGroup: document.getElementById("f-source-group").value,
     segStage: document.getElementById("f-seg-stage").value,
     segTags: tags,
@@ -250,5 +275,5 @@ updateRecipients();
 render();
 
 
-Object.assign(window, { onChannel, getRecipients, updateRecipients, fmtPct, statusLabel, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, mockSendStats, sendNow, del, renderSubs, addSub, toggleSub, delSub });
+Object.assign(window, { onChannel, getRecipients, updateRecipients, fmtPct, statusLabel, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, mockSendStats, sendNow, del, renderSubs, addSub, toggleSub, delSub, pickCampaignImage });
 })();

@@ -15,6 +15,9 @@ import { DB } from '../lib/db.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { extractTextFromPdf, fileToDataUrl } from '../lib/pdfExtract.js';
+import {
+  formatPhone, formatBizNo, formatCurrencyTyping, unformatNumber, normalizeEmail,
+} from '../lib/inputFormat.js';
 
 const KIND_LABEL = { contract: '계약서', purchase_order: '발주서' };
 const STATUS_LABEL = {
@@ -52,13 +55,20 @@ const VARIABLE_HINTS = [
 ];
 
 const VARIABLE_GROUPS = [
-  { key: 'client',   label: '🧑 고객 정보',     desc: '계약/발주 상대방의 회사·대표자·연락 정보' },
-  { key: 'project',  label: '📋 프로젝트',      desc: '계약 대상 프로젝트와 업무 범위' },
-  { key: 'money',    label: '💴 금액·지급 조건', desc: '계약 금액 및 지급 조건 (표기 전용 — 실 결제는 별도)' },
-  { key: 'schedule', label: '📅 일정',          desc: '계약 기간과 납품·체결 일정' },
-  { key: 'company',  label: '당사 / 담당자', desc: '대무(공급사) 기본 정보 — 한 번 채워두면 재사용 가능' },
-  { key: 'misc',     label: '📝 특약사항',      desc: '기타 합의 조항' },
+  { key: 'client',   label: '고객 정보',       desc: '계약/발주 상대방의 회사·대표자·연락 정보' },
+  { key: 'project',  label: '프로젝트',        desc: '계약 대상 프로젝트와 업무 범위' },
+  { key: 'money',    label: '금액·지급 조건',  desc: '계약 금액 및 지급 조건 (표기 전용 — 실 결제는 별도)' },
+  { key: 'schedule', label: '일정',            desc: '계약 기간과 납품·체결 일정' },
+  { key: 'company',  label: '당사 / 담당자',   desc: '대무(공급사) 기본 정보 — 한 번 채워두면 재사용 가능' },
+  { key: 'misc',     label: '특약사항',        desc: '기타 합의 조항' },
 ];
+
+// 변수 키별 입력 포맷 결정 — 변수 입력 폼 렌더링이 사용.
+const MONEY_KEYS = new Set(['amount', 'amountWithTax']);
+const PHONE_KEYS = new Set(['managerPhone', 'clientPhone']);
+const DATE_KEYS = new Set(['startDate', 'endDate', 'deliveryDate', 'today']);
+const BIZNO_KEYS = new Set(['clientBizNo', 'companyBizNo']);
+const EMAIL_KEYS = new Set(['managerEmail', 'clientEmail']);
 
 // 당사 정보 기본값 (대무 기본 정보) — 새 문서 생성 시 자동 prefill.
 const COMPANY_DEFAULTS = {
@@ -738,6 +748,71 @@ function TemplateEditor({ template, onClose, onSaved }) {
   );
 }
 
+// 변수 키별로 적절한 input type / 자동 포맷터를 선택해 렌더링.
+//   - 금액: 천단위 콤마 표시, 저장은 숫자 문자열
+//   - 전화: 010-1234-5678 자동 dash
+//   - 날짜: native date picker
+//   - 사업자번호: XXX-XX-XXXXX
+//   - 이메일: 공백 제거 + blur 시 lowercase
+//   - 그 외: 일반 텍스트
+function FormattedVariableInput({ varKey, value, placeholder, onChange }) {
+  const baseStyle = { width: '100%', padding: 8, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' };
+
+  if (MONEY_KEYS.has(varKey)) {
+    // 표시값은 천단위 콤마, 저장값은 숫자 문자열.
+    return (
+      <input type="text" inputMode="numeric"
+        value={formatCurrencyTyping(value)}
+        onChange={(e) => onChange(unformatNumber(e.target.value))}
+        placeholder={placeholder || '예: 50,000,000'}
+        style={baseStyle} />
+    );
+  }
+  if (PHONE_KEYS.has(varKey)) {
+    return (
+      <input type="tel" inputMode="numeric" maxLength={13}
+        value={value}
+        onChange={(e) => onChange(formatPhone(e.target.value))}
+        placeholder={placeholder || '010-1234-5678'}
+        style={baseStyle} />
+    );
+  }
+  if (DATE_KEYS.has(varKey)) {
+    return (
+      <input type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={baseStyle} />
+    );
+  }
+  if (BIZNO_KEYS.has(varKey)) {
+    return (
+      <input type="text" inputMode="numeric" maxLength={12}
+        value={value}
+        onChange={(e) => onChange(formatBizNo(e.target.value))}
+        placeholder={placeholder || '123-45-67890'}
+        style={baseStyle} />
+    );
+  }
+  if (EMAIL_KEYS.has(varKey)) {
+    return (
+      <input type="email" inputMode="email"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\s/g, ''))}
+        onBlur={(e) => onChange(normalizeEmail(e.target.value))}
+        placeholder={placeholder || 'name@example.com'}
+        style={baseStyle} />
+    );
+  }
+  return (
+    <input type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder || ''}
+      style={baseStyle} />
+  );
+}
+
 function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onCancel }) {
   const hasText = preview.extracted && preview.extracted.trim().length > 30;
   const charCount = preview.extracted ? preview.extracted.length : 0;
@@ -1149,10 +1224,12 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
                             placeholder={v.placeholder || ''}
                             style={{ width: '100%', padding: 8, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
                         ) : (
-                          <input type="text" value={d.variables[v.key] || ''}
-                            onChange={(e) => setVar(v.key, e.target.value)}
+                          <FormattedVariableInput
+                            varKey={v.key}
+                            value={d.variables[v.key] || ''}
                             placeholder={v.placeholder || ''}
-                            style={{ width: '100%', padding: 8, border: '1px solid #d7d4cf', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            onChange={(val) => setVar(v.key, val)}
+                          />
                         )}
                       </label>
                     ))}
@@ -1168,7 +1245,9 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
               <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                 <input type="text" placeholder="이름" value={r.name} onChange={(e) => updateRecipient(i, 'name', e.target.value)}
                   style={{ flex: 1, padding: 6, border: '1px solid #d7d4cf', fontSize: 13 }} />
-                <input type="email" placeholder="이메일" value={r.email} onChange={(e) => updateRecipient(i, 'email', e.target.value)}
+                <input type="email" inputMode="email" placeholder="이메일" value={r.email}
+                  onChange={(e) => updateRecipient(i, 'email', e.target.value.replace(/\s/g, ''))}
+                  onBlur={(e) => updateRecipient(i, 'email', normalizeEmail(e.target.value))}
                   style={{ flex: 2, padding: 6, border: '1px solid #d7d4cf', fontSize: 13 }} />
                 <select value={r.role} onChange={(e) => updateRecipient(i, 'role', e.target.value)}
                   style={{ padding: 6, border: '1px solid #d7d4cf', fontSize: 13 }}>

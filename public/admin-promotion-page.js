@@ -69,7 +69,8 @@ function render() {
 
 function openAdd() {
   editingId = null;
-  ["f-code","f-desc","f-value","f-from","f-to","f-max","f-note"].forEach(id => document.getElementById(id).value = "");
+  ["f-code","f-desc","f-value","f-from","f-to","f-max","f-note","f-image"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const thumb = document.getElementById('f-image-thumb'); if (thumb) thumb.innerHTML = '';
   document.getElementById("f-type").value = "percent";
   document.getElementById("f-status").value = "active";
   document.getElementById("save-btn").textContent = "저장";
@@ -83,6 +84,8 @@ function openEdit(id) {
   editingId = id;
   document.getElementById("f-code").value = d.code || "";
   document.getElementById("f-desc").value = d.desc || "";
+  const fimg = document.getElementById("f-image"); if (fimg) fimg.value = d.image || "";
+  const fthumb = document.getElementById("f-image-thumb"); if (fthumb) renderThumb(fthumb, d.image || "");
   document.getElementById("f-type").value = d.type || "percent";
   document.getElementById("f-value").value = d.value || "";
   document.getElementById("f-from").value = d.from || "";
@@ -101,6 +104,39 @@ function resetForm() {
   editingId = null;
 }
 
+// 미디어 라이브러리 픽커 — 쿠폰 배너 / 이벤트 포스터 공용 헬퍼.
+async function pickImageInto(inputId, thumbId) {
+  if (!window.openMediaPicker) {
+    alert('미디어 라이브러리를 사용할 수 없습니다.');
+    return;
+  }
+  const url = await window.openMediaPicker({ kind: 'image', allowUpload: true });
+  if (!url) return;
+  const input = document.getElementById(inputId);
+  const thumb = document.getElementById(thumbId);
+  if (input) input.value = url;
+  if (thumb) renderThumb(thumb, url);
+}
+function pickCouponImage() { pickImageInto('f-image', 'f-image-thumb'); }
+function pickEventImage()  { pickImageInto('ef-image', 'ef-image-thumb'); }
+
+function renderThumb(wrap, url) {
+  if (!url) { wrap.innerHTML = ''; return; }
+  // 안전한 URL 만 렌더 — javascript: 등 차단.
+  const safe = /^(https?:|\/|data:image\/)/i.test(url) ? url : '';
+  if (!safe) { wrap.innerHTML = '<span style="font-size:11px;color:#c0392b">URL 형식이 올바르지 않습니다</span>'; return; }
+  wrap.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = safe;
+  img.alt = '';
+  img.style.maxHeight = '120px';
+  img.style.maxWidth = '100%';
+  img.style.border = '1px solid #d7d4cf';
+  img.style.padding = '4px';
+  img.style.background = '#fff';
+  wrap.appendChild(img);
+}
+
 function save() {
   const code = document.getElementById("f-code").value.trim().toUpperCase();
   if (!code) { alert("쿠폰 코드를 입력하세요"); return; }
@@ -115,6 +151,7 @@ function save() {
     to: document.getElementById("f-to").value,
     max: document.getElementById("f-max").value,
     status: document.getElementById("f-status").value,
+    image: (document.getElementById("f-image") || {}).value || "",
     note: document.getElementById("f-note").value
   };
   if (editingId !== null) {
@@ -156,7 +193,8 @@ function renderEvents() {
 }
 function openEvAdd() {
   evEditingId = null;
-  ["ef-title","ef-period","ef-body"].forEach(id => document.getElementById(id).value = "");
+  ["ef-title","ef-period","ef-body","ef-image"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const efThumb = document.getElementById('ef-image-thumb'); if (efThumb) efThumb.innerHTML = '';
   document.getElementById("ef-type").value = "이벤트";
   document.getElementById("ef-status").value = "active";
   document.getElementById("ev-save-btn").textContent = "저장";
@@ -171,6 +209,8 @@ function evEdit(id) {
   document.getElementById("ef-type").value = d.type || "이벤트";
   document.getElementById("ef-period").value = d.period || "";
   document.getElementById("ef-body").value = d.body || "";
+  const efImg = document.getElementById("ef-image"); if (efImg) efImg.value = d.image || "";
+  const efThumb = document.getElementById("ef-image-thumb"); if (efThumb) renderThumb(efThumb, d.image || "");
   document.getElementById("ef-status").value = d.status || "active";
   document.getElementById("ev-save-btn").textContent = "수정";
   document.getElementById("ev-form-mode").textContent = "수정 모드";
@@ -188,6 +228,7 @@ function evSave() {
     type: document.getElementById("ef-type").value,
     period: document.getElementById("ef-period").value,
     body: document.getElementById("ef-body").value,
+    image: (document.getElementById("ef-image") || {}).value || "",
     status: document.getElementById("ef-status").value
   };
   if (evEditingId !== null) DB.update(EV_KEY, evEditingId, payload);
@@ -206,5 +247,5 @@ function evDel(id) { if (confirmDel()) { DB.del(EV_KEY, id); render(); } }
 render();
 
 
-Object.assign(window, { statusLabel, typeLabel, onType, fmtMoney, isExpiredByDate, effectiveStatus, filtered, renderKPI, render, openAdd, openEdit, resetForm, save, bumpUse, del, renderEvents, openEvAdd, evEdit, evReset, evSave, evToggle, evDel });
+Object.assign(window, { statusLabel, typeLabel, onType, fmtMoney, isExpiredByDate, effectiveStatus, filtered, renderKPI, render, openAdd, openEdit, resetForm, save, bumpUse, del, renderEvents, openEvAdd, evEdit, evReset, evSave, evToggle, evDel, pickCouponImage, pickEventImage });
 })();
