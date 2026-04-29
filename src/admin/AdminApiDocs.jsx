@@ -9,6 +9,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 import AdminGuideModal, { GuideSection, guideListStyle } from './AdminGuideModal.jsx';
 import { api } from '../lib/api.js';
+import { DB_GROUPS, PERMISSION_MATRIX, DEPLOY_GROUPS } from './apiDocsData.js';
 
 const METHOD_COLOR = {
   GET:    { bg: '#eef6ee', fg: '#2e7d32', border: '#cfe5cf' },
@@ -48,6 +49,8 @@ export default function AdminApiDocs() {
   const [search, setSearch] = useState('');
   const [activeTag, setActiveTag] = useState('');
   const [activeId, setActiveId] = useState('');
+  // 메인 탭: 'api' (기본) | 'db' | 'deploy'
+  const [mainTab, setMainTab] = useState('api');
 
   useEffect(() => {
     let alive = true;
@@ -145,23 +148,40 @@ export default function AdminApiDocs() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>API 문서</h1>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <PageActions>
-                <GuideButton GuideComponent={ApiDocsGuide} />
-              </PageActions>
-            </div>
+          <h1 className="page-title">백엔드 운영 문서</h1>
+
+          <PageActions>
+            <GuideButton GuideComponent={ApiDocsGuide} />
+          </PageActions>
+
+          {/* 메인 탭 — API / DB 스키마 / 배포 가이드 */}
+          <div style={{ display: 'flex', gap: 4, borderBottom: '2px solid #e6e3dd', marginBottom: 16, flexWrap: 'wrap' }}>
+            <MainTabBtn active={mainTab === 'api'} onClick={() => setMainTab('api')}>
+              API
+            </MainTabBtn>
+            <MainTabBtn active={mainTab === 'db'} onClick={() => setMainTab('db')}>
+              DB 스키마
+            </MainTabBtn>
+            <MainTabBtn active={mainTab === 'perm'} onClick={() => setMainTab('perm')}>
+              권한 매트릭스
+            </MainTabBtn>
+            <MainTabBtn active={mainTab === 'deploy'} onClick={() => setMainTab('deploy')}>
+              배포 / 마이그레이션
+            </MainTabBtn>
           </div>
 
-          {loading && <div style={{ padding: '40px 0', color: '#8c867d' }}>API 문서 로드 중…</div>}
-          {error && (
+          {mainTab === 'db' && <DbSchemaTab />}
+          {mainTab === 'perm' && <PermissionTab />}
+          {mainTab === 'deploy' && <DeployTab />}
+
+          {mainTab === 'api' && loading && <div style={{ padding: '40px 0', color: '#8c867d' }}>API 문서 로드 중…</div>}
+          {mainTab === 'api' && error && (
             <div style={{ background: '#fff0ec', border: '1px solid #f0c4c0', padding: '12px 16px', color: '#7a1a14', fontSize: 12.5 }}>
               로드 실패: {error}
             </div>
           )}
 
-          {spec && (
+          {mainTab === 'api' && spec && (
             <>
               {/* 상단 바 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0 14px', borderBottom: '1px solid #e6e3dd', marginBottom: 12, flexWrap: 'wrap' }}>
@@ -502,6 +522,258 @@ function TryGetIt({ ep }) {
         </div>
       )}
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 메인 탭 버튼.
+// ─────────────────────────────────────────────────────────────────────
+function MainTabBtn({ active, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        padding: '10px 18px',
+        fontSize: 13,
+        fontWeight: active ? 700 : 500,
+        background: active ? '#fff' : 'transparent',
+        color: active ? '#231815' : '#5a534b',
+        border: 'none',
+        borderBottom: active ? '2px solid #1f5e7c' : '2px solid transparent',
+        marginBottom: -2,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        letterSpacing: '.02em',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// DB 스키마 탭 — 그룹별 테이블 카드 + 클릭 시 컬럼 사전.
+// ─────────────────────────────────────────────────────────────────────
+function DbSchemaTab() {
+  const [activeGroup, setActiveGroup] = useState(DB_GROUPS[0].key);
+  const [activeTable, setActiveTable] = useState(DB_GROUPS[0].tables[0]?.name || '');
+  const group = DB_GROUPS.find((g) => g.key === activeGroup);
+  const table = group?.tables.find((t) => t.name === activeTable);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: 16, alignItems: 'start' }} className="api-docs-grid">
+      <nav style={{ background: '#fafaf6', border: '1px solid #e6e3dd', maxHeight: 'calc(100vh - 240px)', overflowY: 'auto', position: 'sticky', top: 12 }}>
+        {DB_GROUPS.map((g) => (
+          <div key={g.key}>
+            <button type="button" onClick={() => { setActiveGroup(g.key); setActiveTable(g.tables[0]?.name || ''); }}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                width: '100%', textAlign: 'left',
+                padding: '8px 14px',
+                background: activeGroup === g.key ? '#eef2fb' : '#fff',
+                color: '#231815', border: 'none', cursor: 'pointer',
+                borderTop: '1px solid #e6e3dd', fontSize: 12, fontWeight: 600,
+              }}>
+              <span>{g.label}</span>
+              <span style={{ fontSize: 10, color: '#8c867d', fontWeight: 400 }}>{g.tables.length}</span>
+            </button>
+            {activeGroup === g.key && g.tables.map((t) => (
+              <button key={t.name} type="button" onClick={() => setActiveTable(t.name)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '6px 12px 6px 22px',
+                  background: activeTable === t.name ? '#fff' : 'transparent',
+                  borderLeft: '3px solid ' + (activeTable === t.name ? '#1f5e7c' : 'transparent'),
+                  border: 'none', cursor: 'pointer', borderTop: '1px solid #f4f1ea', fontSize: 11.5,
+                  fontFamily: 'SF Mono, Menlo, monospace', color: '#231815',
+                }}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <article style={{ background: '#fff', border: '1px solid #e6e3dd', minHeight: 320, padding: '20px 24px' }}>
+        {table ? <TableDetail table={table} groupLabel={group?.label} groupDesc={group?.desc} /> : (
+          <p style={{ color: '#8c867d' }}>좌측에서 테이블을 선택하세요.</p>
+        )}
+      </article>
+    </div>
+  );
+}
+
+function TableDetail({ table, groupLabel, groupDesc }) {
+  return (
+    <>
+      <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>
+        {groupLabel}
+      </div>
+      <h2 style={{ margin: '0 0 4px', fontSize: 22, color: '#231815', fontFamily: 'SF Mono, Menlo, monospace' }}>{table.name}</h2>
+      <p style={{ fontSize: 12.5, color: '#8c867d', margin: '0 0 14px', lineHeight: 1.6 }}>{groupDesc}</p>
+
+      <p style={{ fontSize: 13.5, color: '#5a534b', lineHeight: 1.7, margin: '0 0 18px' }}>
+        <strong>역할:</strong> {table.purpose}
+      </p>
+
+      <DocSection title="컬럼 사전">
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: '#f4f1ea' }}>
+              <Th>컬럼</Th><Th>타입</Th><Th>설명</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.columns.map((c, i) => (
+              <tr key={i} style={{ borderTop: '1px solid #f0ede7' }}>
+                <Td><code style={{ color: '#1f5e7c' }}>{c.col}</code></Td>
+                <Td><code style={{ fontSize: 11, color: '#8c867d' }}>{c.type}</code></Td>
+                <Td>{c.note || ''}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DocSection>
+
+      {table.usedBy && (
+        <DocSection title="사용처 (어디서 호출 / 표시)">
+          <ul style={{ paddingLeft: 22, fontSize: 12.5, color: '#5a534b', lineHeight: 1.8, margin: 0 }}>
+            {table.usedBy.map((u, i) => <li key={i}>{u}</li>)}
+          </ul>
+        </DocSection>
+      )}
+
+      {table.pii && (
+        <DocSection title="PII / 보존 정책">
+          <p style={{ fontSize: 12.5, color: '#5a4a2a', background: '#fff8ec', padding: '10px 14px', borderLeft: '3px solid #c9a25a', margin: 0, lineHeight: 1.7 }}>
+            {table.pii}
+          </p>
+        </DocSection>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 권한 매트릭스 탭.
+// ─────────────────────────────────────────────────────────────────────
+function PermissionTab() {
+  const cellColor = (v) => v === 'ALL' ? '#2e7d32' : v === 'READ' ? '#b87333' : '#a09a92';
+  const cellBg = (v) => v === 'ALL' ? '#eef6ee' : v === 'READ' ? '#fff8ec' : '#fafaf6';
+  return (
+    <article style={{ background: '#fff', border: '1px solid #e6e3dd', padding: '20px 24px' }}>
+      <h2 style={{ margin: '0 0 6px', fontSize: 20, color: '#231815' }}>권한 매트릭스</h2>
+      <p style={{ fontSize: 12.5, color: '#5a534b', margin: '0 0 14px', lineHeight: 1.7 }}>
+        backend <code>auth.py PERMISSIONS</code> 기준. ALL = read+write+delete, READ = 읽기만, — = 차단.
+        require_perm 데코레이터가 endpoint 별로 lookup. role 변경은 audit_logs.action='role.change' 로 자동 기록.
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ background: '#f4f1ea' }}>
+            <Th>resource</Th>
+            <Th>admin (슈퍼)</Th>
+            <Th>tester (서브)</Th>
+            <Th>developer (개발자)</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {PERMISSION_MATRIX.map((r) => (
+            <tr key={r.resource} style={{ borderTop: '1px solid #f0ede7' }}>
+              <Td><code>{r.resource}</code></Td>
+              {['admin', 'tester', 'developer'].map((role) => (
+                <Td key={role}>
+                  <span style={{
+                    display: 'inline-block', padding: '2px 10px', fontSize: 10.5,
+                    background: cellBg(r[role]), color: cellColor(r[role]),
+                    border: '1px solid ' + cellColor(r[role]), borderRadius: 2, fontWeight: 600,
+                  }}>
+                    {r[role]}
+                  </span>
+                </Td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </article>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 배포 / 마이그레이션 탭.
+// ─────────────────────────────────────────────────────────────────────
+function DeployTab() {
+  const [activeKey, setActiveKey] = useState(DEPLOY_GROUPS[0].key);
+  const group = DEPLOY_GROUPS.find((g) => g.key === activeKey);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: 16, alignItems: 'start' }} className="api-docs-grid">
+      <nav style={{ background: '#fafaf6', border: '1px solid #e6e3dd', position: 'sticky', top: 12 }}>
+        {DEPLOY_GROUPS.map((g) => (
+          <button key={g.key} type="button" onClick={() => setActiveKey(g.key)}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              padding: '10px 14px',
+              background: activeKey === g.key ? '#eef2fb' : '#fff',
+              color: '#231815', border: 'none', cursor: 'pointer',
+              borderTop: '1px solid #e6e3dd', fontSize: 12.5, fontWeight: 600,
+              borderLeft: activeKey === g.key ? '3px solid #1f5e7c' : '3px solid transparent',
+            }}>
+            {g.label}
+          </button>
+        ))}
+      </nav>
+
+      <article style={{ background: '#fff', border: '1px solid #e6e3dd', padding: '20px 24px' }}>
+        <h2 style={{ margin: '0 0 14px', fontSize: 20, color: '#231815' }}>{group.label}</h2>
+        {group.sections.map((s, i) => (
+          <DeploySection key={i} section={s} />
+        ))}
+      </article>
+    </div>
+  );
+}
+
+function DeploySection({ section }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <h3 style={{ fontSize: 13.5, color: '#231815', margin: '0 0 8px', paddingBottom: 4, borderBottom: '1px solid #e6e3dd', fontWeight: 600 }}>
+        {section.title}
+      </h3>
+      {section.body && (
+        <p style={{ fontSize: 13, color: '#5a534b', margin: '0 0 8px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+          {section.body}
+        </p>
+      )}
+      {section.bullets && (
+        <ul style={{ paddingLeft: 22, fontSize: 12.5, color: '#5a534b', lineHeight: 1.8, margin: '6px 0' }}>
+          {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      )}
+      {section.code && (
+        <pre style={{
+          fontSize: 11.5, fontFamily: 'SF Mono, Menlo, monospace',
+          background: '#231815', color: '#f0ede7', padding: '12px 14px',
+          overflow: 'auto', margin: '6px 0', whiteSpace: 'pre',
+          maxHeight: 360,
+        }}>{section.code}</pre>
+      )}
+      {section.table && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: '#f4f1ea' }}>
+              {section.table.headers.map((h, i) => <Th key={i}>{h}</Th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {section.table.rows.map((row, i) => (
+              <tr key={i} style={{ borderTop: '1px solid #f0ede7' }}>
+                {row.map((cell, j) => (
+                  <Td key={j}>{j === 0 ? <code>{cell}</code> : cell}</Td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
