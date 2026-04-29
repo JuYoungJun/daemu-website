@@ -35,6 +35,16 @@ export function downloadCSV(filename, rows, columns) {
     }
     let name = sanitizeFilename(filename || 'download', 'export');
     if (!/\.csv$/i.test(name)) name += '.csv';
+    // 어드민 메인의 "CSV 다운로드 설정" 에서 지정한 prefix 적용. 호출자가
+    // 'daemu-' 로 시작하는 파일명을 이미 줬을 때는 prefix 가 'daemu-' 면 중복
+    // 부착을 피하기 위해 기존 daemu- 부분을 제거하고 새 prefix 부착.
+    try {
+      const prefix = localStorage.getItem('daemu_csv_filename_prefix');
+      if (prefix && typeof prefix === 'string' && prefix !== 'daemu-') {
+        const stripped = name.replace(/^daemu-/, '');
+        name = prefix + stripped;
+      }
+    } catch { /* ignore */ }
 
     // 미리보기 동의 후에만 실제 blob 생성 + 다운로드 트리거.
     Promise.resolve(siteCsvPreview({ filename: name, rows, columns, sampleSize: 10 }))

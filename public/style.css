@@ -3400,6 +3400,11 @@ body{background:var(--bg)}
 
 /* ===== ADMIN PAGE ===== */
 .admin-page{max-width:1200px;margin:0 auto}
+/* 어드민 페이지는 컨텐츠가 길어도 항상 세로 스크롤이 보장되어야 한다. splash
+   transition 또는 dialog overlay 가 잔존하며 overflow:hidden 을 남기는 사고를
+   막기 위한 강제 가드. */
+body[data-page="admin"]{overflow-y:auto !important}
+body[data-page="admin"] main.page{min-height:auto;overflow:visible}
 .admin-login-wrap{display:flex;justify-content:center;padding:60px 0}
 .admin-login-box{width:360px;text-align:center}
 .admin-login-box h2{font-size:24px;margin-bottom:8px;font-weight:500}
@@ -3408,7 +3413,8 @@ body{background:var(--bg)}
 .admin-login-field input{width:100%;padding:12px 14px;border:1px solid #ccc;border-radius:4px;font-size:14px;box-sizing:border-box}
 .admin-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:32px}
 .admin-header h2{font-size:28px;font-weight:500}
-.admin-logout-btn{font-size:12px;min-width:90px;height:34px}
+/* 로그아웃 버튼 — 비밀번호 변경/2FA 등 옆 버튼들과 사이즈 통일. */
+.admin-logout-btn{min-width:120px}
 .admin-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:40px}
 .admin-stat-card{background:#f5f4f0;border-radius:8px;padding:28px 20px;text-align:center}
 .admin-stat-number{display:block;font-size:36px;font-weight:700;color:#333;margin-bottom:6px}

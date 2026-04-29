@@ -1,11 +1,13 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
+import { GuideButton, WorksGuide } from './PageGuides.jsx';
 import html from './raw/admin-works.html.js';
 
 export default function AdminWorks() {
   return (
     <AdminShell>
+      <GuideButton GuideComponent={WorksGuide} />
       <AdminHelp title="작업사례 관리 사용 안내" items={[
         '신규 등록: "작업사례 등록" → 슬러그(영문 URL), 제목, 카테고리, 요약, 갤러리 이미지 입력.',
         '브랜드 자유 입력: 브랜드 항목에서 "직접 입력"을 선택하면 새 브랜드명을 입력할 수 있습니다.',

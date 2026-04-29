@@ -1,11 +1,13 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
+import { GuideButton, OrdersGuide } from './PageGuides.jsx';
 import html from './raw/admin-orders.html.js';
 
 export default function AdminOrders() {
   return (
     <AdminShell>
+      <GuideButton GuideComponent={OrdersGuide} />
       <AdminHelp title="발주·계약 관리 안내" items={[
         '발주/계약은 본 시스템에서 본문 작성 → 이메일 발송 → Outbox 기록까지 처리합니다.',
         '본 페이지는 발주서·계약서 문서 워크플로(작성·발송·상태 추적·이력)에 한정합니다. 실제 대금 수납/결제 처리는 본 시스템에서 다루지 않습니다.',

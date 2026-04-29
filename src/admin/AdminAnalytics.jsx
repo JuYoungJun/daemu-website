@@ -21,6 +21,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { loadAllEvents, clearAllEvents } from '../lib/marketingAnalytics.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteConfirm } from '../lib/dialog.js';
+import { GuideButton, AnalyticsGuide } from './PageGuides.jsx';
 
 function tally(events, keyFn) {
   const m = new Map();
@@ -175,6 +176,7 @@ export default function AdminAnalytics() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
+          <GuideButton GuideComponent={AnalyticsGuide} />
           <h1 className="page-title">마케팅 분석</h1>
 
           <AdminHelp title="마케팅 분석 사용 안내" items={[

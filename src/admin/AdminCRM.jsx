@@ -1,11 +1,13 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
+import { GuideButton, CRMGuide } from './PageGuides.jsx';
 import html from './raw/admin-crm.html.js';
 
 export default function AdminCRM() {
   return (
     <AdminShell>
+      <GuideButton GuideComponent={CRMGuide} />
       <AdminHelp title="CRM 사용 안내" items={[
         '리드 자동 수집: Contact 페이지·Partners 가입 신청에서 들어온 신청은 자동으로 "리드" 단계로 등록됩니다.',
         '단계 이동: 카드 카드를 클릭 → 드로어에서 단계를 변경(리드→검토중→전환). 이탈 처리도 가능합니다.',

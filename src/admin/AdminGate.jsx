@@ -7,7 +7,8 @@ import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
 import TwoFactorPanel from './TwoFactorPanel.jsx';
 import EmailVerifyForm from './EmailVerifyForm.jsx';
-import { siteAlert } from '../lib/dialog.js';
+import { siteAlert, siteToast } from '../lib/dialog.js';
+import AdminMainGuide from './AdminMainGuide.jsx';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -32,6 +33,11 @@ export default function AdminGate() {
   const [hydrating, setHydrating] = useState(() => Auth.isLoggedIn() && api.isConfigured());
   const [showChange, setShowChange] = useState(false);
   const [show2fa, setShow2fa] = useState(false);
+  const [showMainGuide, setShowMainGuide] = useState(false);
+  const [csvPrefix, setCsvPrefix] = useState(() => {
+    try { return localStorage.getItem('daemu_csv_filename_prefix') || 'daemu-'; }
+    catch { return 'daemu-'; }
+  });
   // 2FA login flow state — when backend says need_totp, we keep email/password
   // around (NOT in storage) so the user can submit the 6-digit code without
   // re-typing credentials.
@@ -294,11 +300,16 @@ export default function AdminGate() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn" type="button" onClick={() => setShowMainGuide(true)}
+                  style={{ minWidth: 120, background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
+                  사용 가이드 보기
+                </button>
                 <button className="btn" type="button" onClick={() => setShowChange(true)}
                   style={{ minWidth: 120 }}>비밀번호 변경</button>
                 <button className="btn" type="button" onClick={() => setShow2fa(true)}
                   style={{ minWidth: 120 }}>2단계 인증{me.totp_enabled ? ' ✓' : ''}</button>
-                <button className="btn admin-logout-btn" type="button" onClick={onLogout}>로그아웃</button>
+                <button className="btn admin-logout-btn" type="button" onClick={onLogout}
+                  style={{ minWidth: 120 }}>로그아웃</button>
               </div>
               {show2fa && (
                 <TwoFactorPanel
@@ -306,6 +317,7 @@ export default function AdminGate() {
                   onClose={() => { setShow2fa(false); Auth.refreshMe(); }}
                 />
               )}
+              {showMainGuide && <AdminMainGuide onClose={() => setShowMainGuide(false)} />}
             </div>
 
             <div className="admin-stats-grid">
@@ -313,6 +325,32 @@ export default function AdminGate() {
               <div className="admin-stat-card"><span className="admin-stat-number">{pendingOrd}</span><span className="admin-stat-label">처리 대기 발주</span></div>
               <div className="admin-stat-card"><span className="admin-stat-number">{leads}</span><span className="admin-stat-label">활성 리드</span></div>
               <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">발송된 캠페인</span></div>
+            </div>
+
+            {/* CSV 다운로드 설정 — 모든 어드민 페이지의 export 파일명 prefix. */}
+            <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 240px' }}>
+                <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>CSV 다운로드 설정</div>
+                <div style={{ fontSize: 12.5, color: '#5a534b', lineHeight: 1.6 }}>
+                  파일명 prefix(예: <code>daemu-</code>) — 모든 어드민 export 파일 앞에 붙습니다. 저장 위치는 브라우저 기본 다운로드 폴더(보통 <code>~/Downloads</code>) — 변경은 브라우저 설정에서.
+                </div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                <span style={{ color: '#8c867d' }}>파일명 prefix</span>
+                <input type="text" value={csvPrefix}
+                  onChange={(e) => setCsvPrefix(e.target.value)}
+                  onBlur={() => {
+                    try {
+                      const v = String(csvPrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
+                      const final = v ? (v.endsWith('-') ? v : v + '-') : 'daemu-';
+                      setCsvPrefix(final);
+                      localStorage.setItem('daemu_csv_filename_prefix', final);
+                      try { siteToast(`CSV 파일명 prefix 저장됨: ${final}`); } catch { /* ignore */ }
+                    } catch { /* ignore */ }
+                  }}
+                  placeholder="daemu-"
+                  style={{ padding: '6px 10px', border: '1px solid #d7d4cf', background: '#fff', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, minWidth: 140 }} />
+              </label>
             </div>
 
             <h3 className="admin-section-title">관리 메뉴</h3>
