@@ -28,9 +28,16 @@ DATABASE_URL = os.environ.get(
 
 # Aiven / Cafe24 등에서 발급받은 표준 'mysql://...' URI 를 그대로 등록한 경우
 # SQLAlchemy 는 sync driver(mysqldb) 를 시도하다 실패한다. 우리가 설치한 건
-# async driver(asyncmy) 이므로 자동으로 driver prefix 를 부착.
+# async driver 이므로 자동으로 driver prefix 를 부착.
+#
+# 기본 driver: asyncmy. MySQL 8 의 caching_sha2_password 인증에서 핸드셰이크
+# 가 깨지는 케이스가 있어, 환경변수 MYSQL_DRIVER=aiomysql 로 aiomysql 로
+# swap 가능. aiomysql 은 caching_sha2_password 호환성이 더 좋다.
+_MYSQL_DRIVER = os.environ.get("MYSQL_DRIVER", "asyncmy").strip().lower()
+if _MYSQL_DRIVER not in {"asyncmy", "aiomysql"}:
+    _MYSQL_DRIVER = "asyncmy"
 if DATABASE_URL.startswith("mysql://"):
-    DATABASE_URL = "mysql+asyncmy://" + DATABASE_URL[len("mysql://"):]
+    DATABASE_URL = f"mysql+{_MYSQL_DRIVER}://" + DATABASE_URL[len("mysql://"):]
 # Aiven Service URI 의 '?ssl-mode=REQUIRED' 쿼리는 asyncmy 가 알지 못해 무시
 # 되거나(베스트) 'unexpected keyword' 에러가 날 수 있다. db.py 의 connect_args
 # ssl 컨텍스트가 이미 SSL verify-required 로 작동하므로 제거.
