@@ -359,12 +359,6 @@ Table suspicious_events {
   Note: '의심 이벤트 — 운영자가 검토 후 resolve. 90일/365일 보존 정책.'
 }
 
-// ───────── 관계 인덱스 ─────────
-
-Ref: documents.template_id > document_templates.id
-Ref: document_signatures.document_id > documents.id
-Ref: orders.partner_id > partners.id
-Ref: short_link_clicks.short_link_id > short_links.id
-Ref: audit_logs.actor_user_id > admin_users.id
-Ref: suspicious_events.resolved_by > admin_users.id
-Ref: admin_email_otp.user_id > admin_users.id
+// 관계는 위의 각 컬럼 정의에서 [ref: > target.id] 인라인으로 모두 명시.
+// dbdiagram.io 는 인라인 ref 와 별도 Ref 라인이 같이 있으면 중복으로 간주
+// 하므로 별도 Ref 블록은 두지 않는다.
