@@ -167,6 +167,13 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     # Currently localStorage-only on the client; permission key reserved
     # for the eventual backend Product table.
     "products":      {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
+    # 감사 로그 — 보안 관제 페이지(/admin/security) 가 사용. PII(IP, email)
+    # 노출이라 admin / developer 만 read.
+    "audit-logs":    {ROLE_ADMIN: _READ, ROLE_DEVELOPER: _READ},
+    # Analytics — IP geolocation / 사용자 분석. 마케팅 분석 페이지.
+    "analytics":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ, ROLE_DEVELOPER: _READ},
+    # Contracts — PDF rasterize endpoint 권한.
+    "contracts":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
 }
 
 

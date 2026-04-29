@@ -466,6 +466,9 @@ app.include_router(geo_router)
 from routes_pdf import router as pdf_router  # noqa: E402
 app.include_router(pdf_router)
 
+from routes_audit import router as audit_router  # noqa: E402
+app.include_router(audit_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

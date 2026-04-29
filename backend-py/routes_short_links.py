@@ -345,6 +345,12 @@ async def follow_short_link(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
+    """단축링크 redirect — 클릭 카운트/이력 기록 후 target_url 로 302.
+
+    안전성: redirect 자체는 절대 internal 에러로 막혀선 안 됨. 카운트/이력
+    삽입 실패 시(예: ShortLinkClick INSERT 의 MySQL 호환성 이슈) 로깅만
+    하고 redirect 는 진행. 사용자 경험 우선.
+    """
     if len(short_id) > 16 or not re.match(r"^[A-Za-z0-9_\-]+$", short_id):
         raise HTTPException(404, "invalid short_id")
 
@@ -366,24 +372,39 @@ async def follow_short_link(
 
     if not verify_signature(row):
         # 서명 위조 의심 — 자동 revoke + 로깅.
-        row.revoked_at = datetime.now(timezone.utc)
-        row.revoked_reason = "signature mismatch"
-        await session.flush()
+        try:
+            row.revoked_at = datetime.now(timezone.utc)
+            row.revoked_reason = "signature mismatch"
+            await session.flush()
+        except Exception as _e:  # noqa: BLE001
+            print(f"[short-links] revoke flush failed: {_e!r}")
         raise HTTPException(410, "링크 서명 검증 실패 — 자동 무효화되었습니다.")
 
     ip = request.client.host if request.client else ""
     if not rate_limit_ok(ip):
         raise HTTPException(429, "rate limit exceeded — 잠시 후 다시 시도해 주세요.")
 
-    # 클릭 카운트 + 이력 저장.
-    row.click_count = (row.click_count or 0) + 1
-    row.last_clicked_at = datetime.now(timezone.utc)
-    session.add(ShortLinkClick(
-        short_link_id=row.id,
-        ip_hash=hash_ip(ip),
-        ua_family=ua_family(request.headers.get("user-agent", ""))[:40],
-        referer_host=extract_host(request.headers.get("referer", "")),
-    ))
-    await session.flush()
+    target_url = row.target_url
 
-    return RedirectResponse(url=row.target_url, status_code=302)
+    # 클릭 카운트 + 이력 저장 — 실패해도 redirect 는 진행. INSERT 가 MySQL
+    # 의 utf8mb4 / 컬럼 길이 제약 등으로 fail 하면 logs 에만 기록.
+    try:
+        row.click_count = (row.click_count or 0) + 1
+        row.last_clicked_at = datetime.now(timezone.utc)
+        session.add(ShortLinkClick(
+            short_link_id=row.id,
+            ip_hash=hash_ip(ip)[:64],
+            ua_family=ua_family(request.headers.get("user-agent", ""))[:40],
+            referer_host=extract_host(request.headers.get("referer", ""))[:120],
+        ))
+        await session.flush()
+    except Exception as _e:  # noqa: BLE001
+        import traceback
+        print(f"[short-links] click-count/history INSERT failed (redirect 진행): {_e!r}")
+        traceback.print_exc()
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+
+    return RedirectResponse(url=target_url, status_code=302)
