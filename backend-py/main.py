@@ -190,6 +190,20 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # 명시적 DB 연결 테스트 — 어떤 host 에 연결되는지 / 실패 시 명확한 에러
+    # 메시지를 logs 에 노출. fail 해도 startup 은 진행 (health endpoint 가
+    # 진단 정보를 반환하도록).
+    _db_url_safe = engine.url.render_as_string(hide_password=True)
+    print(f"[daemu-backend-py] DB connecting to: {_db_url_safe}")
+    try:
+        from sqlalchemy import text as _sa_text
+        async with engine.connect() as _conn:
+            await _conn.execute(_sa_text("SELECT 1"))
+        print(f"[daemu-backend-py] ✓ DB connection OK")
+    except Exception as _e:  # noqa: BLE001
+        print(f"[daemu-backend-py] ✗ DB CONNECTION FAILED: {_e!r}")
+        # startup 은 계속 진행 — health endpoint 가 진단 정보를 노출.
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # 기존 테이블에 새 컬럼을 추가하는 idempotent 마이그레이션.
@@ -669,6 +683,16 @@ async def monitoring_summary(_user = Depends(require_perm("monitoring", "read"))
 @app.get("/api/health")
 async def health():
     provider = email_provider()
+    # 실시간 DB 연결 상태 진단 — 사용자가 health 한 번에 어디서 막혔는지 확인.
+    db_connected = False
+    db_error = ""
+    try:
+        from sqlalchemy import text as _sa_text
+        async with engine.connect() as _conn:
+            await _conn.execute(_sa_text("SELECT 1"))
+        db_connected = True
+    except Exception as _e:  # noqa: BLE001
+        db_error = str(_e)[:280]
     return {
         "ok": True,
         "runtime": "python-fastapi",
@@ -679,6 +703,8 @@ async def health():
         "smtpHost": (SMTP_HOST or ""),
         "smtpFrom": (SMTP_FROM or ""),
         "database": engine.url.render_as_string(hide_password=True),
+        "databaseConnected": db_connected,
+        "databaseError": db_error,
         "from": FROM_EMAIL,
         "allowedOrigins": ALLOWED_ORIGINS,
         "uploadEndpoint": "/api/upload",
