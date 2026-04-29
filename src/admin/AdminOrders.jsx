@@ -1,7 +1,7 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, OrdersGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, OrdersGuide } from './PageGuides.jsx';
 import html from './raw/admin-orders.html.js';
 
 const ORDERS_CSV_COLUMNS = [
@@ -20,8 +20,10 @@ const ORDERS_CSV_COLUMNS = [
 export default function AdminOrders() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={OrdersGuide} />
-      <RawPageCsvButton storageKey="orders" filename="daemu-orders" columns={ORDERS_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="orders" filename="daemu-orders" columns={ORDERS_CSV_COLUMNS} />
+        <GuideButton GuideComponent={OrdersGuide} />
+      </PageActions>
       <AdminHelp title="발주·계약 관리 안내" items={[
         '발주/계약은 본 시스템에서 본문 작성 → 이메일 발송 → Outbox 기록까지 처리합니다.',
         '신규 발주 저장 시 발주번호(DM-PO-YYYY-NNNN)가 자동 부여됩니다. 상품 필드에 SKU(BAKERY-001 등) 가 들어 있으면 입력 수량만큼 재고 자동 차감.',

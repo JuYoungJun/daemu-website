@@ -1,7 +1,7 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, WorksGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, WorksGuide } from './PageGuides.jsx';
 import html from './raw/admin-works.html.js';
 
 const WORKS_CSV_COLUMNS = [
@@ -19,8 +19,10 @@ const WORKS_CSV_COLUMNS = [
 export default function AdminWorks() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={WorksGuide} />
-      <RawPageCsvButton storageKey="works" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="works" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
+        <GuideButton GuideComponent={WorksGuide} />
+      </PageActions>
       <AdminHelp title="작업사례 관리 사용 안내" items={[
         '신규 등록: "작업사례 등록" → 슬러그(영문 URL), 제목, 카테고리, 요약, 갤러리 이미지 입력.',
         '브랜드 자유 입력: 브랜드 항목에서 "직접 입력"을 선택하면 새 브랜드명을 입력할 수 있습니다.',

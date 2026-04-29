@@ -13,7 +13,7 @@ import {
   getDownloadDirectoryLabel, isDirectoryPickerSupported,
 } from '../lib/downloadDir.js';
 import AdminMainGuide from './AdminMainGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -337,7 +337,9 @@ export default function AdminGate() {
                 />
               )}
             </div>
-            <GuideButton GuideComponent={AdminMainGuide}/>
+            <PageActions>
+              <GuideButton GuideComponent={AdminMainGuide} />
+            </PageActions>
 
             <div className="admin-stats-grid">
               <div className="admin-stat-card"><span className="admin-stat-number">{newInq}</span><span className="admin-stat-label">신규 상담 문의</span></div>

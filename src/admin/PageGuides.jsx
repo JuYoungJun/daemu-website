@@ -27,27 +27,32 @@ export function RawPageCsvButton({ storageKey, filename, columns }) {
     downloadCSV(fname, rows, columns);
   };
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-      <button type="button" className="adm-btn-sm" onClick={onClick}>
-        CSV 내보내기
-      </button>
+    <button type="button" className="adm-page-action-btn adm-page-action-btn--csv" onClick={onClick}>
+      CSV 내보내기
+    </button>
+  );
+}
+
+// 어드민 페이지 액션 바 — CSV / 가이드 등 페이지 우측 상단 버튼들을 같은
+// 줄에 정렬해서 묶는 wrapper. 모든 어드민 페이지에서 일관된 위치를 보장.
+export function PageActions({ children }) {
+  return (
+    <div className="adm-page-actions">
+      {children}
     </div>
   );
 }
 
-// 가이드 버튼 + 모달 상태를 한 컴포넌트로 묶음. 각 어드민 페이지에서
-// <GuideButton GuideComponent={WorksGuide} /> 한 줄만 호출하면 우하단에
-// floating 으로 가이드 버튼이 표시된다. 모든 페이지에서 동일한 위치라
-// 사용자 학습 비용이 0.
+// 가이드 버튼 — PageActions 안에 inline 으로 들어가는 작은 outline 버튼.
+// 클릭 시 해당 페이지 가이드 모달이 열린다.
 export function GuideButton({ GuideComponent }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="adm-floating-guide-btn"
+        className="adm-page-action-btn adm-page-action-btn--guide"
         title="현재 페이지 사용 가이드 보기">
-        <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>?</span>
-        <span>사용 가이드</span>
+        사용 가이드
       </button>
       {open && <GuideComponent onClose={() => setOpen(false)} />}
     </>

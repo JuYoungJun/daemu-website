@@ -1,6 +1,6 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
-import { GuideButton, RawPageCsvButton, PartnersGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, PartnersGuide } from './PageGuides.jsx';
 import html from './raw/admin-partners.html.js';
 
 const PARTNERS_CSV_COLUMNS = [
@@ -19,8 +19,10 @@ const PARTNERS_CSV_COLUMNS = [
 export default function AdminPartners() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={PartnersGuide} />
-      <RawPageCsvButton storageKey="partners" filename="daemu-partners" columns={PARTNERS_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="partners" filename="daemu-partners" columns={PARTNERS_CSV_COLUMNS} />
+        <GuideButton GuideComponent={PartnersGuide} />
+      </PageActions>
       <RawPage html={html} script="/admin-partners-page.js" />
     </AdminShell>
   );

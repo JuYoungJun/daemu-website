@@ -26,7 +26,7 @@ import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js'
 import { DB } from '../lib/db.js';
 import { renderInlineMarkdown, renderMailBody } from '../components/MailBodyRenderer.jsx';
 import MailTemplatesGuide from './MailTemplatesGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -356,7 +356,11 @@ export default function AdminMailTemplates() {
           <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">메일 템플릿 라이브러리</h1>
 
-          <GuideButton GuideComponent={MailTemplatesGuide} />
+          <PageActions>
+
+            <GuideButton GuideComponent={MailTemplatesGuide} />
+
+          </PageActions>
 
           <AdminHelp title="메일 템플릿 사용 안내" items={[
             '여기서 저장한 템플릿은 단체 메일 발송, 캠페인, 1:1 안내 메일 등에서 재사용됩니다.',

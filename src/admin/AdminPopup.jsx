@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, PopupGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, PopupGuide } from './PageGuides.jsx';
 import html from './raw/admin-popup.html.js';
 
 const POPUP_CSV_COLUMNS = [
@@ -31,8 +31,10 @@ export default function AdminPopup() {
 
   return (
     <AdminShell>
-      <GuideButton GuideComponent={PopupGuide} />
-      <RawPageCsvButton storageKey="popups" filename="daemu-popups" columns={POPUP_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="popups" filename="daemu-popups" columns={POPUP_CSV_COLUMNS} />
+        <GuideButton GuideComponent={PopupGuide} />
+      </PageActions>
       <AdminHelp title="팝업 / 이벤트 사용 안내" items={[
         '위치·빈도: 중앙/우하단/상단 중 선택. 매번/하루 1회/영구 1회로 노출 빈도를 정합니다.',
         '타겟 페이지: 팝업이 노출될 페이지를 다중 선택할 수 있습니다 (메인/소개/서비스 등).',

@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 import AdminGuideModal, { GuideSection, guideListStyle } from './AdminGuideModal.jsx';
 import { api } from '../lib/api.js';
 
@@ -148,7 +148,9 @@ export default function AdminApiDocs() {
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
             <h1 className="page-title" style={{ margin: 0 }}>API 문서</h1>
             <div style={{ display: 'flex', gap: 8 }}>
-              <GuideButton GuideComponent={ApiDocsGuide} />
+              <PageActions>
+                <GuideButton GuideComponent={ApiDocsGuide} />
+              </PageActions>
             </div>
           </div>
 

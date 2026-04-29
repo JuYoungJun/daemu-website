@@ -21,7 +21,7 @@ import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { PartnerBrandLogoImg } from '../components/PartnerBrandLogo.jsx';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
-import { GuideButton, PartnerBrandsGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, PartnerBrandsGuide } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
@@ -109,7 +109,9 @@ export default function AdminPartnerBrands() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <GuideButton GuideComponent={PartnerBrandsGuide} />
+          <PageActions>
+            <GuideButton GuideComponent={PartnerBrandsGuide} />
+          </PageActions>
           <h1 className="page-title">함께하는 파트너사</h1>
 
           <AdminHelp title="파트너사 관리 안내" items={[

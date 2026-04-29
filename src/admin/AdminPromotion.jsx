@@ -1,7 +1,7 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, PromotionGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, PromotionGuide } from './PageGuides.jsx';
 import html from './raw/admin-promotion.html.js';
 
 const PROMO_CSV_COLUMNS = [
@@ -20,8 +20,10 @@ const PROMO_CSV_COLUMNS = [
 export default function AdminPromotion() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={PromotionGuide} />
-      <RawPageCsvButton storageKey="promotions" filename="daemu-promotions" columns={PROMO_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="promotions" filename="daemu-promotions" columns={PROMO_CSV_COLUMNS} />
+        <GuideButton GuideComponent={PromotionGuide} />
+      </PageActions>
       <AdminHelp title="프로모션 사용 안내" items={[
         '쿠폰 등록: 코드(영문/숫자), 할인 방식(정률·정액·1+1), 유효기간, 최대 사용 횟수를 입력합니다.',
         '활성화: "활성"으로 표시된 쿠폰만 사용자에게 노출됩니다. 상세 코드는 비활성화로 임시 중지하세요.',

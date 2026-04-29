@@ -1,7 +1,7 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, MediaGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, MediaGuide } from './PageGuides.jsx';
 import html from './raw/admin-media.html.js';
 
 const MEDIA_CSV_COLUMNS = [
@@ -17,8 +17,10 @@ const MEDIA_CSV_COLUMNS = [
 export default function AdminMedia() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={MediaGuide} />
-      <RawPageCsvButton storageKey="media" filename="daemu-media" columns={MEDIA_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="media" filename="daemu-media" columns={MEDIA_CSV_COLUMNS} />
+        <GuideButton GuideComponent={MediaGuide} />
+      </PageActions>
       <AdminHelp title="미디어 관리 사용 안내" items={[
         '이미지/영상 업로드: "업로드" 버튼 → 파일 선택. 이미지는 자동으로 1600px 이내로 압축됩니다.',
         '재사용: 작업사례·콘텐츠·팝업 등 다른 관리 페이지에서 미디어를 선택할 때 이곳에 저장된 자산이 표시됩니다.',

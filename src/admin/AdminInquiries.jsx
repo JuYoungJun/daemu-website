@@ -23,7 +23,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 import InquiriesGuide from './InquiriesGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -205,24 +205,8 @@ export default function AdminInquiries() {
           <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">상담/문의</h1>
 
-          <GuideButton GuideComponent={InquiriesGuide} />
-
-          <AdminHelp title="상담관리 사용 안내" items={[
-            'Contact 폼에서 들어온 문의는 자동으로 여기에 표시됩니다.',
-            '상태 변경(신규→처리중→답변완료)은 즉시 백엔드에 동기화됩니다.',
-            '"답변완료"로 변경하면, 회신 메모가 입력되어 있고 이메일 발송이 활성화된 경우 회신 메일 발송 여부를 확인합니다.',
-            '회신 메모만 저장하고 발송은 별도로 진행하려면 "수정" → 회신메모 입력 → 저장 → 상태는 그대로 두세요.',
-            '새로고침 버튼: 백엔드에서 최신 데이터를 다시 가져옵니다.',
-          ]} />
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '14px 0 18px' }}>
-            <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>전체 {counts.total}</span>
-            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['신규'], color: STATUS_PILL_COLOR['신규'] }}>신규 {counts.new}</span>
-            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['처리중'], color: STATUS_PILL_COLOR['처리중'] }}>처리중 {counts.pending}</span>
-            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['답변완료'], color: STATUS_PILL_COLOR['답변완료'] }}>답변완료 {counts.done}</span>
-            <span style={{ flex: 1 }} />
-            <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '새로고침'}</button>
-            <button type="button" className="adm-btn-sm"
+          <PageActions>
+            <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"
               onClick={() => downloadCSV(
                 'daemu-inquiries-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filtered,
@@ -240,7 +224,27 @@ export default function AdminInquiries() {
                   { key: 'reply', label: '회신메모' },
                   { key: 'date', label: '접수일' },
                 ],
-              )}>CSV 내보내기</button>
+              )}>
+              CSV 내보내기
+            </button>
+            <GuideButton GuideComponent={InquiriesGuide} />
+          </PageActions>
+
+          <AdminHelp title="상담관리 사용 안내" items={[
+            'Contact 폼에서 들어온 문의는 자동으로 여기에 표시됩니다.',
+            '상태 변경(신규→처리중→답변완료)은 즉시 백엔드에 동기화됩니다.',
+            '"답변완료"로 변경하면, 회신 메모가 입력되어 있고 이메일 발송이 활성화된 경우 회신 메일 발송 여부를 확인합니다.',
+            '회신 메모만 저장하고 발송은 별도로 진행하려면 "수정" → 회신메모 입력 → 저장 → 상태는 그대로 두세요.',
+            '새로고침 버튼: 백엔드에서 최신 데이터를 다시 가져옵니다.',
+          ]} />
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '14px 0 18px' }}>
+            <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>전체 {counts.total}</span>
+            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['신규'], color: STATUS_PILL_COLOR['신규'] }}>신규 {counts.new}</span>
+            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['처리중'], color: STATUS_PILL_COLOR['처리중'] }}>처리중 {counts.pending}</span>
+            <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['답변완료'], color: STATUS_PILL_COLOR['답변완료'] }}>답변완료 {counts.done}</span>
+            <span style={{ flex: 1 }} />
+            <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '새로고침'}</button>
             <button type="button" className="btn" onClick={() => setCreating(true)}>+ 새 문의(메모)</button>
           </div>
 

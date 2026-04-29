@@ -1,7 +1,7 @@
 import RawPage from '../components/RawPage.jsx';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
-import { GuideButton, RawPageCsvButton, CRMGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, RawPageCsvButton, CRMGuide } from './PageGuides.jsx';
 import html from './raw/admin-crm.html.js';
 
 const STAGE_LABEL = { lead: '리드', qualified: '검토중', customer: '전환', lost: '이탈' };
@@ -24,8 +24,10 @@ const CRM_CSV_COLUMNS = [
 export default function AdminCRM() {
   return (
     <AdminShell>
-      <GuideButton GuideComponent={CRMGuide} />
-      <RawPageCsvButton storageKey="crm" filename="daemu-crm" columns={CRM_CSV_COLUMNS} />
+      <PageActions>
+        <RawPageCsvButton storageKey="crm" filename="daemu-crm" columns={CRM_CSV_COLUMNS} />
+        <GuideButton GuideComponent={CRMGuide} />
+      </PageActions>
       <AdminHelp title="CRM 사용 안내" items={[
         '리드 자동 수집: Contact 페이지·Partners 가입 신청에서 들어온 신청은 자동으로 "리드" 단계로 등록됩니다.',
         '단계 이동: 카드 카드를 클릭 → 드로어에서 단계를 변경(리드→검토중→전환). 이탈 처리도 가능합니다.',

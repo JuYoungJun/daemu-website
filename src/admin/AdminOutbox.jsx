@@ -3,7 +3,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import { Link } from 'react-router-dom';
 import { downloadCSV } from '../lib/csv.js';
 import { siteConfirm } from '../lib/dialog.js';
-import { GuideButton, OutboxGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, OutboxGuide } from './PageGuides.jsx';
 
 const STATUS_LABEL = {
   simulated: '시뮬레이션',
@@ -49,15 +49,10 @@ export default function AdminOutbox() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <GuideButton GuideComponent={OutboxGuide} />
           <h1 className="page-title">Outbox</h1>
-          <p className="adm-section-desc">백엔드 API 호출 이력. 데모(백엔드 미구성) 환경에서는 모든 발송이 <strong>시뮬레이션</strong>으로 기록되어 여기서 어떤 메일/요청이 나갔을지 확인할 수 있습니다.<br />실제 백엔드(<code>VITE_API_BASE_URL</code>) 연결 시 발송 결과(성공/실패)도 동일 위치에 누적됩니다.</p>
 
-          <div className="adm-toolbar">
-            <input type="search" placeholder="검색 (제목·수신자·내용)" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            <span className="spacer"></span>
-            <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.08em'}}>{filtered.length}건</span>
-            <button type="button" className="adm-btn-sm"
+          <PageActions>
+            <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"
               onClick={() => downloadCSV(
                 'daemu-outbox-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filtered,
@@ -73,7 +68,18 @@ export default function AdminOutbox() {
                   { key: (e) => (e?.body?.body || '').slice(0, 500), label: '본문(앞500자)' },
                   { key: 'error', label: '오류' },
                 ],
-              )}>CSV 내보내기</button>
+              )}>
+              CSV 내보내기
+            </button>
+            <GuideButton GuideComponent={OutboxGuide} />
+          </PageActions>
+
+          <p className="adm-section-desc">백엔드 API 호출 이력. 데모(백엔드 미구성) 환경에서는 모든 발송이 <strong>시뮬레이션</strong>으로 기록되어 여기서 어떤 메일/요청이 나갔을지 확인할 수 있습니다.<br />실제 백엔드(<code>VITE_API_BASE_URL</code>) 연결 시 발송 결과(성공/실패)도 동일 위치에 누적됩니다.</p>
+
+          <div className="adm-toolbar">
+            <input type="search" placeholder="검색 (제목·수신자·내용)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <span className="spacer"></span>
+            <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.08em'}}>{filtered.length}건</span>
             <button type="button" className="adm-btn-sm danger" onClick={clear}>로그 비우기</button>
           </div>
 

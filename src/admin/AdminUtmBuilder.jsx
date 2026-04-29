@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import UtmBuilderGuide from './UtmBuilderGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
@@ -311,7 +311,11 @@ export default function AdminUtmBuilder() {
           <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">UTM 빌더</h1>
 
-          <GuideButton GuideComponent={UtmBuilderGuide} />
+          <PageActions>
+
+            <GuideButton GuideComponent={UtmBuilderGuide} />
+
+          </PageActions>
 
           <AdminHelp title="UTM 빌더 안내" items={[
             'UTM 파라미터는 URL 끝에 붙여 어떤 캠페인·매체에서 들어왔는지 추적하는 표준 방식입니다 (Google·Plausible·Naver Analytics 등 대부분이 인식).',

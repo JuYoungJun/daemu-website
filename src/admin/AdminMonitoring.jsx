@@ -19,7 +19,7 @@ import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
 import { stockSummary, LOW_STOCK_THRESHOLD } from '../lib/inventory.js';
 import MonitoringGuide from './MonitoringGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 
 const KIND_LABEL = {
   outbox_failed: '발송 실패',
@@ -535,7 +535,11 @@ export default function AdminMonitoring() {
           <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">유지보수 모니터링</h1>
 
-          <GuideButton GuideComponent={MonitoringGuide} />
+          <PageActions>
+
+            <GuideButton GuideComponent={MonitoringGuide} />
+
+          </PageActions>
 
           <AdminHelp title="모니터링 사용 안내" items={[
             '백엔드 운영 요약 카드들은 1분 주기로 새로고침되며 실제 backend DB 통계를 보여줍니다.',

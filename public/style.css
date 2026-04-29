@@ -3406,40 +3406,47 @@ body{background:var(--bg)}
 body[data-page="admin"]{overflow-y:auto !important}
 body[data-page="admin"] main.page{min-height:auto;overflow:visible}
 
-/* 어드민 페이지의 floating 사용 가이드 버튼 — 모든 페이지에서 우하단 동일
-   위치에 고정. 컨텐츠를 가리지 않게 z-index 낮게(모달보다 낮음). */
-.adm-floating-guide-btn{
-  position:fixed;
-  bottom:24px;
-  right:24px;
-  z-index:50;
-  display:inline-flex;
+/* 어드민 페이지 액션 바 — 페이지 우측 상단에 CSV / 가이드 등 버튼들을 같은
+   줄에 정렬. 페이지 제목 아래, AdminHelp 위에 배치. */
+.adm-page-actions{
+  display:flex;
+  justify-content:flex-end;
   align-items:center;
   gap:8px;
-  background:#1f5e7c;
-  color:#fff;
-  border:1px solid #1f5e7c;
-  padding:10px 18px;
-  font-size:13px;
+  margin:0 0 14px;
+  flex-wrap:wrap;
+}
+.adm-page-action-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 14px;
+  font-size:12.5px;
   font-family:inherit;
-  letter-spacing:.04em;
+  letter-spacing:.02em;
   cursor:pointer;
-  border-radius:999px;
-  box-shadow:0 6px 20px rgba(31,94,124,.32);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+  border-radius:4px;
+  border:1px solid;
+  background:#fff;
+  transition:background .14s ease, color .14s ease, border-color .14s ease;
 }
-.adm-floating-guide-btn:hover{
-  transform:translateY(-2px);
-  box-shadow:0 10px 26px rgba(31,94,124,.42);
-  background:#27708f;
-}
-.adm-floating-guide-btn > span:first-child{
+.adm-page-action-btn__icon{
   display:inline-flex;align-items:center;justify-content:center;
-  width:18px;height:18px;border-radius:50%;
-  background:rgba(255,255,255,.18);font-weight:700;
+  width:16px;height:16px;border-radius:50%;font-weight:700;font-size:11px;
 }
+/* 가이드 — 파란 outline. hover 시 채워짐. */
+.adm-page-action-btn--guide{color:#1f5e7c;border-color:#1f5e7c}
+.adm-page-action-btn--guide .adm-page-action-btn__icon{background:#1f5e7c;color:#fff}
+.adm-page-action-btn--guide:hover{background:#1f5e7c;color:#fff}
+.adm-page-action-btn--guide:hover .adm-page-action-btn__icon{background:#fff;color:#1f5e7c}
+/* CSV — 진초록 outline. */
+.adm-page-action-btn--csv{color:#2e7d32;border-color:#2e7d32}
+.adm-page-action-btn--csv .adm-page-action-btn__icon{background:#2e7d32;color:#fff}
+.adm-page-action-btn--csv:hover{background:#2e7d32;color:#fff}
+.adm-page-action-btn--csv:hover .adm-page-action-btn__icon{background:#fff;color:#2e7d32}
 @media (max-width:600px){
-  .adm-floating-guide-btn{bottom:16px;right:16px;padding:9px 14px;font-size:12px}
+  .adm-page-actions{justify-content:flex-start}
+  .adm-page-action-btn{padding:6px 12px;font-size:12px}
 }
 .admin-login-wrap{display:flex;justify-content:center;padding:60px 0}
 .admin-login-box{width:360px;text-align:center}

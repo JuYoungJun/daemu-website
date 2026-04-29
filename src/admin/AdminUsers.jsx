@@ -21,7 +21,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { normalizeEmail } from '../lib/inputFormat.js';
 import UsersGuide from './UsersGuide.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_COLOR = { admin: '#c0392b', tester: '#1f5e7c', developer: '#b87333' };
@@ -235,7 +235,28 @@ export default function AdminUsers() {
         <section className="wide admin-page">
           <h1 className="page-title">사용자 권한 관리</h1>
 
-          <GuideButton GuideComponent={UsersGuide} />
+          <PageActions>
+            <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"
+              onClick={() => downloadCSV(
+                'daemu-users-' + new Date().toISOString().slice(0, 10) + '.csv',
+                filtered,
+                [
+                  { key: 'id', label: 'ID' },
+                  { key: 'email', label: '이메일' },
+                  { key: 'name', label: '이름' },
+                  { key: (u) => ROLE_LABEL[u.role] || u.role, label: '권한' },
+                  { key: (u) => u.active ? '활성' : '비활성', label: '상태' },
+                  { key: (u) => u.email_verified_at ? '인증완료' : '미인증', label: '이메일인증' },
+                  { key: (u) => u.totp_enabled ? '활성' : '비활성', label: '2FA' },
+                  { key: (u) => u.must_change_password ? 'Y' : 'N', label: '비번변경필요' },
+                  { key: (u) => u.last_login_at ? new Date(u.last_login_at).toISOString() : '', label: '최근로그인' },
+                  { key: (u) => u.created_at ? new Date(u.created_at).toISOString() : '', label: '가입일' },
+                ],
+              )}>
+              CSV 내보내기
+            </button>
+            <GuideButton GuideComponent={UsersGuide} />
+          </PageActions>
 
           {/* KPI 2행 — 첫 행: 일반 통계 4개, 두 번째 행: 보안 알림 3개 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>

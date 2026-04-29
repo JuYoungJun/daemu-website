@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
-import { GuideButton } from './PageGuides.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 import AdminGuideModal, { GuideSection, GuideTable, guideListStyle } from './AdminGuideModal.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteToast } from '../lib/dialog.js';
@@ -124,7 +124,11 @@ export default function AdminSecurityMonitoring() {
           <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">보안 모니터링</h1>
 
-          <GuideButton GuideComponent={SecurityGuide} />
+          <PageActions>
+
+            <GuideButton GuideComponent={SecurityGuide} />
+
+          </PageActions>
 
           <p style={{ fontSize: 13, color: '#5a534b', margin: '0 0 16px', lineHeight: 1.7 }}>
             인증 실패 / 의심 IP / 보안 이벤트를 30초 주기로 실시간 추적합니다.

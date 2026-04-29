@@ -25,7 +25,7 @@ import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatCurrencyTyping, unformatNumber } from '../lib/inputFormat.js';
 import { nextSku } from '../lib/numbering.js';
 import { LOW_STOCK_THRESHOLD } from '../lib/inventory.js';
-import { GuideButton, ProductsGuide } from './PageGuides.jsx';
+import { PageActions, GuideButton, ProductsGuide } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -130,7 +130,9 @@ export default function AdminProducts() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <GuideButton GuideComponent={ProductsGuide} />
+          <PageActions>
+            <GuideButton GuideComponent={ProductsGuide} />
+          </PageActions>
           <h1 className="page-title">발주 상품 관리</h1>
 
           <AdminHelp title="발주 상품 관리 안내" items={[
