@@ -1,0 +1,75 @@
+name: Security scan (Trivy + OWASP ZAP)
+
+# 즉시 적용 가능한 OSS 보안 도구 통합:
+#   · Trivy — 의존성/IaC 취약점 스캐너. PR 마다 + 주 1회 풀 스캔.
+#   · OWASP ZAP — 운영 사이트 baseline scan. 주 1회. 결과는 워크플로 아티팩트.
+# 둘 다 무료, 전 self-host 도 무료. Snyk(이미 사용)와 보완 관계.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 매주 월요일 오전 4시(UTC) — KST 오후 1시.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # SARIF 업로드용.
+
+jobs:
+  trivy:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          # 이미지 취약점 DB 캐싱 — 매 run 다운로드하지 않게.
+          cache-dir: /tmp/trivy-cache
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-fs
+
+  zap-baseline:
+    name: OWASP ZAP baseline scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP baseline scan against production
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'https://juyoungjun.github.io/daemu-website/'
+          # baseline = passive scan only (운영 사이트 부하 최소).
+          # rules_file_name 으로 false-positive 룰 제외 가능.
+          cmd_options: '-a -j -m 5'
+          allow_issue_writing: false
+          fail_action: false
+
+      - name: Upload ZAP report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-baseline-report
+          path: |
+            report_html.html
+            report_md.md
+            report_json.json
+          retention-days: 30
