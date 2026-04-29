@@ -157,15 +157,14 @@ function AnalyticsBoot() {
   return null;
 }
 
-// 어드민 세션 정책:
-//   · 어드민 영역 내 이동(reload·뒤로가기·admin↔admin) 은 세션 유지.
-//   · 어드민 → 공개 페이지(/, /work, ...) 이동 시 세션 즉시 폐기.
-//   · 60분 inactivity 는 lib/auth.js 가 처리(자리 비움 케이스).
-//
-// 구현 메모: location-watcher 는 App 루트 1개만. RequireAuth 가 unmount
-// 에서 Auth 를 만지지 않게 해 admin 내 이동에서 토큰이 실수로 지워지는
-// 일을 막는다. beforeunload 핸들러는 F5/하드리로드에서 세션을 날렸던
-// 과거 버그라 의도적으로 설치하지 않는다.
+// 어드민 세션 정책 (강화):
+//   · 어드민 영역 내 이동(admin↔admin) 은 세션 유지.
+//   · 어드민 → 공개 페이지(/, /work, ...) 이동 시 즉시 logout.
+//   · **탭/창 닫기 / 외부 도메인 이동** 시에도 즉시 logout.
+//   · F5 / 하드 리로드 → 같은 어드민 path 로 즉시 재마운트되니, sessionStorage
+//     'daemu_admin_reload_grace' 마커로 grace 1.5초. 그 안에 다시 mount 되면
+//     reload 로 간주 → 토큰 유지. 그 외엔 진짜 unload.
+//   · 60분 inactivity 는 lib/auth.js.
 function AdminSessionGuard() {
   const { pathname } = useLocation();
   const prevAdmin = useRef(pathname.startsWith('/admin'));
@@ -175,6 +174,35 @@ function AdminSessionGuard() {
       Auth.logout();
     }
     prevAdmin.current = nowAdmin;
+  }, [pathname]);
+
+  // 어드민 페이지에 머무는 동안 beforeunload 시 grace 마커 set.
+  // 다른 어드민 페이지로의 react-router 이동은 unload 트리거 안 함.
+  // 진짜 unload(탭 닫기·외부 이동·하드 리로드) 만 잡힘.
+  useEffect(() => {
+    if (!pathname.startsWith('/admin')) return;
+    const onBefore = () => {
+      try {
+        sessionStorage.setItem('daemu_admin_reload_grace', String(Date.now()));
+      } catch { /* ignore */ }
+      Auth.logout();
+    };
+    window.addEventListener('beforeunload', onBefore);
+    return () => window.removeEventListener('beforeunload', onBefore);
+  }, [pathname]);
+
+  // mount 시 grace 검사 — 1.5초 이내 unload 마커 + 같은 어드민 path 면
+  // F5/하드 리로드로 간주, 토큰을 다시 받아야 하니 사용자에게 친절하게 grace
+  // 메시지만(자동 재발급은 보안상 안 함). 1.5초 외면 무시.
+  useEffect(() => {
+    if (!pathname.startsWith('/admin')) return;
+    try {
+      const ts = Number(sessionStorage.getItem('daemu_admin_reload_grace') || 0);
+      if (ts && Date.now() - ts < 1500) {
+        // F5/리로드 — 메시지 없이 로그인 페이지로 자연스럽게 fallback.
+      }
+      sessionStorage.removeItem('daemu_admin_reload_grace');
+    } catch { /* ignore */ }
   }, [pathname]);
   return null;
 }

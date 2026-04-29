@@ -12,8 +12,10 @@ import AdminGuideModal, { GuideSection, GuideTable, guideListStyle } from './Adm
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteToast } from '../lib/dialog.js';
 import { api } from '../lib/api.js';
+import { filterByDevIp } from '../lib/ipFilter.js';
 
-const POLL_INTERVAL_MS = 30 * 1000;
+// 실시간급 — 15초 주기 (이전 30초). 사용자 요청.
+const POLL_INTERVAL_MS = 15 * 1000;
 const EXT_URL_KEY = 'daemu_security_external_endpoint';
 
 function probeColor(level) {
@@ -113,7 +115,8 @@ export default function AdminSecurityMonitoring() {
   };
 
   const risk = summary?.riskLevel || 'low';
-  const ips = summary?.suspiciousIps1h || [];
+  // 개발자 IP 화이트리스트로 노이즈 제거.
+  const ips = filterByDevIp(summary?.suspiciousIps1h || []);
   const authFail5m = summary?.authFailures5m ?? 0;
   const uniqueFailIps = summary?.uniqueFailedIps24h ?? 0;
 

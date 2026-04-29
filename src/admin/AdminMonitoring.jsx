@@ -18,6 +18,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
 import { stockSummary, LOW_STOCK_THRESHOLD } from '../lib/inventory.js';
+import { filterByDevIp } from '../lib/ipFilter.js';
 import MonitoringGuide from './MonitoringGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 
@@ -200,11 +201,12 @@ export default function AdminMonitoring() {
       if (s.ok) setSummary(s);
     };
     probe();
-    const id = setInterval(probe, 60_000);
+    // 실시간급 — 15초 주기 (이전 60초). 사용자 요청.
+    const id = setInterval(probe, 15_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  // 사이트 전체 API 가용성 probe — 60초 주기, mount 시 즉시 1회.
+  // 사이트 전체 API 가용성 probe — 15초 주기, mount 시 즉시 1회.
   // GET only · 동시성 제한 4 · 결과는 state 와 localStorage(history)에 저장.
   // 탭이 숨겨진 동안에는 probe 를 멈춰 Render 무료 tier 사용량을 절약한다.
   useEffect(() => {
@@ -253,7 +255,8 @@ export default function AdminMonitoring() {
       } catch { /* ignore */ }
     };
     runProbes();
-    timer = setInterval(runProbes, 60_000);
+    // 실시간급 — 15초 주기 (이전 60초). 사용자 요청.
+    timer = setInterval(runProbes, 15_000);
     return () => { alive = false; if (timer) clearInterval(timer); };
   }, []);
 
@@ -588,7 +591,7 @@ export default function AdminMonitoring() {
                   {summary.riskLevel === 'high' ? '보안 위험도 — 높음' : summary.riskLevel === 'medium' ? '보안 위험도 — 주의' : '보안 위험도 — 정상'}
                 </div>
                 <div style={{ fontSize: 11, color: '#8c867d' }}>
-                  최근 1시간 의심 IP <strong>{(summary.suspiciousIps1h || []).length}</strong>개 ·
+                  최근 1시간 의심 IP <strong>{filterByDevIp(summary.suspiciousIps1h || []).length}</strong>개 ·
                   최근 5분 인증 실패 <strong>{summary.authFailures5m ?? 0}</strong>건 ·
                   24h unique 실패 IP <strong>{summary.uniqueFailedIps24h ?? 0}</strong>개
                 </div>
@@ -603,11 +606,11 @@ export default function AdminMonitoring() {
                   비정상 로그인 시도가 감지됩니다. 의심 IP 목록을 확인하고 필요시 차단 조치를 검토하세요.
                 </p>
               )}
-              {(summary.suspiciousIps1h || []).length > 0 && (
+              {filterByDevIp(summary.suspiciousIps1h || []).length > 0 && (
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d7d4cf' }}>
                   <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 6 }}>의심 IP (최근 1시간 인증 실패 3건+)</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {summary.suspiciousIps1h.slice(0, 8).map((s) => (
+                    {filterByDevIp(summary.suspiciousIps1h || []).slice(0, 8).map((s) => (
                       <code key={s.ip} style={{ background: '#fff', padding: '4px 10px', border: '1px solid #d7d4cf', fontSize: 11, fontFamily: 'monospace' }}>
                         {s.ip} <span style={{ color: '#c0392b' }}>×{s.count}</span>
                       </code>

@@ -348,6 +348,22 @@ export default function AdminGate() {
               <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">발송된 캠페인</span></div>
             </div>
 
+            {/* 개발자 IP 화이트리스트 — 본인/팀 IP 입력 시 모니터링·analytics
+                에서 자동 필터. 도메인 + 운영 단계 후에도 GA4 internal traffic
+                과 동일 역할. 미리 등록해두면 마이그레이션 후 바로 적용 가능. */}
+            <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
+                개발자 IP 화이트리스트 (노이즈 제거)
+              </div>
+              <DevIpWhitelistEditor />
+              <p style={{ fontSize: 11.5, color: '#8c867d', margin: '8px 0 0', lineHeight: 1.6 }}>
+                여기 등록된 IP 는 모니터링/analytics 응답에서 자동 제외됩니다. 본인 IP 는
+                {' '}<a href="https://www.whatismyip.com/" target="_blank" rel="noopener noreferrer" style={{ color: '#1f5e7c' }}>whatismyip.com</a>
+                {' '}에서 확인. 콤마/공백으로 여러 개 입력 가능
+                (예: <code>121.130.1.1, 192.168.0.0/24</code>).
+              </p>
+            </div>
+
             {/* CSV 다운로드 설정 — 파일명 prefix + 다운로드 폴더 미리 지정. */}
             <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 28 }}>
               <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 10 }}>CSV 다운로드 설정</div>
@@ -453,6 +469,33 @@ export default function AdminGate() {
         </section>
       </main>
     </AdminShell>
+  );
+}
+
+// 개발자 IP 화이트리스트 입력기 — localStorage 'daemu_dev_ip_whitelist' 에
+// 콤마 구분 문자열로 저장. 모니터링/analytics 의 ipFilter() 헬퍼가 그 값을
+// 읽어 자동 필터링한다.
+function DevIpWhitelistEditor() {
+  const [val, setVal] = useState(() => {
+    try { return localStorage.getItem('daemu_dev_ip_whitelist') || ''; }
+    catch { return ''; }
+  });
+  const save = () => {
+    try {
+      const cleaned = String(val || '').split(/[,\s]+/).filter(Boolean).join(', ');
+      localStorage.setItem('daemu_dev_ip_whitelist', cleaned);
+      setVal(cleaned);
+      try { siteToast(cleaned ? 'IP 화이트리스트 저장됨' : 'IP 화이트리스트 비움'); } catch { /* ignore */ }
+    } catch { /* ignore */ }
+  };
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <input type="text" value={val} onChange={(e) => setVal(e.target.value)}
+        onBlur={save}
+        placeholder="121.130.1.1, 192.168.0.0/24"
+        style={{ flex: '1 1 320px', padding: '7px 10px', border: '1px solid #d7d4cf', background: '#fff', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12 }} />
+      <button type="button" className="adm-btn-sm" onClick={save}>저장</button>
+    </div>
   );
 }
 
