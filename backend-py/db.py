@@ -55,6 +55,16 @@ if DATABASE_URL.startswith("mysql+"):
                 _new_netloc = f"{_user}:{_encoded}@{_host}{_port}"
                 DATABASE_URL = urlunparse(_parsed._replace(netloc=_new_netloc))
                 print("[db] mysql password 자동 URL-encode 적용 (특수문자 포함)")
+        # 진단용 — 비밀번호 길이 + 첫/마지막 1글자만 logs 에 (값은 노출 X).
+        # 사용자가 의도한 비밀번호의 길이/시작/끝 글자와 비교 → 정확히 어디서
+        # 어긋났는지 시각 검증 가능.
+        if _parsed.password:
+            from urllib.parse import unquote as _unquote
+            _raw = _unquote(_parsed.password)
+            _len = len(_raw)
+            _head = _raw[0] if _len > 0 else ""
+            _tail = _raw[-1] if _len > 0 else ""
+            print(f"[db] mysql password 진단: 길이={_len}, 시작='{_head}', 끝='{_tail}'")
     except Exception as _e:  # noqa: BLE001
         print(f"[db] URL parse 경고: {_e}")
 
