@@ -67,7 +67,7 @@ export default function PromotionBanner() {
           {p.discount_type === 'percent' || p.type === 'percent'
             ? <span>{p.discount_value || p.value}% 할인</span>
             : (p.discount_type === 'amount' || p.type === 'amount'
-              ? <span>{Number(p.discount_value || p.value || 0).toLocaleString('ko')}원 할인</span>
+              ? <span>{Number(p.discount_value || p.value || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원 할인</span>
               : null)}
         </span>
       ))}

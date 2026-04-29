@@ -145,7 +145,7 @@ export default function AdminAnalytics() {
   // CSV 내보내기
   const exportCsv = () => {
     downloadCSV('daemu-analytics-' + new Date().toISOString().slice(0, 10) + '.csv', filtered, [
-      { key: (r) => new Date(r.ts).toLocaleString('ko'), label: '시각' },
+      { key: (r) => new Date(r.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }), label: '시각' },
       { key: 'name', label: '이벤트' },
       { key: 'path', label: '경로' },
       { key: 'session', label: '세션ID' },
@@ -212,12 +212,12 @@ export default function AdminAnalytics() {
             <>
               {/* 1행 KPI — 큰 숫자 + 전기간 대비 변화율 */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
-                <KPI label="페이지뷰" value={pageviews.length.toLocaleString('ko')} delta={pvDelta} />
-                <KPI label="세션 수" value={sessions.size.toLocaleString('ko')} delta={sessDelta} />
+                <KPI label="페이지뷰" value={pageviews.length.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} delta={pvDelta} />
+                <KPI label="세션 수" value={sessions.size.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} delta={sessDelta} />
                 <KPI label="평균 체류 시간" value={avgDwell + '초'} />
-                <KPI label="CTA 클릭" value={ctaClicks.toLocaleString('ko')} />
-                <KPI label="폼 제출" value={formSubmits.toLocaleString('ko')} accent={formSubmits > 0 ? '#2e7d32' : undefined} />
-                <KPI label="총 이벤트" value={filtered.length.toLocaleString('ko')} />
+                <KPI label="CTA 클릭" value={ctaClicks.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} />
+                <KPI label="폼 제출" value={formSubmits.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} accent={formSubmits > 0 ? '#2e7d32' : undefined} />
+                <KPI label="총 이벤트" value={filtered.length.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} />
               </div>
 
               {/* 인사이트 1줄 요약 */}
@@ -335,7 +335,7 @@ export default function AdminAnalytics() {
               <tbody>
                 {filtered.slice(-50).reverse().map((e) => (
                   <tr key={e.id}>
-                    <td data-label="시각" style={{ fontSize: 11, color: '#5a534b' }}>{new Date(e.ts).toLocaleTimeString('ko')}</td>
+                    <td data-label="시각" style={{ fontSize: 11, color: '#5a534b' }}>{new Date(e.ts).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })}</td>
                     <td data-label="이벤트">{e.name}</td>
                     <td data-label="경로" style={{ fontFamily: 'monospace', fontSize: 11 }}>{e.path}</td>
                     <td data-label="유입" style={{ fontSize: 11 }}>{e.referrer || '-'}</td>

@@ -62,7 +62,7 @@ export default function SignDocument() {
       <CenterMsg>
         ✅ 이 문서는 이미 서명이 완료되었습니다.<br />
         <span style={{ fontSize: 12, color: '#8c867d', display: 'block', marginTop: 8 }}>
-          서명 시각: {doc.signed_at ? new Date(doc.signed_at).toLocaleString('ko') : '-'}
+          서명 시각: {doc.signed_at ? new Date(doc.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
         </span>
       </CenterMsg>
     );

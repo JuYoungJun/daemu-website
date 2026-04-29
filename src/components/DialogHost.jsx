@@ -194,7 +194,7 @@ function CsvPreviewBody({ item, onConfirm, onCancel }) {
           <code className="csv-preview__filename">{filename}</code>
         </div>
         <div className="csv-preview__meta">
-          <span><strong>{rows.length.toLocaleString('ko')}</strong> 행</span>
+          <span><strong>{rows.length.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</strong> 행</span>
           <span className="csv-preview__sep">·</span>
           <span><strong>{columns.length}</strong> 컬럼</span>
           <span className="csv-preview__sep">·</span>
@@ -213,7 +213,7 @@ function CsvPreviewBody({ item, onConfirm, onCancel }) {
             <span>상위 {Math.min(sampleSize, rows.length)}행 미리보기</span>
             {rows.length > sampleSize && (
               <span className="csv-preview__sample-rest">
-                + {(rows.length - sampleSize).toLocaleString('ko')}행 추가 (CSV 에 모두 포함)
+                + {(rows.length - sampleSize).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}행 추가 (CSV 에 모두 포함)
               </span>
             )}
           </div>
@@ -257,7 +257,7 @@ function CsvPreviewBody({ item, onConfirm, onCancel }) {
         </button>
         <button type="button" className="site-dialog-btn" onClick={onConfirm}
           disabled={!rows.length} autoFocus>
-          {rows.length ? `다운로드 (${rows.length.toLocaleString('ko')}행)` : '다운로드'}
+          {rows.length ? `다운로드 (${rows.length.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}행)` : '다운로드'}
         </button>
       </div>
     </div>

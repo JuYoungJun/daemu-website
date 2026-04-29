@@ -352,7 +352,7 @@ function Shop({ partner, onSubmitted }) {
       return;
     }
     setAppliedCoupon({ coupon: r.coupon, discount: r.discount });
-    const dText = r.discount > 0 ? `-${r.discount.toLocaleString('ko')}원` : describeDiscount(r.coupon);
+    const dText = r.discount > 0 ? `-${r.discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원` : describeDiscount(r.coupon);
     setCouponMsg({ kind: 'ok', text: `쿠폰 적용됨 · ${dText}` });
   };
   const removeCoupon = () => {
@@ -396,8 +396,8 @@ function Shop({ partner, onSubmitted }) {
     });
     window.dispatchEvent(new Event('daemu-db-change'));
 
-    const couponLine = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko')}원)` : '';
-    alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개${couponLine}\n결제 예정: ${total.toLocaleString('ko')}원\n본사 확인 후 처리 단계로 진행됩니다.`);
+    const couponLine = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원)` : '';
+    alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개${couponLine}\n결제 예정: ${total.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원\n본사 확인 후 처리 단계로 진행됩니다.`);
 
     setCart({});
     setNote('');
@@ -492,7 +492,7 @@ function Shop({ partner, onSubmitted }) {
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:6}}>
                       <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.04em'}}>{p.unit}</span>
                       <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:20,color:'#111'}}>
-                        {p.price.toLocaleString('ko')}<span style={{fontSize:11,marginLeft:4,color:'#6f6b68',fontFamily:'inherit',fontStyle:'normal'}}>원</span>
+                        {p.price.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}<span style={{fontSize:11,marginLeft:4,color:'#6f6b68',fontFamily:'inherit',fontStyle:'normal'}}>원</span>
                       </span>
                     </div>
                   </div>
@@ -535,8 +535,8 @@ function Shop({ partner, onSubmitted }) {
                     <button onClick={() => setQty(x.sku, 0)} style={{background:'none',border:'none',color:'#8c867d',fontSize:11,cursor:'pointer'}}>×</button>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:11,color:'#6f6b68'}}>
-                    <span>{x.qty} × {x.price.toLocaleString('ko')}원</span>
-                    <span style={{color:'#111',fontWeight:500}}>{x.subtotal.toLocaleString('ko')}원</span>
+                    <span>{x.qty} × {x.price.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
+                    <span style={{color:'#111',fontWeight:500}}>{x.subtotal.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
                   </div>
                 </div>
               ))}
@@ -544,17 +544,17 @@ function Shop({ partner, onSubmitted }) {
             {/* 소계 / 할인 / 합계 */}
             <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',fontSize:12,color:'#6f6b68'}}>
               <span>소계</span>
-              <span>{subtotal.toLocaleString('ko')}원</span>
+              <span>{subtotal.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
             </div>
             {appliedCoupon && (
               <div style={{display:'flex',justifyContent:'space-between',padding:'4px 0 8px',fontSize:12,color:'#b87333'}}>
                 <span>쿠폰 할인 · <code style={{fontFamily:'monospace'}}>{appliedCoupon.coupon.code}</code></span>
-                <span>-{discount.toLocaleString('ko')}원</span>
+                <span>-{discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
               </div>
             )}
             <div style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderTop:'1px solid #d7d4cf',borderBottom:'2px solid #111',marginBottom:14}}>
               <span style={{fontSize:11,letterSpacing:'.14em',color:'#111',textTransform:'uppercase',fontWeight:600}}>합계</span>
-              <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:24,color:'#111'}}>{total.toLocaleString('ko')}원</span>
+              <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:24,color:'#111'}}>{total.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
             </div>
 
             {/* 쿠폰 입력 */}
@@ -683,9 +683,9 @@ function History({ partner, onReorder }) {
         <KPI value={inProgressCount} label="처리 중" />
         <KPI value={orders.filter(o => o.status === '출고완료').length} label="출고완료" />
         <KPI value={thisMonth.length} label={`${now.getMonth() + 1}월 발주`} />
-        <KPI value={thisMonthAmt.toLocaleString('ko')} label={`${now.getMonth() + 1}월 금액 (원)`} />
-        <KPI value={totalAmt.toLocaleString('ko')} label="누적 총액 (원)" />
-        <KPI value={avgPerOrder.toLocaleString('ko')} label="발주당 평균 (원)" />
+        <KPI value={thisMonthAmt.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} label={`${now.getMonth() + 1}월 금액 (원)`} />
+        <KPI value={totalAmt.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} label="누적 총액 (원)" />
+        <KPI value={avgPerOrder.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} label="발주당 평균 (원)" />
       </div>
 
       {orders.map((o) => <OrderCard key={o.id} order={o} onReorder={() => reorder(o)} onCancel={() => cancelOrder(o)} />)}
@@ -750,20 +750,20 @@ function OrderCard({ order, onReorder, onCancel }) {
             {items.map((it, i) => (
               <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',fontSize:13,borderBottom: i < items.length - 1 ? '1px dashed #e6e3dd' : 'none'}}>
                 <span><span style={{color:'#8c867d',fontSize:11,marginRight:8}}>{it.sku}</span>{it.name}</span>
-                <span style={{color:'#6f6b68'}}>{it.qty} × {it.price.toLocaleString('ko')}원</span>
-                <span style={{minWidth:90,textAlign:'right',color:'#111',fontWeight:500}}>{(it.qty * it.price).toLocaleString('ko')}원</span>
+                <span style={{color:'#6f6b68'}}>{it.qty} × {it.price.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
+                <span style={{minWidth:90,textAlign:'right',color:'#111',fontWeight:500}}>{(it.qty * it.price).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
               </div>
             ))}
           </div>
         ) : (
-          <div style={{fontSize:13,color:'#4a4744'}}>{order.product} · {order.qty || '-'}{order.qty ? '개' : ''} · 단가 {Number(order.price || 0).toLocaleString('ko')}원</div>
+          <div style={{fontSize:13,color:'#4a4744'}}>{order.product} · {order.qty || '-'}{order.qty ? '개' : ''} · 단가 {Number(order.price || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</div>
         )}
         {order.note && <p style={{margin:'12px 0 0',padding:'10px 12px',background:'#f6f4f0',fontSize:12,color:'#6f6b68'}}>{order.note}</p>}
       </div>
 
       <div style={{display:'flex',justifyContent:'space-between',marginTop:16,paddingTop:14,borderTop:'1px solid #f0ede7'}}>
         <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.14em',textTransform:'uppercase'}}>합계</span>
-        <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:22,color:'#111'}}>{total.toLocaleString('ko')}원</span>
+        <span style={{fontFamily:"'Cormorant Garamond',serif",fontStyle:'italic',fontSize:22,color:'#111'}}>{total.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
       </div>
     </div>
   );
@@ -823,7 +823,7 @@ function Account({ partner }) {
         <dt style={{color:'#8c867d',fontSize:11,letterSpacing:'.14em',textTransform:'uppercase'}}>업종</dt><dd>{partner.type || '-'}</dd>
         <dt style={{color:'#8c867d',fontSize:11,letterSpacing:'.14em',textTransform:'uppercase'}}>권한</dt><dd>{partner.role || '-'}</dd>
         <dt style={{color:'#8c867d',fontSize:11,letterSpacing:'.14em',textTransform:'uppercase'}}>등록일</dt><dd>{partner.date}</dd>
-        <dt style={{color:'#8c867d',fontSize:11,letterSpacing:'.14em',textTransform:'uppercase'}}>비번 변경일</dt><dd>{partner.passwordUpdatedAt ? new Date(partner.passwordUpdatedAt).toLocaleDateString('ko') : '미변경 (초기 비번 사용 중)'}</dd>
+        <dt style={{color:'#8c867d',fontSize:11,letterSpacing:'.14em',textTransform:'uppercase'}}>비번 변경일</dt><dd>{partner.passwordUpdatedAt ? new Date(partner.passwordUpdatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '미변경 (초기 비번 사용 중)'}</dd>
       </dl>
       <p style={{marginTop:24,fontSize:12,color:'#8c867d'}}>계정 정보 변경(회사명/연락처 등)은 본사로 문의해주세요. (daemu_office@naver.com)</p>
 

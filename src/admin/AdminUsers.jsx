@@ -32,7 +32,7 @@ const ROLE_DESC = {
 
 function fmtDate(iso) {
   if (!iso) return '—';
-  try { return new Date(iso).toLocaleString('ko'); } catch { return iso; }
+  try { return new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }); } catch { return iso; }
 }
 function daysSince(iso) {
   if (!iso) return null;

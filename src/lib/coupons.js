@@ -89,7 +89,7 @@ export function consumeCoupon(couponId) {
 export function describeDiscount(coupon) {
   if (!coupon) return '';
   if (coupon.type === 'percent') return `${coupon.value}% 할인`;
-  if (coupon.type === 'amount')  return `${Number(coupon.value || 0).toLocaleString('ko')}원 할인`;
+  if (coupon.type === 'amount')  return `${Number(coupon.value || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원 할인`;
   if (coupon.type === 'bogo')    return '1+1 / 추가 증정';
   return coupon.value ? String(coupon.value) : '특가';
 }

@@ -217,7 +217,7 @@ export default function AdminProducts() {
                           </td>
                           <td data-label="단위">{p.unit || '-'}</td>
                           <td data-label="가격" style={{ fontFamily: "'Cormorant Garamond', serif", fontStyle: 'italic', fontSize: 16 }}>
-                            {Number(p.price || 0).toLocaleString('ko')}원
+                            {Number(p.price || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원
                           </td>
                           <td data-label="재고">
                             {p.stock != null ? (
@@ -225,7 +225,7 @@ export default function AdminProducts() {
                                 color: p.stock === 0 ? '#c0392b' : p.stock < LOW_STOCK_THRESHOLD ? '#b87333' : '#231815',
                                 fontWeight: p.stock < LOW_STOCK_THRESHOLD ? 600 : 400,
                               }}>
-                                {p.stock.toLocaleString('ko')}
+                                {p.stock.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
                                 {p.stock === 0 && <span style={{ fontSize: 10, marginLeft: 6, color: '#c0392b' }}>품절</span>}
                                 {p.stock > 0 && p.stock < LOW_STOCK_THRESHOLD && <span style={{ fontSize: 10, marginLeft: 6, color: '#b87333' }}>부족</span>}
                               </span>

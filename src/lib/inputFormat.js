@@ -117,7 +117,7 @@ export function formatNumberWithComma(value) {
   if (value == null || value === '') return '';
   const n = Number(String(value).replace(/[^\d.-]/g, ''));
   if (!Number.isFinite(n)) return '';
-  return n.toLocaleString('ko-KR');
+  return n.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
 export function unformatNumber(value) {
@@ -132,7 +132,7 @@ export function formatCurrencyTyping(raw) {
   if (raw == null) return '';
   const digits = String(raw).replace(/[^\d]/g, '');
   if (!digits) return '';
-  return Number(digits).toLocaleString('ko-KR');
+  return Number(digits).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
 // 한국어 원화 표시 — '1,234,567원' 형태. 빈 입력은 빈 문자열.

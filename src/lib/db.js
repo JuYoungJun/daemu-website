@@ -15,7 +15,7 @@ export const DB = {
   add(key, item) {
     const d = DB.get(key);
     item.id = nextId();
-    item.date = new Date().toLocaleDateString('ko');
+    item.date = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
     d.push(item);
     DB.set(key, d);
     return item;
@@ -51,7 +51,7 @@ export function badgeStr(status) {
 
 export function confirmDel(msg) { return confirm(msg || '정말 삭제하시겠습니까?'); }
 
-export function fmtMoney(n) { return Number(n || 0).toLocaleString('ko'); }
+export function fmtMoney(n) { return Number(n || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }); }
 
 export function escapeHtml(s) {
   return String(s ?? '')

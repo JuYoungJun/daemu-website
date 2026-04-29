@@ -48,7 +48,7 @@ function adaptFromBackend(it) {
     region: it.location || '',
     msg: it.message || '',
     reply: it.note || '',
-    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko') : '',
+    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '',
     _backend: true,
   };
 }

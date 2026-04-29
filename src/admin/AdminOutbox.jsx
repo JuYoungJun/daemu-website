@@ -97,7 +97,7 @@ export default function AdminOutbox() {
                       }}>{STATUS_LABEL[e.status] || e.status}</span>
                       <span style={{marginLeft:10,fontFamily:'monospace',fontSize:11,color:'#8c867d'}}>{e.path}</span>
                     </div>
-                    <span style={{fontSize:11,color:'#8c867d'}}>{new Date(e.ts).toLocaleString('ko')}</span>
+                    <span style={{fontSize:11,color:'#8c867d'}}>{new Date(e.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</span>
                   </div>
                   {e.body && (
                     <div style={{fontSize:13,color:'#4a4744',lineHeight:1.7}}>

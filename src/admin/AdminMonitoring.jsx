@@ -644,7 +644,7 @@ export default function AdminMonitoring() {
             <span>API 엔드포인트 상태</span>
             <span style={{ fontSize: 11, color: '#8c867d', fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>
               {probeRunning ? '확인 중…' : probeLastRun
-                ? '마지막 확인 ' + new Date(probeLastRun).toLocaleTimeString('ko')
+                ? '마지막 확인 ' + new Date(probeLastRun).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })
                 : '대기 중'}
               {' · 60초 주기'}
             </span>
@@ -782,7 +782,7 @@ export default function AdminMonitoring() {
                   <div key={f.id} style={{ background: '#fff', border: '1px solid #f0d6d2', padding: '10px 14px', marginBottom: 8, fontSize: 12 }}>
                     <span style={{ color: '#c0392b', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', marginRight: 8 }}>{f.type}</span>
                     {f.to} · {f.subject || '(제목 없음)'}<br />
-                    <span style={{ color: '#8c867d', fontSize: 11 }}>{new Date(f.ts).toLocaleString('ko')} · {f.error}</span>
+                    <span style={{ color: '#8c867d', fontSize: 11 }}>{new Date(f.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · {f.error}</span>
                   </div>
                 ))}
               </div>
@@ -808,7 +808,7 @@ export default function AdminMonitoring() {
           {/* 재고 현황 */}
           <h3 className="admin-section-title">재고 현황</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 14 }}>
-            <Card label="총 재고 수량" value={stockStats.totalUnits.toLocaleString('ko')} color="#5a534b" />
+            <Card label="총 재고 수량" value={stockStats.totalUnits.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} color="#5a534b" />
             <Card label={`재고 부족 (< ${LOW_STOCK_THRESHOLD})`}
               value={String(stockStats.lowStock.length)}
               color={stockStats.lowStock.length > 0 ? '#b87333' : '#2e7d32'} />
@@ -896,7 +896,7 @@ export default function AdminMonitoring() {
             )}
             {backupStatus.status === 'recent' && (
               <>
-                <strong style={{ color: '#2e7d32' }}>최근 백업: {backupStatus.daysAgo}일 전</strong> ({new Date(backupStatus.ts).toLocaleString('ko')})
+                <strong style={{ color: '#2e7d32' }}>최근 백업: {backupStatus.daysAgo}일 전</strong> ({new Date(backupStatus.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})
               </>
             )}
             {backupStatus.status === 'stale' && (
@@ -918,7 +918,7 @@ export default function AdminMonitoring() {
                     fontSize: 12,
                   }}>
                     <span style={{ minWidth: 130, color: '#8c867d', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 11 }}>
-                      {e.ts ? new Date(e.ts).toLocaleString('ko') : ''}
+                      {e.ts ? new Date(e.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''}
                     </span>
                     <span style={{
                       minWidth: 56, fontSize: 10, padding: '2px 6px', height: 20,
@@ -1020,7 +1020,7 @@ function IssueRow({ issue, resolved, onOpen, onToggleResolve }) {
         <div style={{ fontSize: 13, fontWeight: 500, color: '#231815', marginBottom: 3, wordBreak: 'break-word' }}>{issue.title}</div>
         {issue.summary && <div style={{ fontSize: 12, color: '#5a534b', wordBreak: 'break-word', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{issue.summary}</div>}
         <div style={{ fontSize: 11, color: '#8c867d', marginTop: 4 }}>
-          {new Date(issue.ts).toLocaleString('ko')} · 출처 {issue.source}
+          {new Date(issue.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · 출처 {issue.source}
         </div>
       </div>
       <button type="button" className="adm-btn-sm" onClick={(e) => { e.stopPropagation(); onToggleResolve(); }}>
@@ -1057,7 +1057,7 @@ function IssueDetailModal({ issue, onClose, resolved, onToggleResolve }) {
 
         <dl className="adm-issue-dl">
           <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>시각</dt>
-          <dd style={{ margin: 0 }}>{new Date(issue.ts).toLocaleString('ko')}</dd>
+          <dd style={{ margin: 0 }}>{new Date(issue.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</dd>
           <dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>출처</dt>
           <dd style={{ margin: 0 }}>{issue.source}</dd>
           {raw.path && <><dt style={{ color: '#8c867d', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.1em' }}>경로</dt><dd style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>{raw.path}</dd></>}

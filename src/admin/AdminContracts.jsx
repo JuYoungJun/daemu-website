@@ -846,7 +846,7 @@ function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onC
         {/* 탭 — 변환된 텍스트 / 원본 PDF / 나란히 비교 */}
         <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e6e3dd', marginBottom: 14 }}>
           <TabBtn active={tab === 'converted'} onClick={() => setTab('converted')} disabled={!hasText}>
-            변환 결과 ({charCount.toLocaleString('ko')}자)
+            변환 결과 ({charCount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}자)
           </TabBtn>
           <TabBtn active={tab === 'pdf'} onClick={() => setTab('pdf')} disabled={!preview.dataUrl}>
             원본 PDF
@@ -1045,7 +1045,7 @@ function DocumentsPane({ documents, templates, onChange, isAdmin, loading, onOpe
               </div>
               <p className="adm-doc-row__title">{d.title}</p>
               <div className="adm-doc-row__meta">
-                수신자 {(d.recipients || []).length}명 · {new Date(d.created_at).toLocaleString('ko')}
+                수신자 {(d.recipients || []).length}명 · {new Date(d.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
               </div>
             </div>
             <div style={{ fontSize: 18, color: '#b9b5ae', fontWeight: 300 }}>→</div>
@@ -1484,7 +1484,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
     metaDiv.textContent = [
       KIND_LABEL[doc.kind] || '',
       STATUS_LABEL[doc.status] || '',
-      doc.created_at ? new Date(doc.created_at).toLocaleString('ko') : '',
+      doc.created_at ? new Date(doc.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '',
     ].filter(Boolean).join(' · ');
     body.appendChild(metaDiv);
 
@@ -1501,7 +1501,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
       sig.className = 'sig';
       sig.textContent =
         `서명자: ${s.signer_name || ''} (${s.signer_email || ''}) · ` +
-        (s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : '');
+        (s.signed_at ? new Date(s.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '');
       body.appendChild(sig);
     }
 
@@ -1538,7 +1538,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <span className="adm-doc-pill" data-status={doc.status}>{STATUS_LABEL[doc.status]}</span>
         <span style={{ fontSize: 11, color: '#8c867d', letterSpacing: '.06em', textTransform: 'uppercase' }}>{KIND_LABEL[doc.kind]}</span>
-        <span style={{ fontSize: 11, color: '#b9b5ae' }}>· 작성 {new Date(doc.created_at).toLocaleString('ko')}</span>
+        <span style={{ fontSize: 11, color: '#b9b5ae' }}>· 작성 {new Date(doc.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</span>
       </div>
 
       <DocPaperPreview
@@ -1577,7 +1577,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
           <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>서명 기록</h4>
           {signatures.map((s) => (
             <div key={s.id} style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 12, marginTop: 6, fontSize: 12 }}>
-              <strong>{s.signer_name}</strong> · {s.signer_email} · {new Date(s.signed_at).toLocaleString('ko')}<br />
+              <strong>{s.signer_name}</strong> · {s.signer_email} · {new Date(s.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}<br />
               IP {s.ip || '-'} · UA {(s.user_agent || '').slice(0, 80)}
             </div>
           ))}
@@ -1588,7 +1588,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         <h4 style={{ fontSize: 12, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>이력</h4>
         {(doc.history || []).map((h, i) => (
           <div key={i} style={{ fontSize: 12, color: '#6f6b68', padding: '4px 0' }}>
-            {new Date(h.ts).toLocaleString('ko')} · <strong>{h.action}</strong>
+            {new Date(h.ts).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · <strong>{h.action}</strong>
             {h.by ? ` · ${h.by}` : ''}
             {h.detail ? ` · ${JSON.stringify(h.detail)}` : ''}
           </div>
@@ -1741,7 +1741,7 @@ function DocPaperPreview({ kind, title, subject, body, recipients, status, creat
         </header>
         <div className="adm-paper-meta">
           {subject && <div className="adm-paper-subject">{subject}</div>}
-          {createdAt && <div className="adm-paper-date">작성일 · {new Date(createdAt).toLocaleString('ko')}</div>}
+          {createdAt && <div className="adm-paper-date">작성일 · {new Date(createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</div>}
         </div>
         <h1 className="adm-paper-title">{title}</h1>
         <div className="adm-paper-divider" />
@@ -1781,7 +1781,7 @@ function DocPaperPreview({ kind, title, subject, body, recipients, status, creat
             <h4>전자 서명 기록</h4>
             {signatures.map((s) => (
               <div key={s.id} className="adm-paper-sig">
-                <strong>{s.signer_name}</strong> · {s.signer_email} · {s.signed_at ? new Date(s.signed_at).toLocaleString('ko') : ''}
+                <strong>{s.signer_name}</strong> · {s.signer_email} · {s.signed_at ? new Date(s.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''}
                 <span className="adm-paper-sig-meta">IP {s.ip || '-'}</span>
               </div>
             ))}

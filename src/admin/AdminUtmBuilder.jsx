@@ -451,7 +451,7 @@ export default function AdminUtmBuilder() {
                           {h.content && <><span>·</span><span>{h.content}</span></>}
                           <span style={{ flex: 1 }} />
                           <span style={{ color: '#b9b5ae' }}>
-                            {h.savedAt ? new Date(h.savedAt).toLocaleString('ko') : ''}
+                            {h.savedAt ? new Date(h.savedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''}
                           </span>
                         </div>
                         <code style={{ fontSize: 10.5, color: '#1f5e7c', wordBreak: 'break-all', display: 'block', marginTop: 4 }}>
@@ -489,7 +489,7 @@ export default function AdminUtmBuilder() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
                   <KpiCard label="전체 link" value={monitoringKpi.total} />
                   <KpiCard label="활성" value={monitoringKpi.active} color="#2e7d32" />
-                  <KpiCard label="총 클릭" value={monitoringKpi.totalClicks.toLocaleString('ko')} color="#1f5e7c" />
+                  <KpiCard label="총 클릭" value={monitoringKpi.totalClicks.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} color="#1f5e7c" />
                   <KpiCard label="24h 활동" value={monitoringKpi.last24h}
                     color={monitoringKpi.last24h > 0 ? '#2e7d32' : '#8c867d'} />
                   <KpiCard label="무효화" value={monitoringKpi.revoked} color="#c0392b" />
@@ -539,7 +539,7 @@ export default function AdminUtmBuilder() {
                             <td style={shortTd}>
                               <strong>{l.label || '(라벨 없음)'}</strong>
                               <div style={{ fontSize: 10, color: '#8c867d' }}>
-                                {l.created_at ? new Date(l.created_at).toLocaleString('ko') : ''}
+                                {l.created_at ? new Date(l.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''}
                               </div>
                             </td>
                             <td style={shortTd}>
@@ -560,7 +560,7 @@ export default function AdminUtmBuilder() {
                               )}
                             </td>
                             <td style={{ ...shortTd, fontSize: 11, color: '#5a534b' }}>
-                              {l.last_clicked_at ? new Date(l.last_clicked_at).toLocaleString('ko') : '—'}
+                              {l.last_clicked_at ? new Date(l.last_clicked_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '—'}
                             </td>
                             <td style={shortTd}>
                               {isRevoked ? (
@@ -728,7 +728,7 @@ function ShortLinkStatsModal({ linkId, onClose }) {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
               <KpiCard label="총 클릭" value={data.link.click_count || 0} color="#1f5e7c" />
-              <KpiCard label="최근 클릭" value={data.link.last_clicked_at ? new Date(data.link.last_clicked_at).toLocaleString('ko') : '—'} />
+              <KpiCard label="최근 클릭" value={data.link.last_clicked_at ? new Date(data.link.last_clicked_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '—'} />
               <KpiCard label="상태" value={data.link.revoked_at ? '무효' : '활성'} color={data.link.revoked_at ? '#c0392b' : '#2e7d32'} />
             </div>
 
@@ -771,7 +771,7 @@ function ShortLinkStatsModal({ linkId, onClose }) {
                 <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: 12, fontSize: 11.5, maxHeight: 200, overflowY: 'auto' }}>
                   {data.recent.map((c, i) => (
                     <div key={i} style={{ display: 'flex', gap: 12, padding: '4px 0', borderBottom: i < data.recent.length - 1 ? '1px solid #f0ede7' : 'none' }}>
-                      <span style={{ color: '#8c867d', minWidth: 140 }}>{new Date(c.clicked_at).toLocaleString('ko')}</span>
+                      <span style={{ color: '#8c867d', minWidth: 140 }}>{new Date(c.clicked_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</span>
                       <span style={{ color: '#5a534b', minWidth: 100 }}>{c.ua_family || 'unknown'}</span>
                       <span style={{ color: '#5a534b', flex: 1 }}>{c.referer_host || 'direct'}</span>
                     </div>

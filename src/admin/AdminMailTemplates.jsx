@@ -822,7 +822,7 @@ function TemplatePreviewModal({ template, onClose }) {
 function formatKRW(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value ?? '');
-  return n.toLocaleString('ko-KR') + '원';
+  return n.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) + '원';
 }
 // 날짜 포맷 — ISO/Date 객체를 YYYY-MM-DD 로.
 function formatDate(value) {

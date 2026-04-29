@@ -39,7 +39,7 @@ function promotionIsLive(p) {
 
 function CouponDiscountText(c) {
   if (c.type === 'percent') return `${c.value}% 할인`;
-  if (c.type === 'amount')  return `${Number(c.value || 0).toLocaleString('ko')}원 할인`;
+  if (c.type === 'amount')  return `${Number(c.value || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원 할인`;
   if (c.type === 'bogo')    return '1+1 / 추가 증정';
   return c.value ? `${c.value}` : '특가';
 }
@@ -192,7 +192,7 @@ export default function PartnerPromotions() {
                 {p.discount_value && (
                   <span style={{ marginLeft: 8, color: '#b87333' }}>
                     {p.discount_type === 'percent' ? `${p.discount_value}% 할인` :
-                     p.discount_type === 'amount' ? `${Number(p.discount_value).toLocaleString('ko')}원 할인` : p.discount_value}
+                     p.discount_type === 'amount' ? `${Number(p.discount_value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원 할인` : p.discount_value}
                   </span>
                 )}
               </span>
