@@ -41,7 +41,7 @@ function render() {
     const hasContract = !!(d.contract && d.contract.trim());
     const hasPO = !!(d.purchaseOrder && d.purchaseOrder.trim());
     return `<tr>
-      <td data-label="주문번호">#${escHtml(String(d.id).slice(-6))}</td>
+      <td data-label="주문번호">${escHtml(d.po_no || ('#'+String(d.id).slice(-6)))}</td>
       <td data-label="파트너">${escHtml(d.partner)}</td>
       <td data-label="상품">${escHtml(d.product)}</td>
       <td data-label="수량">${escHtml(d.qty||"-")}</td>
@@ -114,19 +114,39 @@ function save() {
   if (!partner) { alert("파트너명을 입력하세요"); return; }
   const cf = document.getElementById("f-contract");
   const pf = document.getElementById("f-purchaseorder");
+  const product = document.getElementById("f-product").value;
+  const qty = Number(document.getElementById("f-qty").value) || 0;
+  const price = Number(document.getElementById("f-price").value) || 0;
   const payload = {
     partner,
-    product: document.getElementById("f-product").value,
-    qty: document.getElementById("f-qty").value,
-    price: document.getElementById("f-price").value,
+    product,
+    qty,
+    price,
     status: document.getElementById("f-status").value,
     note: document.getElementById("f-note").value,
     contract: cf ? cf.value : "",
     purchaseOrder: pf ? pf.value : "",
-    attachments: pendingAttachments
+    attachments: pendingAttachments,
   };
-  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
-  else DB.add(STORAGE_KEY, payload);
+  if (editingId !== null) {
+    DB.update(STORAGE_KEY, editingId, payload);
+  } else {
+    // 신규 발주 — PO 번호 자동 생성 + 입력된 SKU 가 카탈로그에 있으면 재고 차감.
+    if (typeof window.nextPoNumber === 'function') {
+      payload.po_no = window.nextPoNumber();
+    }
+    const created = DB.add(STORAGE_KEY, payload);
+    // product 값에 SKU 형태(예: BAKERY-001) 가 들어있으면 재고 차감 시도.
+    if (typeof window.decrementStock === 'function' && qty > 0) {
+      const m = /[A-Z][A-Z0-9_-]+-\d{3,}/.exec(String(product || ''));
+      if (m) {
+        const r = window.decrementStock(m[0], qty, 'order:' + (created?.po_no || created?.id || ''));
+        if (!r.ok && r.error === 'insufficient stock') {
+          alert(`재고 부족 — ${m[0]} 잔여 ${r.current}, 요청 ${r.requested}. 발주는 저장됐지만 재고는 차감되지 않았습니다.`);
+        }
+      }
+    }
+  }
   resetForm();
   render();
   if (window.siteToast) window.siteToast('저장 완료', { tone: 'success' });

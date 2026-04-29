@@ -1,4 +1,4 @@
-// Side-effect: expose admin helpers on window so inlined admin page scripts work.
+// 부수효과: 어드민 raw script 들이 사용하는 헬퍼를 window 에 노출.
 import { DB, badgeStr, confirmDel } from './db.js';
 import { Auth } from './auth.js';
 import { api } from './api.js';
@@ -6,7 +6,9 @@ import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabl
 import { uploadImage, uploadVideo, uploadMedia } from './upload.js';
 import { downloadCSV } from './csv.js';
 import { escapeHtml, safeUrl as safeUrlBase } from './safe.js';
-// Side-effect import: registers window.openMediaPicker for raw admin scripts.
+import { nextPoNumber, nextSku } from './numbering.js';
+import { decrementStock, adjustStock, getStock } from './inventory.js';
+// 부수효과 import — raw script 가 쓸 window.openMediaPicker 등록.
 import '../components/MediaPicker.jsx';
 
 // Wrappers that match the legacy admin-page contract:
@@ -43,11 +45,17 @@ if (typeof window !== 'undefined') {
   window.uploadMedia = uploadMedia;
   window.isUploadEnabled = () => false; // legacy flag, always local now
 
-  // CSV export helper for admin pages
+  // CSV
   window.downloadCSV = downloadCSV;
-  // Convenience export shortcuts wired per-key
   window.exportToCSV = function (key, columns, filename) {
     const rows = DB.get(key);
     downloadCSV(filename || (key + '-' + new Date().toISOString().slice(0, 10) + '.csv'), rows, columns);
   };
+
+  // 발주번호 / SKU 자동 생성 + 재고 차감 — 어드민 raw script(orders 등)에서 사용.
+  window.nextPoNumber = nextPoNumber;
+  window.nextSku = nextSku;
+  window.decrementStock = decrementStock;
+  window.adjustStock = adjustStock;
+  window.getStock = getStock;
 }

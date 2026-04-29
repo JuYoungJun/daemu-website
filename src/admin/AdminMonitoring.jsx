@@ -17,6 +17,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
+import { stockSummary, LOW_STOCK_THRESHOLD } from '../lib/inventory.js';
 import MonitoringGuide from './MonitoringGuide.jsx';
 
 const KIND_LABEL = {
@@ -440,6 +441,9 @@ export default function AdminMonitoring() {
   }, [outbox]);
 
   // 5) 백업 상태 — 마지막 CSV export 일시 (localStorage 마커).
+  // 재고 요약 — 카탈로그 전체 합산.
+  const stockStats = useMemo(() => stockSummary(), [outbox]);
+
   const backupStatus = useMemo(() => {
     try {
       const last = localStorage.getItem('daemu_last_csv_export');
@@ -799,6 +803,44 @@ export default function AdminMonitoring() {
                   color={inquiryKpi.replyRate >= 80 ? '#2e7d32' : inquiryKpi.replyRate >= 50 ? '#b87333' : '#c0392b'} />
               </div>
             </>
+          )}
+
+          {/* 재고 현황 */}
+          <h3 className="admin-section-title">재고 현황</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 14 }}>
+            <Card label="총 재고 수량" value={stockStats.totalUnits.toLocaleString('ko')} color="#5a534b" />
+            <Card label={`재고 부족 (< ${LOW_STOCK_THRESHOLD})`}
+              value={String(stockStats.lowStock.length)}
+              color={stockStats.lowStock.length > 0 ? '#b87333' : '#2e7d32'} />
+            <Card label="품절 SKU"
+              value={String(stockStats.outOfStock.length)}
+              color={stockStats.outOfStock.length > 0 ? '#c0392b' : '#2e7d32'} />
+          </div>
+          {(stockStats.outOfStock.length > 0 || stockStats.lowStock.length > 0) && (
+            <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '10px 14px', marginBottom: 14, fontSize: 12 }}>
+              {stockStats.outOfStock.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 4 }}>품절 (즉시 보충 필요)</div>
+                  {stockStats.outOfStock.slice(0, 6).map((s) => (
+                    <div key={s.sku} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span><code style={{ color: '#7a1a14' }}>{s.sku}</code> · {s.name}</span>
+                      <span style={{ color: '#8c867d', fontSize: 11 }}>{s.category}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {stockStats.lowStock.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#b87333', margin: '8px 0 4px' }}>재고 부족</div>
+                  {stockStats.lowStock.slice(0, 6).map((s) => (
+                    <div key={s.sku} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span><code style={{ color: '#5a4a2a' }}>{s.sku}</code> · {s.name}</span>
+                      <span style={{ color: '#b87333', fontSize: 11 }}>잔여 {s.stock}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           )}
 
           {/* 콘텐츠 건강도 */}

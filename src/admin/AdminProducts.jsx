@@ -23,6 +23,8 @@ import ProductThumb from './ProductThumb.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatCurrencyTyping, unformatNumber } from '../lib/inputFormat.js';
+import { nextSku } from '../lib/numbering.js';
+import { LOW_STOCK_THRESHOLD } from '../lib/inventory.js';
 
 const STORAGE_KEY = 'daemu_products';
 
@@ -215,7 +217,18 @@ export default function AdminProducts() {
                           <td data-label="가격" style={{ fontFamily: "'Cormorant Garamond', serif", fontStyle: 'italic', fontSize: 16 }}>
                             {Number(p.price || 0).toLocaleString('ko')}원
                           </td>
-                          <td data-label="재고">{p.stock != null ? p.stock : '-'}</td>
+                          <td data-label="재고">
+                            {p.stock != null ? (
+                              <span style={{
+                                color: p.stock === 0 ? '#c0392b' : p.stock < LOW_STOCK_THRESHOLD ? '#b87333' : '#231815',
+                                fontWeight: p.stock < LOW_STOCK_THRESHOLD ? 600 : 400,
+                              }}>
+                                {p.stock.toLocaleString('ko')}
+                                {p.stock === 0 && <span style={{ fontSize: 10, marginLeft: 6, color: '#c0392b' }}>품절</span>}
+                                {p.stock > 0 && p.stock < LOW_STOCK_THRESHOLD && <span style={{ fontSize: 10, marginLeft: 6, color: '#b87333' }}>부족</span>}
+                              </span>
+                            ) : '-'}
+                          </td>
                           <td data-label="관리" className="col-actions">
                             <button type="button" className="adm-btn-sm" onClick={() => setEditingProduct({ catIdx: ci, item: p, isNew: false })}>수정</button>
                             <button type="button" className="adm-btn-sm danger" onClick={() => deleteProduct(ci, p.sku)}>삭제</button>
@@ -327,8 +340,17 @@ function ProductEditor({ catalog, data, presetEmojis, onClose, onSave }) {
         <div style={{ display: 'grid', gap: 12 }}>
           <label className="adm-inline-field">
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>SKU (상품 코드, 영문/숫자)</span>
-            <input type="text" value={form.sku} onChange={set('sku')} placeholder="예: DG-CRO-FZ" disabled={!data.isNew}
-              title={data.isNew ? '' : 'SKU는 등록 후 변경할 수 없습니다.'} style={{ fontFamily: 'monospace' }} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input type="text" value={form.sku} onChange={set('sku')} placeholder="예: BAKERY-001" disabled={!data.isNew}
+                title={data.isNew ? '' : 'SKU는 등록 후 변경할 수 없습니다.'} style={{ fontFamily: 'monospace', flex: 1 }} />
+              {data.isNew && (
+                <button type="button" className="adm-btn-sm"
+                  onClick={() => setForm((f) => ({ ...f, sku: nextSku(cat?.category) }))}
+                  title="카테고리별 다음 SKU 자동 생성">
+                  자동 생성
+                </button>
+              )}
+            </div>
           </label>
           <label className="adm-inline-field">
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 4 }}>상품명</span>

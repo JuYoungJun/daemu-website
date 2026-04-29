@@ -818,8 +818,25 @@ function TemplatePreviewModal({ template, onClose }) {
   );
 }
 
+// 통화 포맷 — 발주/문서의 합계금액을 한국 원화 표기로 자동 변환.
+function formatKRW(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value ?? '');
+  return n.toLocaleString('ko-KR') + '원';
+}
+// 날짜 포맷 — ISO/Date 객체를 YYYY-MM-DD 로.
+function formatDate(value) {
+  if (!value) return '';
+  try {
+    const d = new Date(value);
+    if (!Number.isFinite(d.getTime())) return String(value);
+    return d.toISOString().slice(0, 10);
+  } catch { return String(value); }
+}
+
 // 데이터 소스별 레코드 → 템플릿 변수 매핑 정의.
-// 새 소스를 추가하려면 fetcher + fieldMap + label 만 등록하면 됩니다.
+// fieldMap 의 값은 string 또는 (record) => string 함수. 함수면 통화/날짜 포맷
+// 등 가공된 결과를 변수로 사용한다.
 const DATA_SOURCES = [
   {
     key: 'manual',
@@ -866,6 +883,85 @@ const DATA_SOURCES = [
     fieldMap: {
       '이름': 'name',
       '이메일': 'email',
+    },
+  },
+  {
+    // 발주 — 발주 행을 파트너 이메일로 연결해 발주번호/접수일/합계 등을
+    // 자동 채운다. 배송 안내·재발주·발주 마감 안내 메일에 적합.
+    key: 'orders',
+    label: '발주 (파트너에게 전송)',
+    fetch: () => {
+      const orders = DB.get('orders') || [];
+      const partners = DB.get('partners') || [];
+      const partnerByName = Object.fromEntries(partners.map((p) => [String(p.name || '').trim(), p]));
+      return orders.map((o) => {
+        const p = partnerByName[String(o.partner || '').trim()] || {};
+        const total = Number.isFinite(Number(o.amount))
+          ? Number(o.amount)
+          : Number(o.qty || 0) * Number(o.price || 0);
+        return {
+          id: o.id,
+          email: p.email || '',
+          person: p.person || o.partner,
+          phone: p.phone || '',
+          company: o.partner || p.name || '',
+          order_no: '#' + String(o.id || '').slice(-6),
+          order_date: o.date || o.created_at,
+          due_date: o.due_date,
+          product: o.product || o.title || '',
+          qty: o.qty,
+          price: o.price,
+          total,
+          status: o.status,
+        };
+      });
+    },
+    fieldMap: {
+      '이름': 'person',
+      '이메일': 'email',
+      '전화': 'phone',
+      '회사': 'company',
+      '발주번호': 'order_no',
+      '접수일': (r) => formatDate(r.order_date),
+      '출고예정일': (r) => formatDate(r.due_date),
+      '합계금액': (r) => formatKRW(r.total),
+    },
+  },
+  {
+    // 계약/PO 문서 — recipients 배열을 펼쳐 각 수신자에 대해 1행 생성.
+    // 계약서·발주서 발송, 재발송 안내, 서명 독촉 등에 적합.
+    key: 'documents',
+    label: '계약/PO 문서 수신자',
+    fetch: () => {
+      const docs = DB.get('documents') || [];
+      const rows = [];
+      for (const d of docs) {
+        const recipients = Array.isArray(d.recipients) ? d.recipients : [];
+        const total = (d.variables && (d.variables.합계금액 || d.variables.amount)) || d.amount;
+        for (const r of recipients) {
+          if (!r || !r.email) continue;
+          rows.push({
+            id: String(d.id) + ':' + r.email,
+            email: r.email,
+            name: r.name || '',
+            company: (d.variables && d.variables.고객사명) || d.company || '',
+            doc_no: '#' + String(d.id || '').slice(-6),
+            doc_title: d.title || '',
+            doc_kind: d.kind === 'purchase_order' ? '발주서' : '계약서',
+            sent_at: d.sent_at,
+            total,
+          });
+        }
+      }
+      return rows;
+    },
+    fieldMap: {
+      '이름': 'name',
+      '이메일': 'email',
+      '회사': 'company',
+      '발주번호': 'doc_no',
+      '접수일': (r) => formatDate(r.sent_at),
+      '합계금액': (r) => formatKRW(r.total),
     },
   },
 ];
@@ -924,10 +1020,17 @@ const QUICK_ADD_GROUPS = [
 ];
 
 // 한 레코드에 fieldMap 을 적용해 변수 dict 를 생성.
+// fieldMap 의 값이 함수면 record 를 인자로 호출(통화·날짜 포맷 가공용).
+// string 이면 record[key] 를 그대로 사용.
 function recordToVars(record, fieldMap) {
   const vars = {};
-  for (const [varName, fieldKey] of Object.entries(fieldMap)) {
-    const v = record?.[fieldKey];
+  for (const [varName, mapper] of Object.entries(fieldMap)) {
+    let v;
+    if (typeof mapper === 'function') {
+      try { v = mapper(record); } catch { v = ''; }
+    } else {
+      v = record?.[mapper];
+    }
     if (v != null && v !== '') vars[varName] = String(v);
   }
   return vars;
