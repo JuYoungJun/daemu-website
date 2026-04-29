@@ -15,14 +15,14 @@ import SitePopupOverlay from './components/SitePopupOverlay.jsx';
 import { useSplash } from './hooks/useSplash.js';
 import { useSitePopups } from './hooks/useSitePopups.js';
 
-// Error pages
+// 에러 페이지
 import NotFound from './pages/errors/NotFound.jsx';
 import Forbidden from './pages/errors/Forbidden.jsx';
 import Maintenance from './pages/errors/Maintenance.jsx';
 import BadRequest from './pages/errors/BadRequest.jsx';
 import ServerError from './pages/errors/ServerError.jsx';
 
-// Public pages
+// 공개 페이지
 import Home from './pages/Home.jsx';
 import About from './pages/About.jsx';
 import Service from './pages/Service.jsx';
@@ -35,17 +35,15 @@ import Partners from './pages/Partners.jsx';
 import Privacy from './pages/Privacy.jsx';
 import Unsubscribe from './pages/Unsubscribe.jsx';
 
-// 어드민 페이지 — React.lazy 로 code-split. 일반 방문자는 이 chunk 들을
-// 다운받지 않고, /admin/* 진입 시 처음으로 요청한다.
+// 어드민 페이지 — React.lazy 로 code-split. 공개 방문자는 이 chunk 를
+// 받지 않고, /admin/* 첫 진입 시 fetch 한다.
 //
-// lazyWithReload: 새 빌드가 deploy 되면 옛 chunk URL 의 hash 가 바뀌어
-// 이미 로드돼 있던 메인 번들이 옛 chunk 를 fetch 하다 404 가 난다. 그
-// 결과 ErrorBoundary 가 ServerError(500) 를 띄우게 되는데, 사용자 입장
-// 에서는 "어드민 페이지가 500 만 뜬다" 로 보인다. dynamic import 가 실패
-// 하면 sessionStorage one-shot marker 로 한 번만 자동 reload 해서 새
-// chunk hash 를 받아오도록 한다(무한 루프 방지).
-// sessionStorage marker — 단순 식별자(비밀 아님). KEY 만 쓰면 Snyk CWE-547
-// 가 hardcoded secret 으로 오인하므로 _STORAGE_KEY 접미로 의도 명시.
+// lazyWithReload: 새 빌드 deploy 후 옛 chunk hash 가 404 가 되면 사용자
+// 입장에서 "어드민 페이지마다 500" 으로 보인다. import 실패를 감지해
+// 자동 reload 로 새 chunk 를 받게 한다.
+//
+// sessionStorage marker 는 단순 식별자(비밀 아님). 변수명을 그냥 KEY 로
+// 두면 Snyk CWE-547 이 hardcoded secret 으로 오인하므로 _STORAGE_KEY 접미.
 const CHUNK_RELOAD_STORAGE_KEY = 'daemu_chunk_reload_ts';
 const CHUNK_RELOAD_COUNT_STORAGE_KEY = 'daemu_chunk_reload_count';
 
@@ -158,22 +156,15 @@ function AnalyticsBoot() {
   return null;
 }
 
-// Admin session policy:
-//   · Logged-in admin stays logged in across reloads, tab restores,
-//     and admin↔admin navigation (covers the "back button" case the
-//     owner reported).
-//   · Leaving the admin tree to a public page (/, /work, /contact,
-//     /sign/...) wipes the session — opening /admin again requires
-//     re-login.
-//   · 60-minute inactivity timeout (lib/auth.js) covers the "stepped
-//     away from desk" case.
+// 어드민 세션 정책:
+//   · 어드민 영역 내 이동(reload·뒤로가기·admin↔admin) 은 세션 유지.
+//   · 어드민 → 공개 페이지(/, /work, ...) 이동 시 세션 즉시 폐기.
+//   · 60분 inactivity 는 lib/auth.js 가 처리(자리 비움 케이스).
 //
-// Implementation notes:
-//   · Only one location-watcher at the App root; per-route RequireAuth
-//     no longer mutates Auth state on unmount, so admin-page navigation
-//     never accidentally clears the token.
-//   · We deliberately do NOT install a `beforeunload` handler — that
-//     was the bug that was wiping the session on F5 / hard reload.
+// 구현 메모: location-watcher 는 App 루트 1개만. RequireAuth 가 unmount
+// 에서 Auth 를 만지지 않게 해 admin 내 이동에서 토큰이 실수로 지워지는
+// 일을 막는다. beforeunload 핸들러는 F5/하드리로드에서 세션을 날렸던
+// 과거 버그라 의도적으로 설치하지 않는다.
 function AdminSessionGuard() {
   const { pathname } = useLocation();
   const prevAdmin = useRef(pathname.startsWith('/admin'));
@@ -197,9 +188,8 @@ export default function App() {
   const isError = isErrorPath(location.pathname);
   const showSplash = useSplash(location.pathname, isAdmin || isError);
 
-  // Body class management — useLayoutEffect runs synchronously before paint
-  // so admin/error pages never flash with splash-pending visibility:hidden hiding
-  // their content.
+  // body class 관리 — useLayoutEffect 는 paint 전에 동기 실행되므로 어드민/
+  // 에러 페이지가 splash-pending visibility:hidden 으로 깜빡이는 일을 막는다.
   useLayoutEffect(() => {
     if (isAdmin || isError) {
       document.body.dataset.page = isAdmin ? 'admin' : 'error';
@@ -223,7 +213,7 @@ export default function App() {
     }
   }, [showSplash, isAdmin, location.pathname]);
 
-  // Popups — only run on public pages, after splash
+  // 팝업 — 공개 페이지 + splash 종료 후에만 실행.
   const popupKey = (!isAdmin && !isError && !showSplash)
     ? (PUBLIC_PAGE_KEYS[location.pathname] || (location.pathname.startsWith('/work/') ? 'work' : 'home'))
     : null;
