@@ -7,6 +7,33 @@
 
 import { useState } from 'react';
 import AdminGuideModal, { GuideSection, GuideTable, guideListStyle } from './AdminGuideModal.jsx';
+import { DB } from '../lib/db.js';
+import { downloadCSV } from '../lib/csv.js';
+
+// RawPage 어드민 페이지에 CSV 내보내기 버튼을 한 줄로 부착.
+// localStorage 키 + 컬럼 정의만 prop 으로 주면 좌측 상단에 inline 버튼이
+// 표시되고, 클릭하면 csv.js 의 미리보기 모달 → 다운로드 흐름으로 진행.
+//
+// 사용 예:
+//   <RawPageCsvButton
+//     storageKey="works"
+//     filename="daemu-works"
+//     columns={[{ key: 'title', label: '제목' }, ...]}
+//   />
+export function RawPageCsvButton({ storageKey, filename, columns }) {
+  const onClick = () => {
+    const rows = (DB.get(storageKey) || []);
+    const fname = (filename || storageKey) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+    downloadCSV(fname, rows, columns);
+  };
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      <button type="button" className="adm-btn-sm" onClick={onClick}>
+        CSV 내보내기
+      </button>
+    </div>
+  );
+}
 
 // 가이드 버튼 + 모달 상태를 한 컴포넌트로 묶음. 각 어드민 페이지에서
 // <GuideButton GuideComponent={WorksGuide} /> 한 줄만 호출하면 우하단에

@@ -299,6 +299,7 @@ export default function AdminGate() {
     'analytics':     ['admin', 'tester', 'developer'],
     'users':         ['admin'],
     'api-docs':      ['admin', 'developer'],
+    'security':      ['admin', 'developer'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
   // 한국어 역할 라벨. admin = Super Admin (모든 권한),
@@ -439,6 +440,9 @@ export default function AdminGate() {
                   )}
                   {can('api-docs') && (
                     <MenuCard to="/admin/api-docs" title="API 문서" desc="FastAPI /docs 자동 Swagger UI 의 사이트 디자인 대체 페이지." items={['/openapi.json 실시간 동기화','검색 + tag/method 필터','GET try-it (토큰 자동 첨부)','endpoint 별 parameters/responses 스키마 표시']} />
+                  )}
+                  {can('security') && (
+                    <MenuCard to="/admin/security" title="보안 모니터링" desc="인증 실패 / 의심 IP / 보안 이벤트만 모은 실시간 전용 페이지." items={['30초 주기 자동 갱신','위험도 LOW/MEDIUM/HIGH 단계','의심 IP 표 + 24h 이벤트 분포','외부 보안 endpoint 연동(추후 결제 서버용)','권장 OSS 보안 도구 가이드']} />
                   )}
                 </div>
               </>

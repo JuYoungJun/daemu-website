@@ -105,6 +105,7 @@ const AdminPartnerBrands = lazyWithReload(() => import('./admin/AdminPartnerBran
 const AdminMailTemplates = lazyWithReload(() => import('./admin/AdminMailTemplates.jsx'));
 const AdminUtmBuilder = lazyWithReload(() => import('./admin/AdminUtmBuilder.jsx'));
 const AdminApiDocs = lazyWithReload(() => import('./admin/AdminApiDocs.jsx'));
+const AdminSecurityMonitoring = lazyWithReload(() => import('./admin/AdminSecurityMonitoring.jsx'));
 const SignDocument = lazyWithReload(() => import('./pages/SignDocument.jsx'));
 
 const AdminFallback = () => (
@@ -265,6 +266,7 @@ export default function App() {
         <Route path="/admin/mail-templates" element={wrap(<RequireAuth><AdminMailTemplates /></RequireAuth>)} />
         <Route path="/admin/utm-builder" element={wrap(<RequireAuth><AdminUtmBuilder /></RequireAuth>)} />
         <Route path="/admin/api-docs" element={wrap(<RequireAuth><AdminApiDocs /></RequireAuth>)} />
+        <Route path="/admin/security" element={wrap(<RequireAuth><AdminSecurityMonitoring /></RequireAuth>)} />
 
         {/* Public e-sign page — no auth, sign_token in path. */}
         <Route path="/sign/:token" element={wrap(<SignDocument />)} />
