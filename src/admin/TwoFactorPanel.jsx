@@ -23,6 +23,7 @@ export default function TwoFactorPanel({ user, onClose }) {
   const [step, setStep] = useState(user?.totp_enabled ? 'enabled' : 'idle');
   const [secret, setSecret] = useState('');
   const [otpauthUri, setOtpauthUri] = useState('');
+  const [qrPng, setQrPng] = useState('');
   const [code, setCode] = useState('');
   const [pwForDisable, setPwForDisable] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
@@ -36,6 +37,7 @@ export default function TwoFactorPanel({ user, onClose }) {
     if (!r.ok) { setError(r.error || '시크릿 발급에 실패했습니다.'); return; }
     setSecret(r.secret || '');
     setOtpauthUri(r.otpauth_uri || '');
+    setQrPng(r.qr_png_data_url || '');
     setStep('verify');
   };
 
@@ -90,21 +92,24 @@ export default function TwoFactorPanel({ user, onClose }) {
         {step === 'verify' && (
           <div>
             <p style={{ fontSize: 13, lineHeight: 1.7, color: '#5a534b' }}>
-              인증 앱에 새 항목을 추가하고 다음 시크릿을 입력하거나, 아래 URI를 복사해 인증 앱의 "수동 추가" 메뉴에서 등록하세요.
+              인증 앱(Google Authenticator / Authy / 1Password 등) 을 열고 아래 QR 을 스캔하세요.
+              QR 인식이 안 되면 시크릿을 직접 입력해도 됩니다.
             </p>
-            <Field label="시크릿 (앱에 수동 입력)">
-              <code style={{ display: 'block', padding: 10, background: '#f6f4f0', border: '1px solid #d7d4cf', wordBreak: 'break-all', fontSize: 14, letterSpacing: '.04em' }}>
+            {qrPng ? (
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+                <img src={qrPng} alt="2FA QR" width={208} height={208}
+                  style={{ border: '1px solid #d7d4cf', background: '#fff', padding: 8 }} />
+              </div>
+            ) : (
+              <p style={{ fontSize: 11, color: '#8c867d', textAlign: 'center', margin: '8px 0' }}>
+                (QR 생성 미지원 환경 — 아래 시크릿을 인증 앱의 "수동 추가" 에 입력하세요)
+              </p>
+            )}
+            <Field label="시크릿 (수동 입력 시)">
+              <code style={{ display: 'block', padding: 10, background: '#f6f4f0', border: '1px solid #d7d4cf', wordBreak: 'break-all', fontSize: 13, letterSpacing: '.04em' }}>
                 {secret || '—'}
               </code>
             </Field>
-            <Field label="otpauth URI (대부분의 인증 앱이 이 URI를 그대로 인식)">
-              <textarea readOnly rows={3} value={otpauthUri}
-                style={{ width: '100%', boxSizing: 'border-box', padding: 8, border: '1px solid #d7d4cf', fontSize: 12, fontFamily: 'monospace' }} />
-            </Field>
-            <p style={{ fontSize: 11, color: '#8c867d' }}>
-              ※ QR 자동 생성은 외부 의존을 피하기 위해 본 데모에서는 비활성화되어 있습니다.
-              인증 앱의 "수동 추가" 또는 "URI 붙여넣기" 메뉴를 사용해 주세요.
-            </p>
 
             <form onSubmit={confirmEnable} style={{ marginTop: 16 }}>
               <Field label="앱이 표시한 6자리 코드">

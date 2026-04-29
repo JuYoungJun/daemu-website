@@ -13,8 +13,9 @@ import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
 import { DB } from '../lib/db.js';
 import { downloadCSV } from '../lib/csv.js';
-import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
+import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js';
 import { extractTextFromPdf, fileToDataUrl } from '../lib/pdfExtract.js';
+import { rasterizePdf } from '../lib/pdfRasterize.js';
 import ContractsGuide from './ContractsGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 import {
@@ -619,11 +620,24 @@ function TemplateEditor({ template, onClose, onSaved }) {
       console.error('[pdfExtract] dataUrl conversion failed:', e);
     }
 
+    // PyMuPDF 백엔드 raster — 원본 PDF 페이지 그대로 PNG 변환. 백엔드 미연결
+    // 또는 PyMuPDF 미설치 시 silent fallback (텍스트 추출만 사용).
+    let rasterPages = null;
+    let rasterError = null;
+    try {
+      const r = await rasterizePdf(file);
+      rasterPages = r.pages || [];
+    } catch (e) {
+      rasterError = String(e?.message || e);
+    }
+
     setPdfImporting(false);
     setPdfImportProgress(null);
     setPdfPreview({
       extracted: (extracted || '').trim(),
       extractionError,
+      rasterPages,
+      rasterError,
       filename: file.name,
       dataUrl,
       sizeKb: Math.round(file.size / 1024),
@@ -841,18 +855,29 @@ function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onC
           </div>
         )}
 
-        {/* 탭 — 변환된 텍스트 / 원본 PDF / 나란히 비교 */}
-        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e6e3dd', marginBottom: 14 }}>
+        {/* 탭 — 변환된 텍스트 / 원본 PDF / 페이지 이미지(PyMuPDF) / 나란히 비교 */}
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e6e3dd', marginBottom: 14, flexWrap: 'wrap' }}>
           <TabBtn active={tab === 'converted'} onClick={() => setTab('converted')} disabled={!hasText}>
             변환 결과 ({charCount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}자)
           </TabBtn>
           <TabBtn active={tab === 'pdf'} onClick={() => setTab('pdf')} disabled={!preview.dataUrl}>
             원본 PDF
           </TabBtn>
+          {Array.isArray(preview.rasterPages) && preview.rasterPages.length > 0 && (
+            <TabBtn active={tab === 'raster'} onClick={() => setTab('raster')}>
+              페이지 이미지 ({preview.rasterPages.length}p)
+            </TabBtn>
+          )}
           <TabBtn active={tab === 'compare'} onClick={() => setTab('compare')} disabled={!hasText || !preview.dataUrl}>
             나란히 비교
           </TabBtn>
         </div>
+
+        {preview.rasterError && tab === 'raster' && (
+          <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '10px 14px', fontSize: 12.5, color: '#5a4a2a', marginBottom: 10 }}>
+            PyMuPDF 변환 실패: {preview.rasterError} — 백엔드 미연결 또는 pymupdf 미설치.
+          </div>
+        )}
 
         {tab === 'converted' && hasText && (
           <ConvertedPaper extracted={preview.extracted} />
@@ -860,6 +885,18 @@ function PdfImportPreviewModal({ preview, onUseExtracted, onUseAsAttachment, onC
 
         {tab === 'pdf' && preview.dataUrl && (
           <PdfFrame src={preview.dataUrl} />
+        )}
+
+        {tab === 'raster' && Array.isArray(preview.rasterPages) && (
+          <div style={{ maxHeight: 560, overflowY: 'auto', background: '#231815', padding: 12 }}>
+            {preview.rasterPages.map((p) => (
+              <div key={p.index} style={{ marginBottom: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 10.5, color: '#a09a92', marginBottom: 4 }}>p.{p.index + 1}</div>
+                <img src={p.dataUrl} alt={`page ${p.index + 1}`}
+                  style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 4px 14px rgba(0,0,0,.4)', background: '#fff' }} />
+              </div>
+            ))}
+          </div>
         )}
 
         {tab === 'compare' && hasText && preview.dataUrl && (
@@ -1439,13 +1476,18 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
   const exportPdf = () => {
     // Snyk DOMXSS hardening: build the print window with document.createElement
     // + textContent only — no document.write, no innerHTML, no template-string
-    // HTML. The window's print is triggered after onload.
+    // HTML.
     //
-    // 사용 안내: 인쇄 다이얼로그에서 "대상" 또는 "프린터"를
-    // **"PDF로 저장"** (또는 "Save as PDF")로 선택하면 실제 PDF 파일이
-    // 다운로드됩니다. 한국어 OS는 보통 "PDF로 저장"이라고 표기됩니다.
-    const w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) { siteAlert('팝업 차단으로 PDF 창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도해 주세요.'); return; }
+    // 사용자 안내 — 팝업 차단으로 인쇄 창이 안 뜨던 케이스 대응. 'noopener'/
+    // 'noreferrer' 가 window.open 의 features 인자에 들어가면 일부 브라우저
+    // (특히 Chrome) 가 popup 으로 간주해 차단할 수 있어 제거. 대신 대상 url
+    // 을 about:blank 로 명시.
+    siteToast('인쇄 창이 열립니다. 팝업 차단으로 안 뜨면 주소창 우측 차단 알림에서 허용한 뒤 다시 시도해 주세요.');
+    const w = window.open('about:blank', '_blank');
+    if (!w) {
+      siteAlert('팝업 차단으로 PDF 창을 열 수 없습니다.\n\n브라우저 주소창 우측의 팝업 차단 알림 → "허용" 으로 설정한 뒤 다시 시도해 주세요.\n\nChrome: ⓘ 또는 🔒 → 사이트 설정 → 팝업 → 허용\nSafari: 환경설정 → 웹사이트 → 팝업 → 허용');
+      return;
+    }
 
     const wDoc = w.document;
     wDoc.documentElement.lang = 'ko';
@@ -1502,6 +1544,29 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
         (s.signed_at ? new Date(s.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '');
       body.appendChild(sig);
     }
+
+    // 양측 서명란 — 출력 PDF 에 수신인 + 대무(발신인) 양쪽 서명 자리.
+    // textContent 만 사용해 Snyk DOMXSS taint chain 안전.
+    const sigBlock = wDoc.createElement('div');
+    sigBlock.style.cssText = 'margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:36px';
+    const makeSigBox = (label) => {
+      const box = wDoc.createElement('div');
+      const lbl = wDoc.createElement('div');
+      lbl.style.cssText = 'font-size:11px;color:#5a534b;letter-spacing:.06em;margin-bottom:6px;text-transform:uppercase';
+      lbl.textContent = label;
+      box.appendChild(lbl);
+      const line = wDoc.createElement('div');
+      line.style.cssText = 'border-bottom:1px solid #231815;height:50px';
+      box.appendChild(line);
+      const meta = wDoc.createElement('div');
+      meta.style.cssText = 'font-size:10px;color:#8c867d;margin-top:6px;letter-spacing:.04em';
+      meta.textContent = '서명일자: __________________';
+      box.appendChild(meta);
+      return box;
+    };
+    sigBlock.appendChild(makeSigBox('수신인 서명 / Customer'));
+    sigBlock.appendChild(makeSigBox('대무 (DAEMU) 서명 / Issuer'));
+    body.appendChild(sigBlock);
 
     // Legal note — kept consistent with the e-sign page.
     const legal = wDoc.createElement('div');

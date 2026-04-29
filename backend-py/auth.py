@@ -530,9 +530,14 @@ class TotpDisableIn(BaseModel):
 
 @router.post("/totp/setup")
 async def totp_setup(user: AdminUser = Depends(require_user), session: AsyncSession = Depends(get_session)):
-    """Generate a fresh secret + provisioning URI (for the QR code).
-    The secret is stored as totp_secret but totp_enabled stays False until
-    /totp/enable is called with a valid code."""
+    """새 secret + provisioning URI 발급. QR PNG dataURL 도 함께 반환해
+    프론트가 별도 라이브러리 없이 바로 표시 가능. totp_enabled 는 여전히
+    False — /totp/enable 에서 사용자가 인증 앱 코드 검증 후 활성화.
+
+    QR 변조 방지: secret 은 base32 random, provisioning URI 는 RFC 6238
+    표준. URI 자체에 secret + issuer + algorithm + period 가 모두 들어가
+    있어 QR 만 보고 알고리즘 변조가 불가하다.
+    """
     try:
         import pyotp
     except ImportError:
@@ -542,7 +547,28 @@ async def totp_setup(user: AdminUser = Depends(require_user), session: AsyncSess
     await session.flush()
     issuer = "DAEMU Admin"
     uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name=issuer)
-    return {"ok": True, "secret": secret, "otpauth_uri": uri, "issuer": issuer}
+
+    # QR PNG dataURL — qrcode 패키지가 있으면 즉시 생성. 없어도 secret/uri
+    # 는 그대로 반환되니 프론트가 자체 QR 라이브러리로 처리 가능.
+    qr_data_url = ""
+    try:
+        import qrcode  # type: ignore
+        import io as _io
+        import base64 as _b64
+        img = qrcode.make(uri)
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        qr_data_url = "data:image/png;base64," + _b64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "secret": secret,
+        "otpauth_uri": uri,
+        "issuer": issuer,
+        "qr_png_data_url": qr_data_url,
+    }
 
 
 @router.post("/totp/enable")

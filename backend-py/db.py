@@ -31,11 +31,21 @@ DATABASE_URL = os.environ.get(
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False, "timeout": 30}
+elif DATABASE_URL.startswith("mysql"):
+    # Aiven / 대부분의 managed MySQL 은 SSL 필수. asyncmy 는 connect_args 의
+    # ssl 옵션으로 verify-required 컨텍스트를 받는다. Aiven 은 정상 CA chain
+    # 이라 기본 verify 모드로 OK. 자체 호스팅 MySQL 이라면 환경변수
+    # DAEMU_MYSQL_SSL_DISABLE=1 로 비활성 가능.
+    if os.environ.get("DAEMU_MYSQL_SSL_DISABLE") != "1":
+        import ssl as _ssl
+        connect_args = {"ssl": _ssl.create_default_context()}
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
+    # MySQL wait_timeout(기본 28800s) 보다 짧게 — stale 연결 회피.
+    pool_recycle=1800,
     connect_args=connect_args,
 )
 

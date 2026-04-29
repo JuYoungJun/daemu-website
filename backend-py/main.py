@@ -446,6 +446,12 @@ from routes_short_links import (  # noqa: E402
 app.include_router(short_links_admin_router)
 app.include_router(short_links_public_router)
 
+from routes_geo import router as geo_router  # noqa: E402
+app.include_router(geo_router)
+
+from routes_pdf import router as pdf_router  # noqa: E402
+app.include_router(pdf_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

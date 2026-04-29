@@ -22,3 +22,8 @@ passlib[bcrypt]>=1.7.4
 bcrypt>=4.2.0,<5.0
 python-multipart>=0.0.20   # required by FastAPI for form-data
 pyotp>=2.9.0               # TOTP 2FA for admin accounts (RFC 6238)
+qrcode[pil]>=7.4.2         # 2FA setup QR PNG (provisioning URI → dataURL)
+# PyMuPDF — 업로드 PDF 를 페이지별 PNG 으로 raster 화. 어드민이 외부 PDF
+# 양식을 그대로 보존하면서 e-Sign 영역만 오버레이할 때 사용. 휠 패키지라
+# Render(linux x86_64) 에 자동 설치.
+pymupdf>=1.24.0
