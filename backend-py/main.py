@@ -216,6 +216,29 @@ async def lifespan(_app: FastAPI):
             print(f"[migration] failed: {e!r}")
     async with SessionLocal() as session:
         await ensure_default_users(session)
+
+        # 긴급 2FA 리셋 — 운영자가 본인 2FA 디바이스 분실/오류로 잠겼을 때
+        # 환경변수 DAEMU_RESET_TOTP_EMAIL 만 등록하면 다음 redeploy 에서
+        # 자동 reset. 보안상 한 번 사용 후 환경변수 즉시 삭제 권장.
+        # (남겨두면 매 redeploy 마다 reset 됨 → 침입자 시나리오 위험)
+        _reset_email = os.environ.get("DAEMU_RESET_TOTP_EMAIL", "").strip().lower()
+        if _reset_email:
+            try:
+                from sqlalchemy import select as _select
+                from models import AdminUser as _AdminUser
+                _r = await session.execute(_select(_AdminUser).where(_AdminUser.email == _reset_email))
+                _target = _r.scalar_one_or_none()
+                if _target:
+                    _target.totp_enabled = False
+                    _target.totp_secret = ""
+                    _target.recovery_codes = []
+                    await session.commit()
+                    print(f"[bootstrap] ✓ 2FA reset for {_reset_email} — 환경변수 DAEMU_RESET_TOTP_EMAIL 즉시 제거 권장")
+                else:
+                    print(f"[bootstrap] ⚠ DAEMU_RESET_TOTP_EMAIL={_reset_email} — 해당 사용자 없음")
+            except Exception as _e:  # noqa: BLE001
+                print(f"[bootstrap] 2FA reset 실패: {_e!r}")
+
         # 표준 계약서/발주서 템플릿 자동 시드 (idempotent — 이미 있으면 skip)
         try:
             from seeds import ensure_default_templates, ensure_demo_superadmin
