@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import UtmBuilderGuide from './UtmBuilderGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
@@ -103,7 +104,6 @@ export default function AdminUtmBuilder() {
   const [creatingShort, setCreatingShort] = useState(false);
   const [qrTarget, setQrTarget] = useState(null); // {short_url, label} or null
   const [statsTarget, setStatsTarget] = useState(null); // ShortLink id or null
-  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const refresh = () => setHistory(readHistory());
@@ -309,15 +309,9 @@ export default function AdminUtmBuilder() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>UTM 빌더</h1>
-            <button type="button" className="btn" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-              사용 가이드 보기
-            </button>
-          </div>
+          <h1 className="page-title">UTM 빌더</h1>
 
-          {showGuide && <UtmBuilderGuide onClose={() => setShowGuide(false)} />}
+          <GuideButton GuideComponent={UtmBuilderGuide} />
 
           <AdminHelp title="UTM 빌더 안내" items={[
             'UTM 파라미터는 URL 끝에 붙여 어떤 캠페인·매체에서 들어왔는지 추적하는 표준 방식입니다 (Google·Plausible·Naver Analytics 등 대부분이 인식).',

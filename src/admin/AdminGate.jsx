@@ -8,7 +8,12 @@ import ChangePasswordForm from './ChangePasswordForm.jsx';
 import TwoFactorPanel from './TwoFactorPanel.jsx';
 import EmailVerifyForm from './EmailVerifyForm.jsx';
 import { siteAlert, siteToast } from '../lib/dialog.js';
+import {
+  pickDownloadDirectory, clearDownloadDirectory,
+  getDownloadDirectoryLabel, isDirectoryPickerSupported,
+} from '../lib/downloadDir.js';
 import AdminMainGuide from './AdminMainGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 // V3-02: ensure window.DB / Auth / escHtml / sendAutoReply etc. are
 // installed even when the user navigates *into* /admin via React Router
 // (no full reload). The dynamic import in main.jsx only catches direct
@@ -33,17 +38,28 @@ export default function AdminGate() {
   const [hydrating, setHydrating] = useState(() => Auth.isLoggedIn() && api.isConfigured());
   const [showChange, setShowChange] = useState(false);
   const [show2fa, setShow2fa] = useState(false);
-  const [showMainGuide, setShowMainGuide] = useState(false);
   const [csvPrefix, setCsvPrefix] = useState(() => {
     try { return localStorage.getItem('daemu_csv_filename_prefix') || 'daemu-'; }
     catch { return 'daemu-'; }
   });
-  const [csvPickLocation, setCsvPickLocation] = useState(() => {
-    try { return localStorage.getItem('daemu_csv_pick_location') === '1'; }
-    catch { return false; }
-  });
+  const [csvDirLabel, setCsvDirLabel] = useState(() => getDownloadDirectoryLabel());
   // 모던 브라우저(Chrome/Edge/Opera 86+) 만 File System Access API 지원.
-  const supportsPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+  const supportsPicker = isDirectoryPickerSupported();
+  const onPickCsvDir = async () => {
+    try {
+      const handle = await pickDownloadDirectory();
+      setCsvDirLabel(handle?.name || '');
+      try { siteToast(`다운로드 폴더 설정됨: ${handle?.name || ''}`); } catch { /* ignore */ }
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      try { siteAlert(e?.message || '폴더 선택 실패'); } catch { /* ignore */ }
+    }
+  };
+  const onClearCsvDir = async () => {
+    await clearDownloadDirectory();
+    setCsvDirLabel('');
+    try { siteToast('다운로드 폴더 해제됨 — 브라우저 기본 폴더로 저장됩니다.'); } catch { /* ignore */ }
+  };
   // 2FA login flow state — when backend says need_totp, we keep email/password
   // around (NOT in storage) so the user can submit the 6-digit code without
   // re-typing credentials.
@@ -306,10 +322,6 @@ export default function AdminGate() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn" type="button" onClick={() => setShowMainGuide(true)}
-                  style={{ minWidth: 120, background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-                  사용 가이드 보기
-                </button>
                 <button className="btn" type="button" onClick={() => setShowChange(true)}
                   style={{ minWidth: 120 }}>비밀번호 변경</button>
                 <button className="btn" type="button" onClick={() => setShow2fa(true)}
@@ -323,8 +335,8 @@ export default function AdminGate() {
                   onClose={() => { setShow2fa(false); Auth.refreshMe(); }}
                 />
               )}
-              {showMainGuide && <AdminMainGuide onClose={() => setShowMainGuide(false)} />}
             </div>
+            <GuideButton GuideComponent={AdminMainGuide}/>
 
             <div className="admin-stats-grid">
               <div className="admin-stat-card"><span className="admin-stat-number">{newInq}</span><span className="admin-stat-label">신규 상담 문의</span></div>
@@ -333,7 +345,7 @@ export default function AdminGate() {
               <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">발송된 캠페인</span></div>
             </div>
 
-            {/* CSV 다운로드 설정 — 파일명 prefix + 저장 위치 매번 묻기 토글. */}
+            {/* CSV 다운로드 설정 — 파일명 prefix + 다운로드 폴더 미리 지정. */}
             <div style={{ background: '#fafaf6', border: '1px solid #e6e3dd', padding: '14px 18px', marginBottom: 28 }}>
               <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 10 }}>CSV 다운로드 설정</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
@@ -354,27 +366,37 @@ export default function AdminGate() {
                     style={{ padding: '6px 10px', border: '1px solid #d7d4cf', background: '#fff', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, minWidth: 160 }} />
                 </label>
 
-                <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#231815', cursor: supportsPicker ? 'pointer' : 'not-allowed', opacity: supportsPicker ? 1 : 0.55 }}>
-                    <input type="checkbox" checked={csvPickLocation && supportsPicker}
-                      disabled={!supportsPicker}
-                      onChange={(e) => {
-                        const v = e.target.checked;
-                        setCsvPickLocation(v);
-                        try {
-                          localStorage.setItem('daemu_csv_pick_location', v ? '1' : '0');
-                          siteToast(v ? '저장 위치 매번 묻기: ON' : '저장 위치 매번 묻기: OFF');
-                        } catch { /* ignore */ }
-                      }} />
-                    <span><strong>저장 위치 매번 묻기</strong> — 다운로드할 때마다 폴더 선택 다이얼로그가 열립니다.</span>
-                  </label>
-                  <div style={{ fontSize: 11.5, color: '#8c867d', lineHeight: 1.6, paddingLeft: 24 }}>
-                    {supportsPicker
-                      ? '브라우저: File System Access API 지원 ✓. 체크 시 매 다운로드마다 위치를 직접 선택할 수 있습니다.'
-                      : '본 브라우저는 미지원(Firefox / iOS Safari). Chrome·Edge·Opera 에서만 동작합니다 — 그 외에는 기본 다운로드 폴더(보통 ~/Downloads) 로 자동 저장됩니다.'}
+                <div style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: '#5a534b' }}>다운로드 폴더</span>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {csvDirLabel ? (
+                      <>
+                        <code style={{ fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, color: '#231815', background: '#fff', padding: '6px 10px', border: '1px solid #d7d4cf' }}>
+                          📁 {csvDirLabel}
+                        </code>
+                        <button type="button" className="adm-btn-sm" onClick={onPickCsvDir}>
+                          폴더 변경
+                        </button>
+                        <button type="button" className="adm-btn-sm danger" onClick={onClearCsvDir}>
+                          해제
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="adm-btn-sm" onClick={onPickCsvDir}
+                        disabled={!supportsPicker}
+                        style={{ background: supportsPicker ? '#1f5e7c' : '#d7d4cf', color: '#fff', borderColor: supportsPicker ? '#1f5e7c' : '#d7d4cf' }}>
+                        다운로드 폴더 선택
+                      </button>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#8c867d', lineHeight: 1.6, paddingLeft: 24 }}>
-                    OFF 일 때 기본 다운로드 폴더 변경: 브라우저 설정 → 다운로드 → 위치 변경.
+                  <div style={{ fontSize: 11.5, color: '#8c867d', lineHeight: 1.6 }}>
+                    {supportsPicker ? (
+                      csvDirLabel
+                        ? `모든 CSV 다운로드가 위 폴더로 자동 저장됩니다. 처음 사용 시 한 번 권한 허용 다이얼로그가 뜰 수 있습니다.`
+                        : `폴더를 한 번 선택해두면 이후 모든 CSV 가 그 폴더로 자동 저장됩니다. 미선택 시 브라우저 기본 다운로드 폴더로 저장.`
+                    ) : (
+                      `본 브라우저는 폴더 직접 지정을 지원하지 않습니다 (Firefox / iOS Safari). Chrome·Edge·Opera 에서만 가능 — 그 외에는 브라우저 기본 다운로드 폴더(보통 ~/Downloads)로 저장됩니다. 위치는 브라우저 설정에서 변경 가능.`
+                    )}
                   </div>
                 </div>
               </div>

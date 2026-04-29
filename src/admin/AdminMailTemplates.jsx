@@ -26,6 +26,7 @@ import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js'
 import { DB } from '../lib/db.js';
 import { renderInlineMarkdown, renderMailBody } from '../components/MailBodyRenderer.jsx';
 import MailTemplatesGuide from './MailTemplatesGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'daemu_mail_templates';
 
@@ -298,7 +299,6 @@ export default function AdminMailTemplates() {
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState('');
   const [activePreview, setActivePreview] = useState(null);
-  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const refresh = () => setTemplates(readTemplates());
@@ -354,13 +354,9 @@ export default function AdminMailTemplates() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>메일 템플릿 라이브러리</h1>
-            <button type="button" className="btn" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-              사용 가이드 보기
-            </button>
-          </div>
+          <h1 className="page-title">메일 템플릿 라이브러리</h1>
+
+          <GuideButton GuideComponent={MailTemplatesGuide} />
 
           <AdminHelp title="메일 템플릿 사용 안내" items={[
             '여기서 저장한 템플릿은 단체 메일 발송, 캠페인, 1:1 안내 메일 등에서 재사용됩니다.',
@@ -450,7 +446,6 @@ export default function AdminMailTemplates() {
           {activePreview && (
             <TemplatePreviewModal template={activePreview} onClose={() => setActivePreview(null)} />
           )}
-          {showGuide && <MailTemplatesGuide onClose={() => setShowGuide(false)} />}
         </section>
       </main>
     </AdminShell>

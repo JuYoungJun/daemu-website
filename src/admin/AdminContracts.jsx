@@ -16,6 +16,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { extractTextFromPdf, fileToDataUrl } from '../lib/pdfExtract.js';
 import ContractsGuide from './ContractsGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 import {
   formatPhone, formatBizNo, formatCurrencyTyping, unformatNumber, normalizeEmail,
 } from '../lib/inputFormat.js';
@@ -333,7 +334,6 @@ export default function AdminContracts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null); // doc id for detail drawer
-  const [showGuide, setShowGuide] = useState(false);
 
   const reload = async () => {
     setLoading(true); setError('');
@@ -365,15 +365,9 @@ export default function AdminContracts() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>계약서 / 발주서</h1>
-            <button type="button" className="btn" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-              사용 가이드 보기
-            </button>
-          </div>
+          <h1 className="page-title">계약서 / 발주서</h1>
 
-          {showGuide && <ContractsGuide onClose={() => setShowGuide(false)} />}
+          <GuideButton GuideComponent={ContractsGuide} />
 
           <AdminHelp title="계약서·발주서 사용 안내" items={[
             '1단계 — 템플릿 만들기: "템플릿" 탭에서 표준 계약서/발주서 양식을 등록하세요. {{변수}} 자리에 실제 값이 치환됩니다.',

@@ -114,13 +114,13 @@ export function escapeCsvCell(value) {
 }
 
 // 다운로드 트리거 — 우선순위:
-//   1) localStorage 'daemu_csv_pick_location' === '1' 이고 브라우저가
-//      File System Access API(showSaveFilePicker) 를 지원하면 → 사용자가
-//      매번 저장 위치를 직접 선택. (Chrome/Edge/Opera 86+ 지원, Firefox 와
-//      Safari iOS 는 미지원이므로 자동 폴백)
+//   1) 어드민에서 미리 지정한 다운로드 폴더가 있으면(IndexedDB 의 directory
+//      handle) 그 폴더에 자동 저장. (downloadDir.js)
 //   2) 구형 Edge/IE 의 navigator.msSaveBlob.
-//   3) detached anchor.click() — DOM 부착이 없어 정적 분석 도구의
-//      DOM-XSS taint chain(appendChild) 이 끊긴다.
+//   3) detached anchor.click() — 브라우저 기본 다운로드 폴더로. DOM 부착이
+//      없어 정적 분석 도구의 DOM-XSS taint chain(appendChild) 이 끊긴다.
+import { writeBlobToSavedDirectory } from './downloadDir.js';
+
 export async function triggerDownload(filename, blob) {
   try {
     if (typeof document === 'undefined' || typeof window === 'undefined') return false;
@@ -135,30 +135,11 @@ export async function triggerDownload(filename, blob) {
       return false;
     }
 
-    // 1) File System Access API — "매번 저장 위치 묻기" 옵션 ON 일 때만.
-    let pickLocation = false;
-    try { pickLocation = localStorage.getItem('daemu_csv_pick_location') === '1'; }
-    catch { /* ignore */ }
-    if (pickLocation && typeof window.showSaveFilePicker === 'function') {
-      try {
-        const ext = (safeName.match(/\.([a-zA-Z0-9]+)$/) || [, 'csv'])[1].toLowerCase();
-        const handle = await window.showSaveFilePicker({
-          suggestedName: safeName,
-          types: [{
-            description: ext.toUpperCase() + ' 파일',
-            accept: { [blob.type || 'application/octet-stream']: ['.' + ext] },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return true;
-      } catch (e) {
-        // 사용자가 다이얼로그 취소(AbortError) → 다운로드 중단.
-        if (e?.name === 'AbortError') return false;
-        // 그 외(권한 거부/미지원) → 폴백.
-      }
-    }
+    // 1) 미리 지정된 다운로드 폴더가 있으면 거기에 직접 저장.
+    try {
+      const wrote = await writeBlobToSavedDirectory(safeName, blob);
+      if (wrote) return true;
+    } catch { /* 폴백 */ }
 
     // 2) 구형 Edge/IE.
     if (typeof navigator !== 'undefined' && typeof navigator.msSaveBlob === 'function') {
@@ -166,7 +147,7 @@ export async function triggerDownload(filename, blob) {
       catch { /* 표준 경로로 폴백 */ }
     }
 
-    // 3) detached anchor.
+    // 3) detached anchor — 브라우저 기본 다운로드 폴더.
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

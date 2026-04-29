@@ -8,18 +8,20 @@
 import { useState } from 'react';
 import AdminGuideModal, { GuideSection, GuideTable, guideListStyle } from './AdminGuideModal.jsx';
 
-// 가이드 버튼 + 모달 상태를 한 컴포넌트로 묶음. 각 어드민 페이지가 한 줄로
-// 가이드 기능을 얻는다: <GuideButton GuideComponent={WorksGuide} />
+// 가이드 버튼 + 모달 상태를 한 컴포넌트로 묶음. 각 어드민 페이지에서
+// <GuideButton GuideComponent={WorksGuide} /> 한 줄만 호출하면 우하단에
+// floating 으로 가이드 버튼이 표시된다. 모든 페이지에서 동일한 위치라
+// 사용자 학습 비용이 0.
 export function GuideButton({ GuideComponent }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button type="button" className="btn" onClick={() => setOpen(true)}
-          style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-          사용 가이드 보기
-        </button>
-      </div>
+      <button type="button" onClick={() => setOpen(true)}
+        className="adm-floating-guide-btn"
+        title="현재 페이지 사용 가이드 보기">
+        <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>?</span>
+        <span>사용 가이드</span>
+      </button>
       {open && <GuideComponent onClose={() => setOpen(false)} />}
     </>
   );

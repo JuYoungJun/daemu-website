@@ -23,6 +23,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 import InquiriesGuide from './InquiriesGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -64,7 +65,6 @@ export default function AdminInquiries() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
-  const [showGuide, setShowGuide] = useState(false);
 
   const reload = async () => {
     setLoading(true); setError('');
@@ -203,15 +203,9 @@ export default function AdminInquiries() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>상담/문의</h1>
-            <button type="button" className="btn" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-              사용 가이드 보기
-            </button>
-          </div>
+          <h1 className="page-title">상담/문의</h1>
 
-          {showGuide && <InquiriesGuide onClose={() => setShowGuide(false)} />}
+          <GuideButton GuideComponent={InquiriesGuide} />
 
           <AdminHelp title="상담관리 사용 안내" items={[
             'Contact 폼에서 들어온 문의는 자동으로 여기에 표시됩니다.',

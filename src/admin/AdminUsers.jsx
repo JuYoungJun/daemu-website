@@ -21,6 +21,7 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { normalizeEmail } from '../lib/inputFormat.js';
 import UsersGuide from './UsersGuide.jsx';
+import { GuideButton } from './PageGuides.jsx';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_COLOR = { admin: '#c0392b', tester: '#1f5e7c', developer: '#b87333' };
@@ -53,7 +54,7 @@ export default function AdminUsers() {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [sortBy, setSortBy] = useState('id'); // id | email | last_login
-  const [showGuide, setShowGuide] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [detail, setDetail] = useState(null); // user object or null
 
@@ -232,76 +233,83 @@ export default function AdminUsers() {
     <AdminShell>
       <main className="page">
         <section className="wide admin-page">
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>사용자 권한 관리</h1>
-            <button type="button" className="btn" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
-              사용 가이드 보기
-            </button>
-          </div>
+          <h1 className="page-title">사용자 권한 관리</h1>
 
-          {showGuide && <UsersGuide onClose={() => setShowGuide(false)} />}
+          <GuideButton GuideComponent={UsersGuide} />
 
-          {/* KPI 4 + 보안 KPI 3 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
+          {/* KPI 2행 — 첫 행: 일반 통계 4개, 두 번째 행: 보안 알림 3개 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
             <Kpi label="전체" value={kpi.total} />
             <Kpi label="활성" value={kpi.active} color="#2e7d32" />
             <Kpi label="관리자" value={kpi.admins} color="#c0392b" />
+            <Kpi label="2FA 활성" value={kpi.twoFa}
+              color={kpi.twoFa > 0 ? '#2e7d32' : '#6f6b68'} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 18 }}>
             <Kpi label="이메일 미인증" value={kpi.pendingVerify}
               color={kpi.pendingVerify > 0 ? '#b87333' : '#6f6b68'} />
             <Kpi label="비번 변경 필요" value={kpi.needsPassword}
               color={kpi.needsPassword > 0 ? '#b87333' : '#6f6b68'} />
-            <Kpi label="2FA 활성" value={kpi.twoFa}
-              color={kpi.twoFa > 0 ? '#2e7d32' : '#6f6b68'} />
             <Kpi label="7일+ 미접속" value={kpi.inactive7d}
               color={kpi.inactive7d > 0 ? '#b87333' : '#6f6b68'} />
           </div>
 
-          {/* 권한 설명 */}
-          <details style={{ marginBottom: 18 }}>
-            <summary style={{ cursor: 'pointer', fontSize: 13, color: '#5a534b', padding: '8px 0' }}>
-              권한 설명 (3종)
-            </summary>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 8 }}>
-              {Object.entries(ROLE_LABEL).map(([k, v]) => (
-                <div key={k} style={{ border: '1px solid #d7d4cf', padding: 14, background: '#faf8f5' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, color: ROLE_COLOR[k] }}>
-                    {v} <span style={{ color: '#8c867d', fontWeight: 400 }}>({k})</span>
+          {/* 상단 액션 바 — 권한 설명 + 신규 계정 추가 토글 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            <details>
+              <summary style={{ cursor: 'pointer', fontSize: 13, color: '#5a534b', padding: '6px 0' }}>
+                권한 설명 (3종 보기)
+              </summary>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 8, marginBottom: 8, maxWidth: 760 }}>
+                {Object.entries(ROLE_LABEL).map(([k, v]) => (
+                  <div key={k} style={{ border: '1px solid #d7d4cf', padding: 14, background: '#faf8f5' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, color: ROLE_COLOR[k] }}>
+                      {v} <span style={{ color: '#8c867d', fontWeight: 400 }}>({k})</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#5f5b57', lineHeight: 1.6 }}>{ROLE_DESC[k]}</div>
                   </div>
-                  <div style={{ fontSize: 12, color: '#5f5b57', lineHeight: 1.6 }}>{ROLE_DESC[k]}</div>
-                </div>
-              ))}
-            </div>
-          </details>
-
-          <h3 className="admin-section-title">신규 계정 추가</h3>
-          <form onSubmit={onCreate} className="adm-user-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 24 }}>
-            <input type="email" required placeholder="이메일" autoComplete="off"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s/g, '') })}
-              onBlur={(e) => setForm({ ...form, email: normalizeEmail(e.target.value) })}
-              style={inputStyle} />
-            <input type="text" placeholder="이름" autoComplete="off"
-              value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              style={inputStyle} />
-            <input type="password" required placeholder="임시 비밀번호 (8자 이상)" autoComplete="new-password" minLength={8}
-              value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-              style={inputStyle} />
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle}>
-              <option value="admin">관리자 (admin)</option>
-              <option value="tester">서브 관리자 (tester)</option>
-              <option value="developer">개발자 (developer)</option>
-            </select>
-            <button className="btn" type="submit" disabled={submitting}>
-              {submitting ? '생성 중…' : '계정 생성'}
+                ))}
+              </div>
+            </details>
+            <button type="button" className="btn"
+              onClick={() => setShowCreateForm((v) => !v)}
+              style={{ minWidth: 140, background: showCreateForm ? '#fff' : '#1f5e7c', color: showCreateForm ? '#1f5e7c' : '#fff', border: '1px solid #1f5e7c' }}>
+              {showCreateForm ? '닫기' : '+ 신규 계정 추가'}
             </button>
-          </form>
-          <p style={{ fontSize: 11, color: '#8c867d', marginTop: -16, marginBottom: 22 }}>
-            신규 계정은 <strong>첫 로그인 시 이메일 인증 + 비밀번호 변경</strong>이 강제됩니다.
-            임시 비밀번호는 안전한 채널로만 전달하세요.
-          </p>
+          </div>
 
-          {error && <div style={{ color: '#b04a3b', fontSize: 13, marginBottom: 16 }}>{error}</div>}
+          {showCreateForm && (
+            <div style={{ background: '#faf8f5', border: '1px solid #d7d4cf', padding: 16, marginBottom: 24 }}>
+              <h3 className="admin-section-title" style={{ marginTop: 0, fontSize: 14 }}>신규 계정 추가</h3>
+              <form onSubmit={onCreate} className="adm-user-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <input type="email" required placeholder="이메일" autoComplete="off"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s/g, '') })}
+                  onBlur={(e) => setForm({ ...form, email: normalizeEmail(e.target.value) })}
+                  style={inputStyle} />
+                <input type="text" placeholder="이름" autoComplete="off"
+                  value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  style={inputStyle} />
+                <input type="password" required placeholder="임시 비밀번호 (8자 이상)" autoComplete="new-password" minLength={8}
+                  value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  style={inputStyle} />
+                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle}>
+                  <option value="admin">관리자 (admin)</option>
+                  <option value="tester">서브 관리자 (tester)</option>
+                  <option value="developer">개발자 (developer)</option>
+                </select>
+                <button className="btn" type="submit" disabled={submitting} style={{ minWidth: 110 }}>
+                  {submitting ? '생성 중…' : '계정 생성'}
+                </button>
+              </form>
+              <p style={{ fontSize: 11.5, color: '#8c867d', marginTop: 10, marginBottom: 0 }}>
+                신규 계정은 <strong>첫 로그인 시 이메일 인증 + 비밀번호 변경</strong>이 강제됩니다.
+                임시 비밀번호는 안전한 채널(전화·SMS)로만 전달하세요.
+              </p>
+            </div>
+          )}
+
+          {error && <div style={{ color: '#b04a3b', fontSize: 13, marginBottom: 16, padding: '8px 12px', background: '#fff0ec', border: '1px solid #f0c4c0' }}>{error}</div>}
 
           {/* 검색 / 필터 / 정렬 / bulk */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>

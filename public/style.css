@@ -3405,6 +3405,42 @@ body{background:var(--bg)}
    막기 위한 강제 가드. */
 body[data-page="admin"]{overflow-y:auto !important}
 body[data-page="admin"] main.page{min-height:auto;overflow:visible}
+
+/* 어드민 페이지의 floating 사용 가이드 버튼 — 모든 페이지에서 우하단 동일
+   위치에 고정. 컨텐츠를 가리지 않게 z-index 낮게(모달보다 낮음). */
+.adm-floating-guide-btn{
+  position:fixed;
+  bottom:24px;
+  right:24px;
+  z-index:50;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:#1f5e7c;
+  color:#fff;
+  border:1px solid #1f5e7c;
+  padding:10px 18px;
+  font-size:13px;
+  font-family:inherit;
+  letter-spacing:.04em;
+  cursor:pointer;
+  border-radius:999px;
+  box-shadow:0 6px 20px rgba(31,94,124,.32);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.adm-floating-guide-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 10px 26px rgba(31,94,124,.42);
+  background:#27708f;
+}
+.adm-floating-guide-btn > span:first-child{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;
+  background:rgba(255,255,255,.18);font-weight:700;
+}
+@media (max-width:600px){
+  .adm-floating-guide-btn{bottom:16px;right:16px;padding:9px 14px;font-size:12px}
+}
 .admin-login-wrap{display:flex;justify-content:center;padding:60px 0}
 .admin-login-box{width:360px;text-align:center}
 .admin-login-box h2{font-size:24px;margin-bottom:8px;font-weight:500}
