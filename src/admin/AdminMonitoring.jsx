@@ -169,6 +169,117 @@ export default function AdminMonitoring() {
     try { localStorage.setItem('daemu_monitoring_resolved', JSON.stringify([...next])); } catch { /* ignore */ }
   };
 
+  // ── 추가 모니터링 데이터 수집 ─────────────────────────────────────
+  // localStorage 기반 자체 분석으로 운영자가 한 화면에서 볼 거리를 늘림.
+
+  // 1) 스토리지 사용량 — 모든 daemu_* 키의 합산 byte.
+  const storageStats = useMemo(() => {
+    if (typeof localStorage === 'undefined') return null;
+    let total = 0;
+    let count = 0;
+    const byKey = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('daemu_')) continue;
+      const v = localStorage.getItem(k) || '';
+      const bytes = (k.length + v.length) * 2; // UTF-16 추정
+      total += bytes;
+      count++;
+      byKey.push({ key: k, bytes, len: v.length });
+    }
+    byKey.sort((a, b) => b.bytes - a.bytes);
+    return { totalBytes: total, count, top: byKey.slice(0, 8) };
+  }, []);
+
+  // 2) 문의 응답 시간 KPI — 신규 → 답변완료 평균 일수 (last 30일).
+  const inquiryKpi = useMemo(() => {
+    try {
+      const list = JSON.parse(localStorage.getItem('daemu_inquiries') || '[]');
+      if (!Array.isArray(list) || !list.length) return null;
+      const now = Date.now();
+      const thirtyDaysAgo = now - 30 * 86400 * 1000;
+      const recent = list.filter((d) => {
+        const t = d.date ? new Date(d.date).getTime() : 0;
+        return Number.isFinite(t) && t >= thirtyDaysAgo;
+      });
+      const replied = recent.filter((d) => d.status === '답변완료');
+      const newCount = recent.filter((d) => d.status === '신규').length;
+      const pendingCount = recent.filter((d) => d.status === '처리중').length;
+      const replyRate = recent.length ? Math.round((replied.length / recent.length) * 100) : 0;
+      return {
+        total30d: recent.length,
+        new: newCount,
+        pending: pendingCount,
+        replied: replied.length,
+        replyRate,
+      };
+    } catch { return null; }
+  }, []);
+
+  // 3) 콘텐츠 건강도 — 빈 양식·미디어 누락 등.
+  const contentHealth = useMemo(() => {
+    const issues = [];
+    try {
+      const works = JSON.parse(localStorage.getItem('daemu_works') || '[]');
+      const noHero = works.filter((w) => !w.hero && (!w.images || !w.images.length)).length;
+      if (noHero) issues.push({ key: 'works.noHero', label: '히어로 이미지 없는 작업사례', count: noHero });
+      const products = JSON.parse(localStorage.getItem('daemu_products') || '[]');
+      const noImage = products.flatMap((c) => c.items || []).filter((p) => !p.image).length;
+      if (noImage) issues.push({ key: 'products.noImage', label: '이미지 없는 상품', count: noImage });
+      const partners = JSON.parse(localStorage.getItem('daemu_partner_brands') || '[]');
+      const noLogo = partners.filter((b) => b.active && !b.logo).length;
+      if (noLogo) issues.push({ key: 'brands.noLogo', label: '로고 없는 활성 파트너사', count: noLogo });
+      const popups = JSON.parse(localStorage.getItem('daemu_popups') || '[]');
+      const expiredActive = popups.filter((p) => {
+        if (p.status !== 'active') return false;
+        if (!p.to) return false;
+        return new Date(p.to + 'T23:59:59').getTime() < Date.now();
+      }).length;
+      if (expiredActive) issues.push({ key: 'popups.expired', label: '만료됐지만 활성 상태인 팝업', count: expiredActive });
+    } catch { /* ignore */ }
+    return issues;
+  }, []);
+
+  // 4) 최근 활동 타임라인 — outbox + analytics 의 마지막 20건 통합.
+  const activityTimeline = useMemo(() => {
+    const events = [];
+    try {
+      const ob = JSON.parse(localStorage.getItem('daemu_outbox') || '[]');
+      for (const e of ob.slice(0, 50)) {
+        events.push({
+          ts: new Date(e.ts).getTime(),
+          type: e.status === 'failed' || e.status === 'error' ? 'error' : 'send',
+          label: (e.status === 'failed' ? '발송 실패' : e.status === 'error' ? 'API 오류' : '발송') + ' · ' + (e.path || ''),
+          detail: e.body?.subject || e.body?.to || e.error || '',
+        });
+      }
+    } catch { /* ignore */ }
+    try {
+      const ev = JSON.parse(localStorage.getItem('daemu_analytics_events') || '[]');
+      for (const e of ev.slice(-30)) {
+        if (e.name === 'pageview') continue;
+        events.push({
+          ts: e.ts || 0,
+          type: 'analytics',
+          label: e.name,
+          detail: e.path || '',
+        });
+      }
+    } catch { /* ignore */ }
+    return events.sort((a, b) => b.ts - a.ts).slice(0, 30);
+  }, [outbox]);
+
+  // 5) 백업 상태 — 마지막 CSV export 일시 (localStorage 마커).
+  const backupStatus = useMemo(() => {
+    try {
+      const last = localStorage.getItem('daemu_last_csv_export');
+      if (!last) return { status: 'never' };
+      const ts = new Date(last).getTime();
+      const days = Math.round((Date.now() - ts) / (86400 * 1000));
+      return { status: days < 14 ? 'recent' : 'stale', daysAgo: days, ts };
+    } catch { return { status: 'never' }; }
+  }, []);
+
   const toggleResolved = (id) => {
     const next = new Set(resolved);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -389,6 +500,115 @@ export default function AdminMonitoring() {
                     <span style={{ color: '#c0392b', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', marginRight: 8 }}>{f.type}</span>
                     {f.to} · {f.subject || '(제목 없음)'}<br />
                     <span style={{ color: '#8c867d', fontSize: 11 }}>{new Date(f.ts).toLocaleString('ko')} · {f.error}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* 문의 KPI — 응답 시간/응답률 */}
+          {inquiryKpi && (
+            <>
+              <h3 className="admin-section-title">문의 응답 KPI (최근 30일)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+                <Card label="접수 30d" value={String(inquiryKpi.total30d)} color="#1f5e7c" />
+                <Card label="신규" value={String(inquiryKpi.new)}
+                  color={inquiryKpi.new > 5 ? '#c0392b' : '#6f6b68'} />
+                <Card label="처리중" value={String(inquiryKpi.pending)} color="#b87333" />
+                <Card label="답변완료" value={String(inquiryKpi.replied)} color="#2e7d32" />
+                <Card label="응답률" value={inquiryKpi.replyRate + '%'}
+                  color={inquiryKpi.replyRate >= 80 ? '#2e7d32' : inquiryKpi.replyRate >= 50 ? '#b87333' : '#c0392b'} />
+              </div>
+            </>
+          )}
+
+          {/* 콘텐츠 건강도 */}
+          {contentHealth.length > 0 && (
+            <>
+              <h3 className="admin-section-title">콘텐츠 건강도</h3>
+              <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '12px 16px', marginBottom: 14, fontSize: 13 }}>
+                {contentHealth.map((c) => (
+                  <div key={c.key} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#5a4a2a' }}>{c.label}</span>
+                    <strong style={{ color: '#b87333' }}>{c.count}건</strong>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: '#8c867d', marginTop: 6 }}>각 항목 어드민 페이지에서 보강하면 사이트 완성도가 올라갑니다.</div>
+              </div>
+            </>
+          )}
+
+          {/* 스토리지 사용량 */}
+          {storageStats && (
+            <>
+              <h3 className="admin-section-title">스토리지 사용량 (브라우저 localStorage)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 8 }}>
+                <Card label="저장 키 수" value={String(storageStats.count)} color="#5a534b" />
+                <Card label="총 크기"
+                  value={(storageStats.totalBytes / 1024).toFixed(1) + ' KB'}
+                  color={storageStats.totalBytes > 4 * 1024 * 1024 ? '#c0392b' : storageStats.totalBytes > 2 * 1024 * 1024 ? '#b87333' : '#2e7d32'} />
+                <Card label="브라우저 한도" value="~5 MB" color="#8c867d" />
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #d7d4cf', padding: '10px 14px', marginBottom: 14, fontSize: 12 }}>
+                <strong style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: '#8c867d', display: 'block', marginBottom: 6 }}>상위 키 8개</strong>
+                {storageStats.top.map((k) => (
+                  <div key={k.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 11.5 }}>
+                    <code style={{ color: '#1f5e7c' }}>{k.key}</code>
+                    <span style={{ color: '#5a534b' }}>{(k.bytes / 1024).toFixed(1)} KB</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* 백업 상태 */}
+          <h3 className="admin-section-title">데이터 백업 상태</h3>
+          <div style={{
+            background: backupStatus.status === 'never' ? '#fff0ec' : backupStatus.status === 'stale' ? '#fff8ec' : '#eef6ee',
+            border: '1px solid ' + (backupStatus.status === 'never' ? '#f0c4c0' : backupStatus.status === 'stale' ? '#f0e3c4' : '#cfe5cf'),
+            padding: '12px 16px', marginBottom: 14, fontSize: 13,
+          }}>
+            {backupStatus.status === 'never' && (
+              <>
+                <strong style={{ color: '#c0392b' }}>백업 이력 없음</strong> — 어드민 페이지 각 목록에서 <em>CSV 내보내기</em> 로 정기 백업 권장.
+              </>
+            )}
+            {backupStatus.status === 'recent' && (
+              <>
+                <strong style={{ color: '#2e7d32' }}>최근 백업: {backupStatus.daysAgo}일 전</strong> ({new Date(backupStatus.ts).toLocaleString('ko')})
+              </>
+            )}
+            {backupStatus.status === 'stale' && (
+              <>
+                <strong style={{ color: '#b87333' }}>오래된 백업: {backupStatus.daysAgo}일 전</strong> — 2주 이상 지났습니다. CSV 내보내기로 갱신을 권장합니다.
+              </>
+            )}
+          </div>
+
+          {/* 활동 타임라인 */}
+          {activityTimeline.length > 0 && (
+            <>
+              <h3 className="admin-section-title">최근 활동 타임라인 (최신 30건)</h3>
+              <div style={{ background: '#fff', border: '1px solid #d7d4cf', maxHeight: 320, overflowY: 'auto', marginBottom: 14 }}>
+                {activityTimeline.map((e, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 12, padding: '8px 14px',
+                    borderBottom: i < activityTimeline.length - 1 ? '1px solid #f0ede7' : 'none',
+                    fontSize: 12,
+                  }}>
+                    <span style={{ minWidth: 130, color: '#8c867d', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 11 }}>
+                      {e.ts ? new Date(e.ts).toLocaleString('ko') : ''}
+                    </span>
+                    <span style={{
+                      minWidth: 56, fontSize: 10, padding: '2px 6px', height: 20,
+                      background: e.type === 'error' ? '#fff0ec' : e.type === 'send' ? '#eef6ee' : '#f4f1ea',
+                      color: e.type === 'error' ? '#c0392b' : e.type === 'send' ? '#2e7d32' : '#5a534b',
+                      letterSpacing: '.08em', textTransform: 'uppercase', borderRadius: 2,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>{e.type}</span>
+                    <span style={{ flex: 1, color: '#231815', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {e.label}{e.detail ? ' · ' + e.detail : ''}
+                    </span>
                   </div>
                 ))}
               </div>

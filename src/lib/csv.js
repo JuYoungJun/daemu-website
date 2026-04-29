@@ -29,7 +29,13 @@ export function downloadCSV(filename, rows, columns) {
   // Force the .csv extension after sanitizing — caller may have stripped it.
   let name = sanitizeFilename(filename || 'download', 'export');
   if (!/\.csv$/i.test(name)) name += '.csv';
-  triggerDownload(name, blob);
+  const ok = triggerDownload(name, blob);
+  // 백업 시점 기록 — AdminMonitoring 의 "데이터 백업 상태" 카드가 이 값을 표시.
+  if (ok) {
+    try { localStorage.setItem('daemu_last_csv_export', new Date().toISOString()); }
+    catch { /* ignore */ }
+  }
+  return ok;
 }
 
 // Re-export so legacy callers can pull the same primitives from one place.
