@@ -40,7 +40,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import require_user, require_admin
-from db import get_session
+from db import get_session, session_scope
 from models import AdminUser, ShortLink, ShortLinkClick
 
 
@@ -340,71 +340,79 @@ public_router = APIRouter(tags=["short-links-public"])
 
 
 @public_router.get("/r/{short_id}")
-async def follow_short_link(
-    short_id: str,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
+async def follow_short_link(short_id: str, request: Request):
     """단축링크 redirect — 클릭 카운트/이력 기록 후 target_url 로 302.
 
-    안전성: redirect 자체는 절대 internal 에러로 막혀선 안 됨. 카운트/이력
-    삽입 실패 시(예: ShortLinkClick INSERT 의 MySQL 호환성 이슈) 로깅만
-    하고 redirect 는 진행. 사용자 경험 우선.
+    설계 원칙: redirect 자체는 절대 500 으로 막혀선 안 된다. 그래서
+      - lookup/검증 단계와 click 기록 단계를 **별도 세션** 으로 분리.
+      - lookup 세션이 깨끗하게 닫힌 뒤 click 기록을 시도하므로 INSERT
+        실패가 redirect 의 outer commit 을 오염시킬 수 없다.
+      - 모든 예외에 request_id 동봉 logs.
     """
+    rid = getattr(request.state, "request_id", "no-id")
+
     if len(short_id) > 16 or not re.match(r"^[A-Za-z0-9_\-]+$", short_id):
         raise HTTPException(404, "invalid short_id")
 
-    res = await session.execute(
-        select(ShortLink).where(ShortLink.short_id == short_id)
-    )
-    row = res.scalar_one_or_none()
-    if not row:
-        raise HTTPException(404, "short link not found")
+    # ── Phase 1: lookup + 검증 (별도 세션, 깨끗하게 commit/close) ──
+    target_url: str | None = None
+    row_id: int | None = None
+    revoke_signature_mismatch = False
+    try:
+        async with session_scope() as session:
+            res = await session.execute(
+                select(ShortLink).where(ShortLink.short_id == short_id)
+            )
+            row = res.scalar_one_or_none()
+            if not row:
+                raise HTTPException(404, "short link not found")
+            if row.revoked_at is not None:
+                raise HTTPException(410, "이 링크는 더 이상 사용할 수 없습니다.")
+            if row.expires_at and row.expires_at < datetime.now(timezone.utc):
+                raise HTTPException(410, "만료된 링크입니다.")
+            if row.max_clicks is not None and (row.click_count or 0) >= row.max_clicks:
+                raise HTTPException(410, "사용 가능 횟수가 소진된 링크입니다.")
+            if not verify_signature(row):
+                row.revoked_at = datetime.now(timezone.utc)
+                row.revoked_reason = "signature mismatch"
+                revoke_signature_mismatch = True
+            else:
+                target_url = row.target_url
+                row_id = row.id
+                row.click_count = (row.click_count or 0) + 1
+                row.last_clicked_at = datetime.now(timezone.utc)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        print(f"[short-links] rid={rid} lookup phase failed: {e!r}")
+        traceback.print_exc()
+        raise HTTPException(503, "단축 링크 서비스가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.")
 
-    if row.revoked_at is not None:
-        raise HTTPException(410, "이 링크는 더 이상 사용할 수 없습니다.")
-
-    if row.expires_at and row.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(410, "만료된 링크입니다.")
-
-    if row.max_clicks is not None and (row.click_count or 0) >= row.max_clicks:
-        raise HTTPException(410, "사용 가능 횟수가 소진된 링크입니다.")
-
-    if not verify_signature(row):
-        # 서명 위조 의심 — 자동 revoke + 로깅.
-        try:
-            row.revoked_at = datetime.now(timezone.utc)
-            row.revoked_reason = "signature mismatch"
-            await session.flush()
-        except Exception as _e:  # noqa: BLE001
-            print(f"[short-links] revoke flush failed: {_e!r}")
+    if revoke_signature_mismatch:
         raise HTTPException(410, "링크 서명 검증 실패 — 자동 무효화되었습니다.")
 
+    if not target_url:
+        # 도달 불가 — 위 분기에서 다 raise 했어야 함. 안전망.
+        raise HTTPException(404, "short link not found")
+
+    # ── Rate limit (DB 무관) ─────────────────────────────────────
     ip = request.client.host if request.client else ""
     if not rate_limit_ok(ip):
         raise HTTPException(429, "rate limit exceeded — 잠시 후 다시 시도해 주세요.")
 
-    target_url = row.target_url
-
-    # 클릭 카운트 + 이력 저장 — 실패해도 redirect 는 진행. INSERT 가 MySQL
-    # 의 utf8mb4 / 컬럼 길이 제약 등으로 fail 하면 logs 에만 기록.
+    # ── Phase 2: click 기록 (best-effort; 실패해도 redirect 진행) ──
     try:
-        row.click_count = (row.click_count or 0) + 1
-        row.last_clicked_at = datetime.now(timezone.utc)
-        session.add(ShortLinkClick(
-            short_link_id=row.id,
-            ip_hash=hash_ip(ip)[:64],
-            ua_family=ua_family(request.headers.get("user-agent", ""))[:40],
-            referer_host=extract_host(request.headers.get("referer", ""))[:120],
-        ))
-        await session.flush()
-    except Exception as _e:  # noqa: BLE001
+        async with session_scope() as click_session:
+            click_session.add(ShortLinkClick(
+                short_link_id=row_id,
+                ip_hash=hash_ip(ip)[:64],
+                ua_family=ua_family(request.headers.get("user-agent", ""))[:40],
+                referer_host=extract_host(request.headers.get("referer", ""))[:120],
+            ))
+    except Exception as e:  # noqa: BLE001
         import traceback
-        print(f"[short-links] click-count/history INSERT failed (redirect 진행): {_e!r}")
+        print(f"[short-links] rid={rid} click record INSERT failed (redirect 진행): {e!r}")
         traceback.print_exc()
-        try:
-            await session.rollback()
-        except Exception:
-            pass
 
     return RedirectResponse(url=target_url, status_code=302)
