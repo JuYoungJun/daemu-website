@@ -17,6 +17,7 @@ import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
 import { downloadCSV } from '../lib/csv.js';
+import MonitoringGuide from './MonitoringGuide.jsx';
 
 const KIND_LABEL = {
   outbox_failed: '발송 실패',
@@ -331,6 +332,7 @@ export default function AdminMonitoring() {
   const [severityFilter, setSeverityFilter] = useState('');
   const [search, setSearch] = useState('');
   const [showResolved, setShowResolved] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const persistResolved = (next) => {
     setResolved(next);
@@ -527,7 +529,15 @@ export default function AdminMonitoring() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">유지보수 모니터링</h1>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>유지보수 모니터링</h1>
+            <button type="button" className="btn" onClick={() => setShowGuide(true)}
+              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
+              사용 가이드 보기
+            </button>
+          </div>
+
+          {showGuide && <MonitoringGuide onClose={() => setShowGuide(false)} />}
 
           <AdminHelp title="모니터링 사용 안내" items={[
             '백엔드 운영 요약 카드들은 1분 주기로 새로고침되며 실제 backend DB 통계를 보여줍니다.',
@@ -911,7 +921,7 @@ export default function AdminMonitoring() {
               <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
               해결 표시한 항목 포함 ({counts.resolved})
             </label>
-            <button type="button" className="adm-btn-sm" disabled={!filteredIssues.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-issues-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filteredIssues,

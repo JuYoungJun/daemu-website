@@ -22,6 +22,7 @@ import { sendAdminReply, isEmailEnabled } from '../lib/email.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
+import InquiriesGuide from './InquiriesGuide.jsx';
 
 const STORAGE_KEY = 'inquiries';
 
@@ -63,6 +64,7 @@ export default function AdminInquiries() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const reload = async () => {
     setLoading(true); setError('');
@@ -201,7 +203,15 @@ export default function AdminInquiries() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">상담/문의</h1>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>상담/문의</h1>
+            <button type="button" className="btn" onClick={() => setShowGuide(true)}
+              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
+              사용 가이드 보기
+            </button>
+          </div>
+
+          {showGuide && <InquiriesGuide onClose={() => setShowGuide(false)} />}
 
           <AdminHelp title="상담관리 사용 안내" items={[
             'Contact 폼에서 들어온 문의는 자동으로 여기에 표시됩니다.',
@@ -218,7 +228,7 @@ export default function AdminInquiries() {
             <span className="adm-doc-pill" style={{ borderColor: STATUS_PILL_COLOR['답변완료'], color: STATUS_PILL_COLOR['답변완료'] }}>답변완료 {counts.done}</span>
             <span style={{ flex: 1 }} />
             <button type="button" className="adm-btn-sm" onClick={reload} disabled={loading}>{loading ? '불러오는 중…' : '새로고침'}</button>
-            <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-inquiries-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filtered,

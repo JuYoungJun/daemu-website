@@ -378,7 +378,7 @@ export default function AdminMailTemplates() {
               {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             <span style={{ flex: 1 }} />
-            <button type="button" className="adm-btn-sm" disabled={!templates.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-mail-templates-' + new Date().toISOString().slice(0, 10) + '.csv',
                 templates,

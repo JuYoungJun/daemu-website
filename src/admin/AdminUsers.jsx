@@ -20,6 +20,7 @@ import { Auth } from '../lib/auth.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { normalizeEmail } from '../lib/inputFormat.js';
+import UsersGuide from './UsersGuide.jsx';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_COLOR = { admin: '#c0392b', tester: '#1f5e7c', developer: '#b87333' };
@@ -52,6 +53,7 @@ export default function AdminUsers() {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [sortBy, setSortBy] = useState('id'); // id | email | last_login
+  const [showGuide, setShowGuide] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [detail, setDetail] = useState(null); // user object or null
 
@@ -230,7 +232,15 @@ export default function AdminUsers() {
     <AdminShell>
       <main className="page">
         <section className="wide admin-page">
-          <h1 className="page-title">사용자 권한 관리</h1>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>사용자 권한 관리</h1>
+            <button type="button" className="btn" onClick={() => setShowGuide(true)}
+              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
+              사용 가이드 보기
+            </button>
+          </div>
+
+          {showGuide && <UsersGuide onClose={() => setShowGuide(false)} />}
 
           {/* KPI 4 + 보안 KPI 3 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
@@ -326,7 +336,7 @@ export default function AdminUsers() {
                 <button type="button" className="adm-btn-sm danger" onClick={onBulkDelete}>선택 삭제</button>
               </>
             )}
-            <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-users-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filtered,

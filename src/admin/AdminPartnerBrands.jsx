@@ -122,7 +122,7 @@ export default function AdminPartnerBrands() {
             <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>전체 {brands.length}</span>
             <span className="adm-doc-pill" style={{ borderColor: '#2e7d32', color: '#2e7d32' }}>노출 {activeCount}</span>
             <span style={{ flex: 1 }} />
-            <button type="button" className="adm-btn-sm" disabled={!brands.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-partner-brands-' + new Date().toISOString().slice(0, 10) + '.csv',
                 sorted,

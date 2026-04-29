@@ -287,7 +287,7 @@ export default function AdminUtmBuilder() {
   }, [shortLinks]);
 
   const exportCsv = () => {
-    if (!history.length) return;
+    // 빈 history 라도 미리보기 모달이 "내보낼 데이터가 없습니다" 안내를 띄움 — 사용자가 disabled 인지 모르는 UX 문제 해결.
     downloadCSV(
       'daemu-utm-history-' + new Date().toISOString().slice(0, 10) + '.csv',
       history,
@@ -309,11 +309,11 @@ export default function AdminUtmBuilder() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-            <h1 className="page-title" style={{ marginBottom: 0 }}>UTM 빌더</h1>
-            <button type="button" className="adm-btn-sm" onClick={() => setShowGuide(true)}
-              style={{ background: '#1f5e7c', color: '#f6f4f0', borderColor: '#1f5e7c' }}>
-              📘 사용 가이드
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>UTM 빌더</h1>
+            <button type="button" className="btn" onClick={() => setShowGuide(true)}
+              style={{ background: '#1f5e7c', color: '#fff', border: '1px solid #1f5e7c' }}>
+              사용 가이드 보기
             </button>
           </div>
 
@@ -421,7 +421,7 @@ export default function AdminUtmBuilder() {
 
               <h3 className="admin-section-title" style={{ marginTop: 24 }}>저장된 이력 ({history.length})</h3>
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <button type="button" className="adm-btn-sm" disabled={!history.length} onClick={exportCsv}>
+                <button type="button" className="adm-btn-sm" onClick={exportCsv}>
                   CSV 내보내기
                 </button>
                 <span style={{ flex: 1 }} />

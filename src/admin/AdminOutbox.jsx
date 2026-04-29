@@ -55,7 +55,7 @@ export default function AdminOutbox() {
             <input type="search" placeholder="검색 (제목·수신자·내용)" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <span className="spacer"></span>
             <span style={{fontSize:11,color:'#8c867d',letterSpacing:'.08em'}}>{filtered.length}건</span>
-            <button type="button" className="adm-btn-sm" disabled={!filtered.length}
+            <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(
                 'daemu-outbox-' + new Date().toISOString().slice(0, 10) + '.csv',
                 filtered,
