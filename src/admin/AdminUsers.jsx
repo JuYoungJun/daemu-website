@@ -454,7 +454,10 @@ export default function AdminUsers() {
                     </td>
                     <td style={td}>
                       {u.totp_enabled ? (
-                        <span style={{ fontSize: 11, color: '#2e7d32' }}>활성</span>
+                        <span style={{ fontSize: 11, color: '#2e7d32' }}
+                          title={u.totp_app_label || '인증 앱 라벨 미등록'}>
+                          {u.totp_app_label ? `활성 (${u.totp_app_label})` : '활성'}
+                        </span>
                       ) : (
                         <span style={{ fontSize: 11, color: '#8c867d' }}>—</span>
                       )}
@@ -532,7 +535,17 @@ function UserDetailModal({ user, isMe, onClose, onUpdate, onDelete, onResetPassw
           <DT>2단계 인증 (TOTP)</DT>
           <DD>
             {user.totp_enabled ? (
-              <>활성 <span style={{ color: '#8c867d', fontSize: 12, marginLeft: 6 }}>recovery code {user.recovery_codes_count || 0}개</span></>
+              <>
+                활성
+                {user.totp_app_label && (
+                  <span style={{ color: '#5a534b', fontSize: 12, marginLeft: 6, padding: '2px 6px', background: '#f6f4f0', border: '1px solid #d7d4cf', borderRadius: 3 }}>
+                    {user.totp_app_label}
+                  </span>
+                )}
+                <span style={{ color: '#8c867d', fontSize: 12, marginLeft: 6 }}>
+                  recovery code {user.recovery_codes_count || 0}개
+                </span>
+              </>
             ) : <span style={{ color: '#8c867d' }}>비활성</span>}
           </DD>
           <DT>비번 변경 필요</DT>

@@ -6,6 +6,54 @@
   let pendingHero = null;
   let mode = 'structured'; // 'structured' | 'free'
 
+  // ── backend ↔ admin shape 매핑 ──────────────────────────────
+  function _mapBackendWork(it) {
+    return {
+      id: it.id,
+      slug: it.slug || '',
+      brand: it.category || '',
+      name: it.title || '',
+      title: it.title || '',
+      brandLine: it.summary || '',
+      overview: it.content_md || '',
+      hero: it.hero_image_url || '',
+      images: Array.isArray(it.gallery) ? it.gallery.map((g) => typeof g === 'string' ? { name: '', src: g } : g) : [],
+      tags: Array.isArray(it.tags) ? it.tags : [],
+      addr: it.location || '',
+      year: it.year || '',
+      size: it.size_label || '',
+      floor: it.floor_label || '',
+      status: it.published === false ? '비공개' : '운영중',
+      sort_order: it.sort_order || 0,
+    };
+  }
+  function _toBackendWork(p) {
+    return {
+      slug: p.slug,
+      title: p.name || p.title || '',
+      category: p.brand || '',
+      summary: p.brandLine || '',
+      content_md: p.overview || '',
+      hero_image_url: p.hero || '',
+      gallery: (p.images || []).map((g) => g && g.src ? g.src : g),
+      tags: p.tags || [],
+      location: p.addr || '',
+      year: p.year || '',
+      size_label: p.size || '',
+      floor_label: p.floor || '',
+      published: p.status !== '비공개',
+    };
+  }
+  async function hydrateFromBackend() {
+    if (!window.daemuHydrate) return;
+    await window.daemuHydrate({
+      storageKey: STORAGE_KEY,
+      endpoint: '/api/works?page=1&page_size=500',
+      mapItem: _mapBackendWork,
+      preserveLocal: true,  // backend 가 비어있으면 첫 부팅 시드 데이터 유지
+    });
+  }
+
   if (!DB.get(STORAGE_KEY).length) {
     [
       {brand:"Beclassy", name:"나주점", slug:"beclassy-naju", size:"170평", year:"2018", status:"운영중", addr:"전라남도 나주시 노안면 건재로 524-11",
@@ -262,14 +310,35 @@
     };
   }
 
-  function save() {
+  async function save() {
     const p = collectPayload();
     if (!p.name) { alert("지점명을 입력하세요"); return; }
     // slug uniqueness check
     const dup = DB.get(STORAGE_KEY).find(d => d.slug === p.slug && d.id !== editingId);
     if (dup) { alert("이미 사용 중인 슬러그입니다: " + p.slug); return; }
-    if (editingId !== null) DB.update(STORAGE_KEY, editingId, p);
-    else DB.add(STORAGE_KEY, p);
+    if (editingId !== null) {
+      const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
+      DB.update(STORAGE_KEY, editingId, p);
+      if (existing && existing._backend && window.daemuMirror) {
+        const r = await window.daemuMirror({
+          method: 'PATCH', endpoint: '/api/works/' + editingId,
+          body: _toBackendWork({ ...existing, ...p }),
+        });
+        if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+      }
+    } else if (window.daemuMirror) {
+      const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/works', body: _toBackendWork(p) });
+      if (r.ok && r.item && r.item.id != null) {
+        const all = DB.get(STORAGE_KEY);
+        all.unshift({ ...p, id: r.item.id, _backend: true });
+        DB.set(STORAGE_KEY, all);
+      } else {
+        DB.add(STORAGE_KEY, p);
+        if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+      }
+    } else {
+      DB.add(STORAGE_KEY, p);
+    }
     window.dispatchEvent(new Event('daemu-db-change'));
     resetForm();
     render();
@@ -286,15 +355,20 @@
     window.open(base + 'work/' + p.slug + '?preview=1', '_blank');
   }
 
-  function del(id) {
-    if (confirm('이 프로젝트를 삭제하시겠습니까?')) {
-      DB.del(STORAGE_KEY, id);
-      window.dispatchEvent(new Event('daemu-db-change'));
-      render();
+  async function del(id) {
+    if (!confirm('이 프로젝트를 삭제하시겠습니까?')) return;
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/works/' + id });
+      if (!r.ok) { alert('백엔드 삭제 실패 — 다시 시도해 주세요.'); return; }
     }
+    DB.del(STORAGE_KEY, id);
+    window.dispatchEvent(new Event('daemu-db-change'));
+    render();
   }
 
   render();
+  hydrateFromBackend().then(render);
 
-  Object.assign(window, { setMode, filtered, render, renderThumbs, renderHeroThumb, addImages, addHeroImage, removeImage, removeHero, openAdd, openEdit, resetForm, save, del, previewProject });
+  Object.assign(window, { setMode, filtered, render, renderThumbs, renderHeroThumb, addImages, addHeroImage, removeImage, removeHero, openAdd, openEdit, resetForm, save, del, previewProject, hydrateFromBackend });
 })();

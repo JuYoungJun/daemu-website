@@ -4,6 +4,49 @@ const STORAGE_KEY = "popups";
 let editingId = null;
 let pendingImage = null;
 
+// ── backend ↔ admin shape 매핑 ──────────────────────────────
+function _mapBackendPopup(it) {
+  return {
+    id: it.id,
+    title: it.title || '',
+    body: it.body || '',
+    image: it.image_url || '',
+    ctaText: it.cta_label || '',
+    ctaUrl: it.cta_href || '',
+    position: it.placement || 'center',
+    frequency: it.frequency || 'daily',
+    status: it.active ? 'active' : 'paused',
+    from: it.schedule_start ? new Date(it.schedule_start).toISOString().slice(0, 10) : '',
+    to: it.schedule_end ? new Date(it.schedule_end).toISOString().slice(0, 10) : '',
+    targetPages: [it.page_key || 'all'],
+    impressions: 0, clicks: 0,
+  };
+}
+function _toBackendPopup(p) {
+  return {
+    page_key: (p.targetPages && p.targetPages[0]) || 'all',
+    title: p.title || '',
+    body: p.body || '',
+    image_url: p.image || '',
+    cta_label: p.ctaText || '',
+    cta_href: p.ctaUrl || '',
+    placement: p.position || 'center',
+    frequency: p.frequency || 'daily',
+    schedule_start: p.from || null,
+    schedule_end: p.to || null,
+    active: p.status !== 'paused',
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/popups?page=1&page_size=200',
+    mapItem: _mapBackendPopup,
+    preserveLocal: true,
+  });
+}
+
 const POSITION_LABEL = { center: "중앙", "bottom-right": "우하단", top: "상단" };
 const FREQ_LABEL = { always: "매번", daily: "하루 1회", once: "영구 1회" };
 const PAGE_LABEL = { all:"전체", home:"메인", about:"About", service:"Service", team:"Team", process:"Process", work:"Work", contact:"Contact", partners:"Partners" };
@@ -191,23 +234,54 @@ function buildPayload() {
   };
 }
 
-function save() {
+async function save() {
   const p = buildPayload();
   if (!p.title) { alert("제목을 입력하세요"); return; }
-  if (editingId !== null) DB.update(STORAGE_KEY, editingId, p);
-  else DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
+  if (editingId !== null) {
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
+    DB.update(STORAGE_KEY, editingId, p);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/popups/' + editingId, body: _toBackendPopup({ ...existing, ...p }) });
+      if (!r.ok) alert('백엔드 동기화 실패');
+    }
+  } else if (window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/popups', body: _toBackendPopup(p) });
+    if (r.ok && r.item && r.item.id != null) {
+      const all = DB.get(STORAGE_KEY);
+      all.unshift({ ...p, id: r.item.id, _backend: true, impressions: 0, clicks: 0 });
+      DB.set(STORAGE_KEY, all);
+    } else {
+      DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
+      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    }
+  } else {
+    DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
+  }
   resetForm();
   render();
 }
 
-function toggleStatus(id) {
+async function toggleStatus(id) {
   const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
-  DB.update(STORAGE_KEY, id, { status: d.status === "paused" ? "active" : "paused" });
+  const next = d.status === "paused" ? "active" : "paused";
+  DB.update(STORAGE_KEY, id, { status: next });
+  if (d._backend && window.daemuMirror) {
+    await window.daemuMirror({ method: 'PATCH', endpoint: '/api/popups/' + id, body: { active: next === 'active' } });
+  }
   render();
 }
 
-function del(id) { if (confirmDel("이 팝업을 삭제하시겠습니까?")) { DB.del(STORAGE_KEY, id); render(); } }
+async function del(id) {
+  if (!confirmDel("이 팝업을 삭제하시겠습니까?")) return;
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/popups/' + id });
+    if (!r.ok) { alert('백엔드 삭제 실패'); return; }
+  }
+  DB.del(STORAGE_KEY, id);
+  render();
+}
 
 /* Preview — render the popup overlay using the same public-site CSS classes */
 function previewForm() { showPreview(buildPayload()); }
@@ -239,7 +313,8 @@ function showPreview(popup) {
 }
 
 render();
+hydrateFromBackend().then(render);
 
 
-Object.assign(window, { getCheckedPages, setCheckedPages, onImage, pickFromLibrary, renderThumb, removeImage, escapeHtml, fmtPeriod, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, toggleStatus, del, previewForm, preview, showPreview });
+Object.assign(window, { getCheckedPages, setCheckedPages, onImage, pickFromLibrary, renderThumb, removeImage, escapeHtml, fmtPeriod, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, toggleStatus, del, previewForm, preview, showPreview, hydrateFromBackend });
 })();

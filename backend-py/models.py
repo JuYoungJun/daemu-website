@@ -65,6 +65,11 @@ class AdminUser(Base):
     # array of bcrypt-hashed single-use backup codes.
     totp_secret: Mapped[str] = mapped_column(String(64), default="")
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 사용자가 등록한 인증 앱 라벨 — Google Authenticator / Authy / 1Password /
+    # Microsoft Authenticator / 기타. 디바이스 분실 시 어떤 앱에서 복구해야
+    # 하는지 운영자가 즉시 식별 가능. 권한이 있는 어드민이 /admin/users 에서
+    # 보고 reset 처리.
+    totp_app_label: Mapped[str] = mapped_column(String(40), default="")
     recovery_codes: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -504,3 +509,92 @@ class AuditLog(Base):
     request_id: Mapped[str] = mapped_column(String(40), default="", index=True)
     detail: Mapped[list | dict | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+# ---------------------------------------------------------------------------
+# Inventory — SKU 표준 (DAEMU-CAT-NNNN-LL) + LOT/유통기한 추적
+#
+# SKU 형식: DAEMU-CAT-NNNN-LL
+#   CAT: 3자리 카테고리 — BAK(베이커리), CAF(카페), EQP(설비), PCK(패키징), MSC(기타)
+#   NNNN: 카테고리 내 일련번호 (4자리, 0001~)
+#   LL: 옵션 (사이즈/맛/색깔, 없으면 00)
+# 예: DAEMU-BAK-0042-S1
+#
+# StockLot 은 식품 B2B 운영을 위해 LOT 단위로 입고/출고/유통기한 추적.
+# Order 차감 시 expires_at 가장 이른 LOT 부터 FIFO 로 차감.
+
+class Product(Base):
+    """SKU 마스터 — 카테고리 + 일련번호 + 옵션 + 재고/임계치."""
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sku: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(190))
+    category_code: Mapped[str] = mapped_column(String(3), index=True)  # BAK / CAF / EQP / PCK / MSC
+    category_label: Mapped[str] = mapped_column(String(40), default="")  # 한글 표시명
+    option_code: Mapped[str] = mapped_column(String(2), default="00")
+    option_label: Mapped[str] = mapped_column(String(60), default="")
+    unit: Mapped[str] = mapped_column(String(16), default="EA")  # EA / BOX / KG / L
+    price: Mapped[int] = mapped_column(Integer, default=0)
+    stock_count: Mapped[int] = mapped_column(Integer, default=0)
+    low_stock_threshold: Mapped[int] = mapped_column(Integer, default=10)
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str] = mapped_column(String(500), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StockLot(Base):
+    """LOT 단위 재고 — 식품 안전 / 리콜 추적용. expires_at 가장 이른 LOT 부터 FIFO 차감."""
+    __tablename__ = "stock_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sku: Mapped[str] = mapped_column(String(40), index=True)
+    lot_number: Mapped[str] = mapped_column(String(40), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=0)
+    produced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, index=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    supplier: Mapped[str] = mapped_column(String(190), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    quarantined: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StockHistory(Base):
+    """재고 변동 이력 — 발주/재입고/조정/폐기 audit trail."""
+    __tablename__ = "stock_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sku: Mapped[str] = mapped_column(String(40), index=True)
+    lot_id: Mapped[int | None] = mapped_column(ForeignKey("stock_lots.id"), nullable=True)
+    delta: Mapped[int] = mapped_column(Integer)  # 음수=출고, 양수=입고
+    reason: Mapped[str] = mapped_column(String(40), default="")  # order / restock / adjust / discard / quarantine
+    ref_type: Mapped[str] = mapped_column(String(40), default="")  # order / lot / manual
+    ref_id: Mapped[str] = mapped_column(String(60), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Announcement(Base):
+    """공지 / 프로모션 — 어드민이 작성, 파트너 포털 + (옵션)공개 페이지에 노출."""
+    __tablename__ = "announcements"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(190))
+    body: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(16), default="notice", index=True)  # notice / promo / urgent
+    target: Mapped[str] = mapped_column(String(24), default="partner_portal", index=True)  # all / partner_portal
+    image_url: Mapped[str] = mapped_column(String(500), default="")
+    cta_label: Mapped[str] = mapped_column(String(60), default="")
+    cta_href: Mapped[str] = mapped_column(String(500), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    scheduled_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

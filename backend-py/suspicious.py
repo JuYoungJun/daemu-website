@@ -59,6 +59,50 @@ def hash_ua(ua: str) -> str:
     return hashlib.sha256(ua.encode("utf-8")).hexdigest()
 
 
+async def record_async(
+    session,
+    *,
+    reason: str,
+    severity: str = "medium",
+    ip: str = "",
+    user_agent: str = "",
+    path: str = "",
+    method: str = "",
+    status_code: int = 0,
+    request_id: str = "",
+    actor_user_id: int | None = None,
+    detail: dict[str, Any] | None = None,
+):
+    """Async session 호환 record. auth.py / FastAPI route 에서 호출."""
+    if severity not in SEVERITY_VALID:
+        severity = "medium"
+    ev = SuspiciousEvent(
+        reason=reason,
+        severity=severity,
+        ip=(ip or "")[:45],
+        user_agent_hash=hash_ua(user_agent),
+        path=(path or "")[:255],
+        method=(method or "")[:10],
+        status_code=status_code or 0,
+        request_id=(request_id or "")[:40],
+        actor_user_id=actor_user_id,
+        detail=detail or {},
+        evidence=False,
+    )
+    session.add(ev)
+    try:
+        await session.flush()
+    except Exception as _e:  # noqa: BLE001
+        # SuspiciousEvent INSERT 실패는 보안 모듈 자체에서 silent fail —
+        # 호출자(login handler 등) 의 본 흐름을 막아선 안 됨.
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        return None
+    return ev
+
+
 def record(
     session: Session,
     *,

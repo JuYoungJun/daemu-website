@@ -3,6 +3,43 @@
 const STORAGE_KEY = "partners";
 let editingId = null;
 
+// ── backend ↔ admin shape 매핑 ──────────────────────────────
+function _mapBackendPartner(it) {
+  return {
+    id: it.id,
+    name: it.company_name || '',
+    person: it.contact_name || '',
+    email: it.email || '',
+    phone: it.phone || '',
+    type: it.category || '',
+    role: '발주 전용',
+    active: it.status === '비활성' ? 'inactive' : 'active',
+    note: it.intro || '',
+    status: it.status || '대기',  // 대기 / 승인 / 비활성
+    approved_at: it.approved_at || null,
+    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko-KR') : '',
+  };
+}
+function _toBackendPartner(p) {
+  return {
+    company_name: p.name || '',
+    contact_name: p.person || '',
+    email: p.email || '',
+    phone: p.phone || '',
+    category: p.type || '',
+    intro: p.note || '',
+    status: p.active === 'inactive' ? '비활성' : (p.status || '승인'),
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/partners?page=1&page_size=500',
+    mapItem: _mapBackendPartner,
+  });
+}
+
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fr = document.getElementById("filter-role").value;
@@ -68,7 +105,7 @@ function resetForm() {
   editingId = null;
 }
 
-function save() {
+async function save() {
   const name = document.getElementById("f-name").value.trim();
   if (!name) { alert("회사명을 입력하세요"); return; }
   const payload = {
@@ -81,22 +118,55 @@ function save() {
     active: document.getElementById("f-active").value,
     note: document.getElementById("f-note").value
   };
-  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
-  else DB.add(STORAGE_KEY, payload);
+  if (editingId !== null) {
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
+    DB.update(STORAGE_KEY, editingId, payload);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/partners/' + editingId, body: _toBackendPartner({ ...existing, ...payload }) });
+      if (!r.ok) alert('백엔드 동기화 실패');
+    }
+  } else if (window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/partners', body: _toBackendPartner(payload) });
+    if (r.ok && r.item && r.item.id != null) {
+      const all = DB.get(STORAGE_KEY);
+      all.unshift({ ...payload, id: r.item.id, _backend: true });
+      DB.set(STORAGE_KEY, all);
+    } else {
+      DB.add(STORAGE_KEY, payload);
+      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    }
+  } else {
+    DB.add(STORAGE_KEY, payload);
+  }
   resetForm();
   render();
 }
 
-function toggleActive(id) {
+async function toggleActive(id) {
   const d = DB.get(STORAGE_KEY).find(x => x.id === id);
   if (!d) return;
-  DB.update(STORAGE_KEY, id, { active: (d.active === "inactive" ? "active" : "inactive") });
+  const next = d.active === "inactive" ? "active" : "inactive";
+  DB.update(STORAGE_KEY, id, { active: next });
+  if (d._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/partners/' + id, body: { status: next === 'inactive' ? '비활성' : '승인' } });
+    if (!r.ok) alert('백엔드 동기화 실패');
+  }
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
+async function del(id) {
+  if (!confirmDel()) return;
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/partners/' + id });
+    if (!r.ok) { alert('백엔드 삭제 실패'); return; }
+  }
+  DB.del(STORAGE_KEY, id);
+  render();
+}
 render();
+hydrateFromBackend().then(render);
 
 
-Object.assign(window, { filtered, render, openAdd, openEdit, resetForm, save, toggleActive, del });
+Object.assign(window, { filtered, render, openAdd, openEdit, resetForm, save, toggleActive, del, hydrateFromBackend });
 })();

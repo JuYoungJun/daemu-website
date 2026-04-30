@@ -4,6 +4,47 @@ const STORAGE_KEY = "campaigns";
 const SUB_KEY = "subscribers";
 let editingId = null;
 
+// ── backend ↔ admin shape 매핑 ──────────────────────────────
+function _mapBackendCampaign(it) {
+  const filt = it.recipient_filter || {};
+  return {
+    id: it.id,
+    title: it.name || '',
+    channel: it.channel || 'Email',
+    subject: it.subject || '',
+    body: it.body || '',
+    image: (Array.isArray(it.images) && it.images[0]) || '',
+    status: it.status || 'draft',
+    scheduledFor: it.scheduled_at || null,
+    sentDate: it.sent_at ? new Date(it.sent_at).toLocaleDateString('ko') : '',
+    recipients: it.sent_count || 0,
+    opens: 0,
+    clicks: 0,
+    segGroup: filt.group || 'crm',
+    segStage: filt.stage || '',
+    segTags: filt.tags || [],
+  };
+}
+function _toBackendCampaign(p) {
+  return {
+    name: p.title,
+    channel: p.channel,
+    subject: p.subject || '',
+    body: p.body || '',
+    images: p.image ? [p.image] : [],
+    recipient_filter: { group: p.segGroup, stage: p.segStage, tags: p.segTags || [] },
+    status: p.status || 'draft',
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/campaigns?page=1&page_size=500',
+    mapItem: _mapBackendCampaign,
+  });
+}
+
 // 데모 뉴스레터 구독자 시드 제거 — 실제 구독은 Partners/Contact 페이지의 구독 폼에서 들어옵니다.
 
 function onChannel() {
@@ -180,8 +221,31 @@ async function save() {
     extra.scheduledFor = new Date(Date.now()+24*3600*1000).toLocaleDateString('ko');
   }
   const final = { ...p, status, ...extra };
-  if (editingId !== null) DB.update(STORAGE_KEY, editingId, final);
-  else DB.add(STORAGE_KEY, final);
+  if (editingId !== null) {
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
+    DB.update(STORAGE_KEY, editingId, final);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({
+        method: 'PATCH', endpoint: '/api/campaigns/' + editingId,
+        body: _toBackendCampaign({ ...existing, ...final }),
+      });
+      if (!r.ok) alert('백엔드 동기화 실패');
+    }
+  } else if (window.daemuMirror) {
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/campaigns', body: _toBackendCampaign(final),
+    });
+    if (r.ok && r.item && r.item.id != null) {
+      const all = DB.get(STORAGE_KEY);
+      all.unshift({ ...final, id: r.item.id, _backend: true });
+      DB.set(STORAGE_KEY, all);
+    } else {
+      DB.add(STORAGE_KEY, final);
+      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    }
+  } else {
+    DB.add(STORAGE_KEY, final);
+  }
   resetForm();
   render();
   if (status === "sent") {
@@ -235,7 +299,16 @@ async function sendNow(id) {
   else alert("발송 시뮬레이션 완료 (이메일 API 미설정)");
 }
 
-function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
+async function del(id) {
+  if (!confirmDel()) return;
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/campaigns/' + id });
+    if (!r.ok) { alert('백엔드 삭제 실패'); return; }
+  }
+  DB.del(STORAGE_KEY, id);
+  render();
+}
 
 /* Newsletter subscribers */
 function renderSubs() {
@@ -273,7 +346,8 @@ function delSub(id) { if (confirmDel()) { DB.del(SUB_KEY, id); render(); } }
 onChannel();
 updateRecipients();
 render();
+hydrateFromBackend().then(render);
 
 
-Object.assign(window, { onChannel, getRecipients, updateRecipients, fmtPct, statusLabel, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, mockSendStats, sendNow, del, renderSubs, addSub, toggleSub, delSub, pickCampaignImage });
+Object.assign(window, { onChannel, getRecipients, updateRecipients, fmtPct, statusLabel, filtered, renderKPI, render, openAdd, openEdit, resetForm, buildPayload, save, mockSendStats, sendNow, del, renderSubs, addSub, toggleSub, delSub, pickCampaignImage, hydrateFromBackend });
 })();

@@ -1,6 +1,45 @@
 (function() {
   'use strict';
 const STORAGE_KEY = "crm";
+
+// ── backend ↔ admin shape 매핑 ──────────────────────────────
+function _mapBackendCrm(it) {
+  return {
+    id: it.id,
+    name: it.name || '',
+    company: '',  // backend 모델에 회사명 분리 컬럼 없음 — notes 에 같이 들어감
+    email: it.email || '',
+    phone: it.phone || '',
+    source: it.source || '',
+    status: it.status || 'lead',
+    value: it.estimated_amount || 0,
+    tags: Array.isArray(it.tags) ? it.tags : [],
+    summary: it.notes || '',
+    notes: [],
+    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko') : '',
+  };
+}
+function _toBackendCrm(p) {
+  return {
+    name: p.name || '',
+    email: p.email || '',
+    phone: p.phone || '',
+    source: p.source || '',
+    status: p.status || 'lead',
+    estimated_amount: Number(p.value || 0),
+    tags: p.tags || [],
+    notes: p.summary || '',
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/crm?page=1&page_size=500',
+    mapItem: _mapBackendCrm,
+  });
+}
+
 const STAGES = [
   {key:"lead",       label:"리드",     en:"Lead"},
   {key:"qualified",  label:"검토중",   en:"Qualified"},

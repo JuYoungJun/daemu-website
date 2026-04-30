@@ -25,10 +25,22 @@ export default function TwoFactorPanel({ user, onClose }) {
   const [otpauthUri, setOtpauthUri] = useState('');
   const [qrPng, setQrPng] = useState('');
   const [code, setCode] = useState('');
+  const [appLabel, setAppLabel] = useState('Google Authenticator');
   const [pwForDisable, setPwForDisable] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // 분실/잘못 등록 시 운영자가 어떤 앱이었는지 보고 사용자에게 안내 가능.
+  const APP_OPTIONS = [
+    'Google Authenticator',
+    'Authy',
+    '1Password',
+    'Microsoft Authenticator',
+    'Bitwarden',
+    'Yubico Authenticator',
+    '기타',
+  ];
 
   const beginSetup = async () => {
     setError(''); setLoading(true);
@@ -44,7 +56,10 @@ export default function TwoFactorPanel({ user, onClose }) {
   const confirmEnable = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
-    const r = await api.post('/api/auth/totp/enable', { code: code.trim() });
+    const r = await api.post('/api/auth/totp/enable', {
+      code: code.trim(),
+      app_label: (appLabel || '').trim().slice(0, 40),
+    });
     setLoading(false);
     if (!r.ok) { setError(r.error || '인증 코드가 일치하지 않습니다.'); return; }
     setRecoveryCodes(r.recovery_codes || []);
@@ -112,6 +127,15 @@ export default function TwoFactorPanel({ user, onClose }) {
             </Field>
 
             <form onSubmit={confirmEnable} style={{ marginTop: 16 }}>
+              <Field label="사용 중인 인증 앱">
+                <select value={appLabel} onChange={(e) => setAppLabel(e.target.value)}
+                  style={{ width: '100%', padding: 10, border: '1px solid #d7d4cf', fontSize: 13, background: '#fff' }}>
+                  {APP_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+                <span style={{ fontSize: 11, color: '#8c867d', display: 'block', marginTop: 4 }}>
+                  분실/잘못 등록 시 운영자가 어떤 앱에서 복구해야 하는지 식별하기 위해 기록합니다.
+                </span>
+              </Field>
               <Field label="앱이 표시한 6자리 코드">
                 <input type="text" inputMode="numeric" pattern="\d{6}" autoComplete="one-time-code"
                   autoFocus maxLength={6} value={code} onChange={(e) => setCode(e.target.value)}
@@ -154,6 +178,11 @@ export default function TwoFactorPanel({ user, onClose }) {
             <p style={{ fontSize: 13, lineHeight: 1.7, color: '#5a534b' }}>
               현재 <strong>2단계 인증이 활성</strong>되어 있습니다. 로그인 시 비밀번호와 함께 인증 앱 코드가 필요합니다.
             </p>
+            {user?.totp_app_label && (
+              <p style={{ fontSize: 12, color: '#5a534b', background: '#f6f4f0', border: '1px solid #d7d4cf', padding: '8px 10px', borderRadius: 4 }}>
+                등록된 인증 앱: <strong>{user.totp_app_label}</strong>
+              </p>
+            )}
             <p style={{ fontSize: 12, color: '#8c867d' }}>
               비활성화하려면 비밀번호로 본인 확인이 필요합니다.
             </p>

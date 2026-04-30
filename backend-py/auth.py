@@ -174,6 +174,10 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "analytics":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ, ROLE_DEVELOPER: _READ},
     # Contracts — PDF rasterize endpoint 권한.
     "contracts":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
+    # 공지/프로모션 — 어드민 작성, 공개 사이트 + 파트너 포털 노출.
+    "announcements": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
+    # 재고 / SKU / LOT / 유통기한 관리.
+    "inventory":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
 }
 
 
@@ -213,6 +217,9 @@ class UserOut(BaseModel):
     role: str
     must_change_password: bool = False
     totp_enabled: bool = False
+    # 사용자가 등록한 인증 앱 — 분실/잘못 등록 시 본인이 어떤 앱 다시 깔아야
+    # 하는지 즉시 식별 가능. 빈 문자열 = 라벨 미등록 (구버전 사용자).
+    totp_app_label: str = ""
     # 첫 접속 시 이메일 인증 필요 여부 — frontend 가 이 필드를 보고
     # 인증 화면을 먼저 띄울지 결정. None 이면 미인증, 있으면 인증된 시각.
     email_verified_at: datetime | None = None
@@ -466,6 +473,24 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
     if _login_throttle.is_locked(ip):
         await log_event(session, request, action="login.throttled",
                         actor_email=payload.email, detail={"ip": ip})
+        # B2 — brute force 의심 이벤트 기록 (high severity, 90일 보존).
+        try:
+            from suspicious import record_async as _suspicious_record
+            rid = getattr(request.state, "request_id", "") if request else ""
+            await _suspicious_record(
+                session,
+                reason="brute_force_login",
+                severity="high",
+                ip=ip,
+                user_agent=request.headers.get("user-agent", "") if request else "",
+                path=str(request.url.path) if request else "",
+                method=request.method if request else "",
+                status_code=429,
+                request_id=rid,
+                detail={"email": payload.email},
+            )
+        except Exception:
+            pass
         raise HTTPException(429, detail="로그인 시도가 너무 많습니다. 15분 후 다시 시도해 주세요.")
 
     res = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
@@ -509,6 +534,7 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
             id=user.id, email=user.email, name=user.name, role=user.role,
             must_change_password=user.must_change_password,
             totp_enabled=user.totp_enabled,
+            totp_app_label=user.totp_app_label or "",
             email_verified_at=user.email_verified_at,
         ),
     )
@@ -520,6 +546,7 @@ async def me(user: AdminUser = Depends(require_user)):
         id=user.id, email=user.email, name=user.name, role=user.role,
         must_change_password=user.must_change_password,
         totp_enabled=user.totp_enabled,
+        totp_app_label=user.totp_app_label or "",
         email_verified_at=user.email_verified_at,
     )
 
@@ -529,6 +556,10 @@ async def me(user: AdminUser = Depends(require_user)):
 
 class TotpEnableIn(BaseModel):
     code: str  # 6-digit code from authenticator app to verify the secret
+    # 사용자가 등록한 인증 앱 라벨 — Google Authenticator / Authy / 1Password /
+    # Microsoft Authenticator / 기타. 분실 시 어떤 앱에서 복구해야 하는지
+    # 운영자가 식별 가능. 임의 입력은 40자로 절단.
+    app_label: str = ""
 
 
 class TotpDisableIn(BaseModel):
@@ -594,6 +625,8 @@ async def totp_enable(
     if not pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
         raise HTTPException(401, detail="인증 코드가 일치하지 않습니다.")
     user.totp_enabled = True
+    # 인증 앱 라벨 기록 — 추후 분실/잘못 등록 시 운영자가 식별 가능.
+    user.totp_app_label = (payload.app_label or "").strip()[:40]
 
     # Generate 8 single-use recovery codes (returned to caller ONCE; stored
     # hashed). Format: XXXX-XXXX (uppercase alphanumeric, easy to type).
@@ -722,6 +755,7 @@ async def list_users(session: AsyncSession = Depends(get_session), _u: AdminUser
                 "id": r.id, "email": r.email, "name": r.name, "role": r.role, "active": r.active,
                 "must_change_password": bool(r.must_change_password),
                 "totp_enabled": bool(r.totp_enabled),
+                "totp_app_label": r.totp_app_label or "",
                 "email_verified_at": r.email_verified_at.isoformat() if r.email_verified_at else None,
                 "last_login_at": r.last_login_at.isoformat() if r.last_login_at else None,
                 "password_changed_at": r.password_changed_at.isoformat() if r.password_changed_at else None,
@@ -814,11 +848,13 @@ async def update_user(user_id: int, payload: UserUpdateIn, session: AsyncSession
         target.totp_enabled = False
         target.totp_secret = ""
         target.recovery_codes = []
+        target.totp_app_label = ""
     await session.flush()
     return {"ok": True, "user": {
         "id": target.id, "email": target.email, "name": target.name, "role": target.role,
         "active": target.active, "must_change_password": target.must_change_password,
         "totp_enabled": target.totp_enabled,
+        "totp_app_label": target.totp_app_label or "",
         "email_verified_at": target.email_verified_at.isoformat() if target.email_verified_at else None,
     }}
 

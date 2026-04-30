@@ -311,6 +311,8 @@ export default function AdminGate() {
     'users':         ['admin'],
     'api-docs':      ['admin', 'developer'],
     'security':      ['admin', 'developer'],
+    'announcements': ['admin', 'developer'],
+    'inventory':     ['admin', 'tester'],
   };
   const can = (k) => PERM[k]?.includes(me.role);
   // 한국어 역할 라벨. admin = Super Admin (모든 권한),
@@ -441,6 +443,7 @@ export default function AdminGate() {
               {can('partners')  && <MenuCard to="/admin/partners" title="파트너 계정 관리" desc="파트너 계정 발급, 권한 설정, 승인을 관리합니다." items={['신규 계정 발급','계정 승인/거절','역할 및 권한 설정','계정 비활성화']} />}
               {can('orders')    && <MenuCard to="/admin/orders" title="발주 관리" desc="파트너 발주 접수, 처리, 출고 상태를 관리합니다." items={['신규 발주 확인','발주 상태 변경','정산 내역 관리','출고/배송 추적']} />}
               {can('products')  && <MenuCard to="/admin/products" title="발주 상품 관리" desc="파트너 포털에 노출되는 발주 카탈로그(카테고리·상품·가격·이미지)를 관리합니다." items={['카테고리 추가/수정/삭제','상품 등록·가격·재고','이미지·이모지 설정','즉시 파트너 포털 반영']} />}
+              {can('inventory') && <MenuCard to="/admin/inventory" title="재고 / SKU / LOT" desc="표준 SKU 발급, 재고 추적, LOT 단위 유통기한 관리. FIFO 차감 + D-3 임박 알림." items={['표준 SKU (DAEMU-CAT-NNNN-LL) 자동 발급','LOT 단위 입고 + 유통기한','D-3 임박 알림 + 만료 자동 격리','재고 부족 알림 (< 10)','30일 베스트셀러 TOP']} />}
               {can('stats')     && <MenuCard to="/admin/stats" title="통계 및 리포트" desc="방문자, 문의, 발주 등 주요 지표를 확인합니다." items={['방문자 통계','문의 유입 분석','발주 현황 리포트','월별 매출 추이']} />}
               {can('analytics') && <MenuCard to="/admin/analytics" title="마케팅 분석" desc="페이지뷰·체류시간·UTM·기기별 분포를 자동 집계합니다." items={['일자별 방문 추이','UTM 캠페인 추적','유입 채널 분석 (검색/SNS/직접)','CTA 클릭·폼 제출 카운트','CSV 내보내기 (마케팅 보고서)']} />}
               {can('media')     && <MenuCard to="/admin/media" title="미디어 관리" desc="이미지 및 영상을 업로드하고 관리합니다." items={['이미지 업로드','영상 업로드','미디어 라이브러리','용량 관리']} />}
@@ -454,6 +457,7 @@ export default function AdminGate() {
               {can('crm')       && <MenuCard to="/admin/crm" title="CRM" desc="리드와 고객 관계를 파이프라인 단계로 관리합니다." items={['리드 → 검토중 → 전환 단계 추적','태그·세그먼트 분류','활동 메모 타임라인','예상 거래 금액']} />}
               {can('campaign')  && <MenuCard to="/admin/campaign" title="캠페인" desc="이메일·SMS·Kakao 캠페인 작성, 예약, 발송, 결과 분석." items={['CRM 단계/태그 기반 세그먼트','즉시 / 예약 / 초안 저장','오픈율·클릭률 추적','뉴스레터 구독자 관리']} />}
               {can('promotion') && <MenuCard to="/admin/promotion" title="프로모션" desc="쿠폰 코드와 이벤트/공지를 관리합니다." items={['정률·정액·1+1 할인','유효기간·최대사용 횟수','실시간 사용량 추적','이벤트/공지 배너']} />}
+              {can('announcements') && <MenuCard to="/admin/announcements" title="공지 / 프로모션 (사이트·파트너 포털)" desc="공개 사이트와 파트너 포털 양쪽에 노출할 공지/프로모션을 한 곳에서 작성·예약·관리." items={['공지/프로모션/긴급 3종 분류','공개 사이트 + 파트너 포털 대상 선택','시작/종료 일시 예약 노출','이미지 + CTA 버튼','활성/비활성 즉시 토글']} />}
               {can('popup')     && <MenuCard to="/admin/popup" title="팝업" desc="사이트 팝업 배너를 등록·수정하고 노출 규칙을 관리합니다." items={['중앙/우하단/상단 위치','이미지 + CTA 버튼','노출 빈도 (매번/일1회/영구1회)','타겟 페이지 + 노출/클릭 추적']} />}
               {can('outbox')    && <MenuCard to="/admin/outbox" title="Outbox" desc="이메일·캠페인·계약서 발송 이력을 확인합니다." items={['백엔드 API 호출 로그','시뮬레이션 / 발송완료 / 실패 구분','수신자·제목·본문 검색','데모 환경에서도 발송 시뮬레이션 확인']} />}
               {can('monitoring') && <MenuCard to="/admin/monitoring" title="유지보수 모니터링" desc="운영 중 발생한 오류와 백엔드 헬스를 확인합니다." items={['백엔드 헬스 1분 주기 체크','24시간 발송 실패 카운트','API 호출 오류 누적','브라우저 런타임 에러 수집']} />}

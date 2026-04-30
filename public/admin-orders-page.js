@@ -4,6 +4,53 @@ const STORAGE_KEY = "orders";
 let editingId = null;
 let pendingAttachments = []; // [{ filename, content (base64), mimeType, previewUrl, isImage }]
 
+// ── 백엔드 ↔ localStorage 매핑 ──────────────────────────────────
+// backend Order 의 items 는 JSON 배열 — 우리는 단일 product/qty/price 만 쓰니
+// items[0] 으로 압축. 다중 라인 발주는 V2 에서 확장.
+function _mapBackendOrder(it) {
+  const first = (Array.isArray(it.items) && it.items[0]) || {};
+  return {
+    id: it.id,
+    po_no: it.po_no || first.po_no || it.title || ('#' + String(it.id).slice(-6)),
+    partner: first.partner_name || it.partner_name || '',
+    product: first.product || it.title || '',
+    qty: first.qty || 0,
+    price: first.price || 0,
+    status: it.status || '접수',
+    note: it.note || '',
+    contract: first.contract || '',
+    purchaseOrder: first.purchaseOrder || first.po_body || '',
+    attachments: first.attachments || [],
+    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko-KR') : '',
+  };
+}
+function _toBackendOrderPayload(p) {
+  return {
+    title: p.po_no || (p.product || '발주'),
+    status: p.status || '접수',
+    amount: Number(p.qty || 0) * Number(p.price || 0),
+    items: [{
+      partner_name: p.partner,
+      product: p.product,
+      qty: Number(p.qty || 0),
+      price: Number(p.price || 0),
+      contract: p.contract || '',
+      purchaseOrder: p.purchaseOrder || '',
+      attachments: p.attachments || [],
+      po_no: p.po_no || '',
+    }],
+    note: p.note || '',
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/orders?page=1&page_size=500',
+    mapItem: _mapBackendOrder,
+  });
+}
+
 function loadPartners() {
   const sel = document.getElementById("f-partner-pick");
   const partners = DB.get("partners");
@@ -109,7 +156,7 @@ function resetForm() {
   pendingAttachments = [];
 }
 
-function save() {
+async function save() {
   const partner = document.getElementById("f-partner").value.trim();
   if (!partner) { alert("파트너명을 입력하세요"); return; }
   const cf = document.getElementById("f-contract");
@@ -129,20 +176,62 @@ function save() {
     attachments: pendingAttachments,
   };
   if (editingId !== null) {
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
     DB.update(STORAGE_KEY, editingId, payload);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({
+        method: 'PATCH',
+        endpoint: '/api/orders/' + editingId,
+        body: _toBackendOrderPayload({ ...existing, ...payload }),
+      });
+      if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+    }
   } else {
     // 신규 발주 — PO 번호 자동 생성 + 입력된 SKU 가 카탈로그에 있으면 재고 차감.
     if (typeof window.nextPoNumber === 'function') {
       payload.po_no = window.nextPoNumber();
     }
-    const created = DB.add(STORAGE_KEY, payload);
-    // product 값에 SKU 형태(예: BAKERY-001) 가 들어있으면 재고 차감 시도.
+    // product 값에 SKU 형태(예: BAKERY-001) 가 들어있으면 재고 검증 + 차감.
+    // 재고 부족 시 발주 저장 자체를 차단 (발주 후 차감 실패가 아니라 사전 차단).
+    if (typeof window.decrementStock === 'function' && qty > 0) {
+      const m = /[A-Z][A-Z0-9_-]+-\d{3,}/.exec(String(product || ''));
+      if (m && typeof window.getStock === 'function') {
+        const cur = window.getStock(m[0]);
+        if (cur != null && cur < qty) {
+          alert(`재고 부족 — ${m[0]} 잔여 ${cur}, 요청 ${qty}. 발주를 저장할 수 없습니다.`);
+          return;
+        }
+      }
+    }
+    // backend 미러 — server id 우선 사용, 실패 시 client 측 임시 id.
+    if (window.daemuMirror) {
+      const r = await window.daemuMirror({
+        method: 'POST',
+        endpoint: '/api/orders',
+        body: _toBackendOrderPayload(payload),
+      });
+      if (r.ok && r.item && r.item.id != null) {
+        // server id 로 localStorage 추가
+        const all = DB.get(STORAGE_KEY);
+        const row = { ...payload, id: r.item.id, _backend: true,
+          date: r.item.created_at ? new Date(r.item.created_at).toLocaleDateString('ko-KR') : new Date().toLocaleDateString('ko-KR') };
+        all.unshift(row);
+        DB.set(STORAGE_KEY, all);
+        window.dispatchEvent(new Event('daemu-db-change'));
+      } else {
+        // backend 실패 시 localStorage 만 — 다음 hydrate 에서 정정될 수 있음.
+        DB.add(STORAGE_KEY, payload);
+        if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+      }
+    } else {
+      DB.add(STORAGE_KEY, payload);
+    }
     if (typeof window.decrementStock === 'function' && qty > 0) {
       const m = /[A-Z][A-Z0-9_-]+-\d{3,}/.exec(String(product || ''));
       if (m) {
-        const r = window.decrementStock(m[0], qty, 'order:' + (created?.po_no || created?.id || ''));
+        const r = window.decrementStock(m[0], qty, 'order:' + (payload.po_no || ''));
         if (!r.ok && r.error === 'insufficient stock') {
-          alert(`재고 부족 — ${m[0]} 잔여 ${r.current}, 요청 ${r.requested}. 발주는 저장됐지만 재고는 차감되지 않았습니다.`);
+          alert(`재고 부족 (사후 검증) — ${m[0]} 잔여 ${r.current}, 요청 ${r.requested}. 운영자 확인 필요.`);
         }
       }
     }
@@ -152,8 +241,29 @@ function save() {
   if (window.siteToast) window.siteToast('저장 완료', { tone: 'success' });
 }
 
-function updateStatus(id, status) { DB.update(STORAGE_KEY, id, { status }); render(); }
-function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
+async function updateStatus(id, status) {
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  DB.update(STORAGE_KEY, id, { status });
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({
+      method: 'PATCH',
+      endpoint: '/api/orders/' + id,
+      body: _toBackendOrderPayload({ ...existing, status }),
+    });
+    if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+  }
+  render();
+}
+async function del(id) {
+  if (!confirmDel()) return;
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/orders/' + id });
+    if (!r.ok) { alert('백엔드 삭제 실패 — 다시 시도해 주세요.'); return; }
+  }
+  DB.del(STORAGE_KEY, id);
+  render();
+}
 
 /* Attachments */
 async function addOrderAttachments(files) {
@@ -247,11 +357,14 @@ async function sendDoc(id, kind) {
   }
 }
 
+// 초기 로드: 동기 render → backend hydrate 끝나면 다시 render.
 render();
+hydrateFromBackend().then(render);
 
 Object.assign(window, {
   loadPartners, onPickPartner, fmtMoney, filtered, render,
   openAdd, openEdit, resetForm, save, updateStatus, del,
-  sendDoc, addOrderAttachments, removeOrderAttachment, renderAttachments
+  sendDoc, addOrderAttachments, removeOrderAttachment, renderAttachments,
+  hydrateFromBackend,
 });
 })();

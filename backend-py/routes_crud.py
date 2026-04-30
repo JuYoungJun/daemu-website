@@ -382,7 +382,24 @@ async def delete_inquiry(inquiry_id: int, session: AsyncSession = Depends(get_se
 # ---------------------------------------------------------------------------
 # Generic admin-only CRUD for the simpler entities
 
-def _crud(model, prefix: str, allowed_fields: set[str], create_fields: set[str] | None = None):
+def _crud(
+    model,
+    prefix: str,
+    allowed_fields: set[str],
+    create_fields: set[str] | None = None,
+    *,
+    pre_create=None,
+    post_create=None,
+    pre_update=None,
+    post_update=None,
+):
+    """Generic CRUD route factory.
+
+    Optional async hooks (signature `async (session, obj, payload, request) -> None`):
+      - pre_create: payload 만 들어옴, raise HTTPException 으로 차단 가능
+      - post_create / pre_update / post_update: obj 와 payload 가 같이
+    pre_create/pre_update 에서 HTTPException 던지면 정상적으로 클라이언트에 전달.
+    """
     create_fields = create_fields or allowed_fields
 
     @router.get(f"/{prefix}")
@@ -410,29 +427,40 @@ def _crud(model, prefix: str, allowed_fields: set[str], create_fields: set[str] 
     @router.post(f"/{prefix}", status_code=201)
     async def create_(
         payload: dict[str, Any],
+        request: Request,
         session: AsyncSession = Depends(get_session),
         _u: AdminUser = Depends(require_perm(prefix, "write")),
     ):
+        if pre_create:
+            await pre_create(session, payload, request, _u)
         data = {k: v for k, v in payload.items() if k in create_fields}
         obj = model(**data)
         session.add(obj)
         await session.flush()
+        if post_create:
+            await post_create(session, obj, payload, request, _u)
         return {"ok": True, "item": model_to_dict(obj)}
 
     @router.patch(f"/{prefix}/{{item_id}}")
     async def update_(
         item_id: int,
         payload: dict[str, Any],
+        request: Request,
         session: AsyncSession = Depends(get_session),
         _u: AdminUser = Depends(require_perm(prefix, "write")),
     ):
         obj = await session.get(model, item_id)
         if not obj:
             raise HTTPException(404, detail="not found")
+        if pre_update:
+            await pre_update(session, obj, payload, request, _u)
+        prev_values = {k: getattr(obj, k, None) for k in allowed_fields}
         for k, v in payload.items():
             if k in allowed_fields:
                 setattr(obj, k, v)
         await session.flush()
+        if post_update:
+            await post_update(session, obj, payload, request, _u, prev_values)
         return {"ok": True, "item": model_to_dict(obj)}
 
     @router.delete(f"/{prefix}/{{item_id}}", status_code=204)
@@ -443,11 +471,127 @@ def _crud(model, prefix: str, allowed_fields: set[str], create_fields: set[str] 
         await session.delete(obj)
 
 
+# ── Partner: 승인 시 환영 메일 자동 발송 ────────────────────────────────
+async def _partner_post_update(session, obj, payload, request, _u, prev_values):
+    """status 가 '대기' / 'pending' / 'review' → '승인' / 'approved' 로 바뀐
+    경우 신규파트너 환영 메일 자동 발송. 발송 실패해도 partner 상태 변경은
+    그대로 진행 (best-effort, audit log 에 결과 기록)."""
+    APPROVED = {"승인", "approved", "active", "활성"}
+    PENDING = {"대기", "pending", "review", "검토중", ""}
+    new_status = (obj.status or "").strip().lower()
+    prev_status = (str(prev_values.get("status") or "")).strip().lower()
+    if new_status in {s.lower() for s in APPROVED} and prev_status in {s.lower() for s in PENDING}:
+        # approved_at 도 함께 채움 (없으면)
+        if hasattr(obj, "approved_at") and not obj.approved_at:
+            from datetime import datetime as _dt, timezone as _tz
+            obj.approved_at = _dt.now(_tz.utc)
+            await session.flush()
+        try:
+            await _send_partner_welcome_email(session, obj)
+            from audit import log_event
+            await log_event(session, request, action="partner.welcome_email_sent",
+                            actor_user=_u, target_id=obj.id,
+                            detail={"partner_id": obj.id, "to": obj.email})
+        except Exception as e:  # noqa: BLE001
+            import traceback as _tb
+            print(f"[partner-welcome] send failed for {obj.email}: {e!r}")
+            _tb.print_exc()
+            try:
+                from audit import log_event
+                await log_event(session, request, action="partner.welcome_email_failed",
+                                actor_user=_u, target_id=obj.id,
+                                detail={"partner_id": obj.id, "error": str(e)[:200]})
+            except Exception:
+                pass
+
+
+async def _send_partner_welcome_email(session, partner):
+    """mail_template_lib (또는 mail_templates) 의 'partner_welcome' kind 를
+    사용. 없으면 기본 본문으로 발송."""
+    from main import send_email, FROM_EMAIL
+    # 우선 mail_template_lib 에서 partner_welcome kind 찾기. 없으면 fallback.
+    subject = "[대무] 파트너 가입 승인 안내"
+    body = (
+        f"{partner.company_name or partner.contact_name or '파트너'}님,\n\n"
+        f"DAEMU 베이커리·카페 컨설팅 파트너 가입이 승인되었습니다.\n"
+        f"이제 파트너 포털 (/partner-portal) 에서 발주 및 자료 다운로드를\n"
+        f"이용하실 수 있습니다.\n\n"
+        f"문의: daemu_office@naver.com\n"
+        f"감사합니다.\n"
+    )
+    try:
+        from models import MailTemplateLib
+        q = await session.execute(
+            select(MailTemplateLib).where(MailTemplateLib.kind == "partner_welcome").limit(1)
+        )
+        tpl = q.scalar_one_or_none()
+        if tpl:
+            subject = tpl.subject or subject
+            body_tpl = tpl.body or body
+            body = body_tpl.replace("{{company}}", partner.company_name or "")\
+                           .replace("{{contact}}", partner.contact_name or "")\
+                           .replace("{{email}}", partner.email or "")
+    except Exception:
+        pass
+    await send_email({
+        "from": FROM_EMAIL,
+        "to": [partner.email],
+        "subject": subject,
+        "text": body,
+    })
+
+
 _crud(Partner, "partners",
-      allowed_fields={"company_name", "contact_name", "email", "phone", "category", "intro", "status"})
+      allowed_fields={"company_name", "contact_name", "email", "phone", "category", "intro", "status"},
+      post_update=_partner_post_update)
+
+
+# ── Order: 발주 생성/수정 시 SKU 별 재고 차단 ──────────────────────────
+async def _order_pre_create(session, payload, request, _u):
+    """발주 items 의 SKU + qty 가 가용 재고를 초과하면 400 차단. items 는
+    [{sku, qty, ...}, ...] 형태로 가정. SKU 없으면 검사 skip."""
+    items = payload.get("items") or []
+    if not isinstance(items, list):
+        return
+    await _validate_stock_for_items(session, items)
+
+
+async def _order_pre_update(session, obj, payload, request, _u):
+    items = payload.get("items")
+    if items is None:
+        return  # items 변경 안 하는 update 는 skip
+    if not isinstance(items, list):
+        return
+    await _validate_stock_for_items(session, items)
+
+
+async def _validate_stock_for_items(session, items: list):
+    """각 item 의 sku 별 가용 재고를 합계로 검증. Product.stock_count 사용
+    (StockLot 까지는 V2 에서 FIFO 차감으로 확장)."""
+    from models import Product
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        sku = (it.get("sku") or "").strip()
+        qty = int(it.get("qty") or it.get("quantity") or 0)
+        if not sku or qty <= 0:
+            continue
+        q = await session.execute(select(Product).where(Product.sku == sku).limit(1))
+        prod = q.scalar_one_or_none()
+        if not prod:
+            # 등록 안 된 SKU 는 통과 (legacy 발주 호환)
+            continue
+        available = int(prod.stock_count or 0)
+        if qty > available:
+            raise HTTPException(
+                400,
+                detail=f"재고 부족 — {sku} 의 가용 재고는 {available}개입니다 (요청: {qty}개).",
+            )
+
 
 _crud(Order, "orders",
-      allowed_fields={"partner_id", "title", "status", "amount", "items", "due_date", "note"})
+      allowed_fields={"partner_id", "title", "status", "amount", "items", "due_date", "note"},
+      pre_create=_order_pre_create, pre_update=_order_pre_update)
 
 _crud(Work, "works",
       allowed_fields={"slug", "title", "category", "summary", "content_md", "hero_image_url",

@@ -5,6 +5,45 @@ const EV_KEY = "events";
 let editingId = null;
 let evEditingId = null;
 
+// ── backend ↔ admin shape 매핑 ──────────────────────────────
+function _mapBackendCoupon(it) {
+  return {
+    id: it.id,
+    code: it.code || '',
+    desc: it.title || '',
+    type: it.discount_type || 'percent',
+    value: it.discount_value || 0,
+    from: it.valid_from ? new Date(it.valid_from).toISOString().slice(0, 10) : '',
+    to: it.valid_to ? new Date(it.valid_to).toISOString().slice(0, 10) : '',
+    max: it.usage_limit || '',
+    uses: it.usage_count || 0,
+    status: it.active ? 'active' : 'paused',
+    image: '',
+    note: '',
+  };
+}
+function _toBackendCoupon(p) {
+  return {
+    title: p.desc || p.code,
+    code: p.code,
+    discount_type: p.type || 'percent',
+    discount_value: Number(p.value || 0),
+    valid_from: p.from || null,
+    valid_to: p.to || null,
+    usage_limit: Number(p.max || 0),
+    active: p.status !== 'paused' && p.status !== 'expired',
+  };
+}
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/promotions?page=1&page_size=200',
+    mapItem: _mapBackendCoupon,
+    preserveLocal: true,
+  });
+}
+
 function statusLabel(s) { return ({active:"활성",paused:"일시중지",expired:"만료"})[s] || s; }
 function typeLabel(t) { return ({percent:"정률",amount:"정액",bogo:"1+1"})[t] || t; }
 function onType() { /* placeholder for dynamic UI per type */ }
@@ -137,7 +176,7 @@ function renderThumb(wrap, url) {
   wrap.appendChild(img);
 }
 
-function save() {
+async function save() {
   const code = document.getElementById("f-code").value.trim().toUpperCase();
   if (!code) { alert("쿠폰 코드를 입력하세요"); return; }
   const dup = DB.get(STORAGE_KEY).find(d => d.code === code && d.id !== editingId);
@@ -155,7 +194,22 @@ function save() {
     note: document.getElementById("f-note").value
   };
   if (editingId !== null) {
+    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
     DB.update(STORAGE_KEY, editingId, payload);
+    if (existing && existing._backend && window.daemuMirror) {
+      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/promotions/' + editingId, body: _toBackendCoupon({ ...existing, ...payload }) });
+      if (!r.ok) alert('백엔드 동기화 실패');
+    }
+  } else if (window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/promotions', body: _toBackendCoupon(payload) });
+    if (r.ok && r.item && r.item.id != null) {
+      const all = DB.get(STORAGE_KEY);
+      all.unshift({ ...payload, id: r.item.id, _backend: true, uses: 0 });
+      DB.set(STORAGE_KEY, all);
+    } else {
+      DB.add(STORAGE_KEY, { ...payload, uses: 0 });
+      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    }
   } else {
     DB.add(STORAGE_KEY, { ...payload, uses: 0 });
   }
@@ -171,7 +225,16 @@ function bumpUse(id) {
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
+async function del(id) {
+  if (!confirmDel()) return;
+  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  if (existing && existing._backend && window.daemuMirror) {
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/promotions/' + id });
+    if (!r.ok) { alert('백엔드 삭제 실패'); return; }
+  }
+  DB.del(STORAGE_KEY, id);
+  render();
+}
 
 /* Events / Notices */
 function renderEvents() {
@@ -245,7 +308,8 @@ function evToggle(id) {
 function evDel(id) { if (confirmDel()) { DB.del(EV_KEY, id); render(); } }
 
 render();
+hydrateFromBackend().then(render);
 
 
-Object.assign(window, { statusLabel, typeLabel, onType, fmtMoney, isExpiredByDate, effectiveStatus, filtered, renderKPI, render, openAdd, openEdit, resetForm, save, bumpUse, del, renderEvents, openEvAdd, evEdit, evReset, evSave, evToggle, evDel, pickCouponImage, pickEventImage });
+Object.assign(window, { statusLabel, typeLabel, onType, fmtMoney, isExpiredByDate, effectiveStatus, filtered, renderKPI, render, openAdd, openEdit, resetForm, save, bumpUse, del, renderEvents, openEvAdd, evEdit, evReset, evSave, evToggle, evDel, pickCouponImage, pickEventImage, hydrateFromBackend });
 })();

@@ -186,6 +186,27 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
                 await session.commit()
                 if (r1.rowcount or 0) or (r2.rowcount or 0):
                     print(f"[retention] purged {r1.rowcount or 0} inquiries / {r2.rowcount or 0} outbox rows")
+            # B2 — SuspiciousEvent sweep (90일 / 365일 evidence)
+            try:
+                from models import SuspiciousEvent
+                susp_normal_days = int(os.environ.get("SUSPICIOUS_RETENTION_DAYS", "90"))
+                susp_evidence_days = int(os.environ.get("SUSPICIOUS_EVIDENCE_RETENTION_DAYS", "365"))
+                cutoff_normal = datetime.now(timezone.utc) - timedelta(days=susp_normal_days)
+                cutoff_evidence = datetime.now(timezone.utc) - timedelta(days=susp_evidence_days)
+                async with SessionLocal() as susp_session:
+                    r3 = await susp_session.execute(delete(SuspiciousEvent).where(
+                        SuspiciousEvent.evidence == False,  # noqa: E712
+                        SuspiciousEvent.detected_at < cutoff_normal,
+                    ))
+                    r4 = await susp_session.execute(delete(SuspiciousEvent).where(
+                        SuspiciousEvent.evidence == True,  # noqa: E712
+                        SuspiciousEvent.detected_at < cutoff_evidence,
+                    ))
+                    await susp_session.commit()
+                    if (r3.rowcount or 0) or (r4.rowcount or 0):
+                        print(f"[retention] purged {r3.rowcount or 0} suspicious / {r4.rowcount or 0} expired-evidence")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] suspicious sweep failed: {exc!r}")
         except Exception as exc:  # noqa: BLE001
             print(f"[retention] sweep failed: {exc!r}")
 
@@ -498,6 +519,18 @@ app.include_router(pdf_router)
 
 from routes_audit import router as audit_router  # noqa: E402
 app.include_router(audit_router)
+
+# 공지/프로모션 — 어드민 작성 → 공개 사이트 + 파트너 포털 노출.
+from routes_announcements import router as announcements_router  # noqa: E402
+app.include_router(announcements_router)
+
+# 재고 / SKU / LOT / 유통기한 — 표준 SKU 발급, FIFO 차감, 만료 자동 격리.
+from routes_inventory import router as inventory_router  # noqa: E402
+app.include_router(inventory_router)
+
+# 리소스 모니터링 — 어드민 /admin/monitoring 의 maintenance 탭이 30초 폴링.
+from routes_resource import router as resource_router  # noqa: E402
+app.include_router(resource_router)
 
 
 # ---------------------------------------------------------------------------

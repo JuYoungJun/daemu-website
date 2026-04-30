@@ -163,6 +163,10 @@
          the source files (Standard Greensock license). -->
     <script src="%BASE_URL%vendor/gsap/gsap.min.js"></script>
     <script src="%BASE_URL%vendor/gsap/ScrollTrigger.min.js"></script>
+    <!-- 어드민 RawPage 들이 backend 와 동기화하도록 helper 를 미리 로드.
+         window.daemuHydrate / daemuMirror / daemuTempId / daemuIsHydrating
+         가 admin-*-page.js 보다 먼저 정의되어야 한다. -->
+    <script src="%BASE_URL%admin-hydrate-helper.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

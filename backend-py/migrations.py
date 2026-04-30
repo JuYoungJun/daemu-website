@@ -33,6 +33,9 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
     ("admin_email_otp", "last_sent_at", "DATETIME", ""),
     ("admin_email_otp", "locked_until", "DATETIME", ""),
     ("admin_email_otp", "pending_email", "VARCHAR(190)", "DEFAULT ''"),
+
+    # AdminUser — 2FA 인증 앱 라벨 (Google Authenticator / Authy / 1Password / etc.)
+    ("admin_users", "totp_app_label", "VARCHAR(40)", "DEFAULT ''"),
 ]
 
 
