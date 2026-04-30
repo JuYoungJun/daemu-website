@@ -493,118 +493,134 @@ export const DEPLOY_GROUPS = [
   },
   {
     key: 'cafe24',
-    label: 'Cafe24 마이그레이션',
+    label: 'Cafe24 마이그레이션 (30분)',
     sections: [
       {
-        title: '1단계 — Cafe24 Cloud Server 신청',
-        body: `https://www.cafe24.com/ → 호스팅 → 클라우드 서버 (또는 가상서버호스팅 Linux).
-권장: Ubuntu 22.04 LTS / 2vCPU / 2GB RAM / 20GB SSD.
-신청 후 SSH 접속 정보 (IP, root 비밀번호) 받음.`,
-      },
-      {
-        title: '2단계 — 도메인 구매 + DNS 연결',
-        body: `Cafe24 도메인센터에서 .kr / .com 등 등록 (연 22,000원 ~).
-DNS A 레코드: @ → VPS IP / api → 같은 IP / www → 같은 IP.
-변경 전파 1~24시간.`,
-      },
-      {
-        title: '3단계 — 서버 초기 setup',
-        code: `# SSH 접속 후 일반 사용자 생성
-adduser daemu
-usermod -aG sudo daemu
-# 보안 — UFW 방화벽 + SSH 키 + fail2ban
-ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable
-apt update && apt install -y python3.12 python3.12-venv git nginx certbot python3-certbot-nginx fail2ban
-systemctl enable --now fail2ban`,
-      },
-      {
-        title: '4단계 — 코드 배포',
-        body: `이미 .github/workflows/cafe24-deploy.yml 이 준비되어 있어 GitHub push 시 자동 deploy 가능. 또는 수동:`,
-        code: `sudo -u daemu -i
-git clone https://github.com/JuYoungJun/daemu-website.git ~/app
-cd ~/app/backend-py
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt`,
-      },
-      {
-        title: '5단계 — 환경변수 (.env)',
-        body: `~/app/backend-py/.env 생성. python-dotenv 가 자동 로드.`,
-        code: `DATABASE_URL=mysql+aiomysql://avnadmin:PASSWORD@daemu-mysql-...aivencloud.com:21776/defaultdb
-MYSQL_DRIVER=aiomysql
-MYSQL_SSL_CA="-----BEGIN CERTIFICATE-----...-----END CERTIFICATE-----"
-JWT_SECRET=<32자 이상 random>
-SHORT_LINK_HMAC_SECRET=<32자 이상 random>
-RESEND_API_KEY=re_xxx
-ALLOWED_ORIGINS=https://daemu.kr,https://www.daemu.kr
-PUBLIC_BASE=https://api.daemu.kr
-ENV=prod
-ADMIN_EMAIL=admin@daemu.kr
-ADMIN_PASSWORD=<강한 비밀번호>`,
-      },
-      {
-        title: '6단계 — systemd 서비스',
-        code: `# /etc/systemd/system/daemu-backend.service
-[Unit]
-Description=DAEMU FastAPI backend
-After=network.target
+        title: '한 번에 끝내는 자동화 키트',
+        body: `프로젝트 안에 deploy/cafe24/ 디렉토리가 있고, 그 안에 setup.sh / nginx.conf / daemu-backend.service / .env.example / deploy.sh / backup.sh / README.md 가 모두 들어 있습니다. 처음 해도 30분이면 정상 운영. 요약 흐름:
 
-[Service]
-Type=simple
-User=daemu
-WorkingDirectory=/home/daemu/app/backend-py
-Environment="PATH=/home/daemu/app/backend-py/.venv/bin"
-EnvironmentFile=/home/daemu/app/backend-py/.env
-ExecStart=/home/daemu/app/backend-py/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
-Restart=always
-RestartSec=3
+  1) DNS A record (~5분)
+  2) 서버에서  sudo bash deploy/cafe24/setup.sh  (~5분)
+  3) /srv/daemu/backend/.env 작성 (~5분)
+  4) 로컬에서  bash deploy/cafe24/deploy.sh  (~3분)
+  5) sudo certbot --nginx -d <domain>  (~2분)
+  6) curl https://<domain>/api/health 검증
 
-[Install]
-WantedBy=multi-user.target
-
-# 활성화
-sudo systemctl daemon-reload
-sudo systemctl enable --now daemu-backend
-sudo systemctl status daemu-backend`,
+전체 단계별 가이드는 deploy/cafe24/README.md 에 있고, 트러블슈팅 표 + 롤백 절차도 같이 들어 있습니다.`,
       },
       {
-        title: '7단계 — Nginx reverse proxy + SSL',
-        code: `# /etc/nginx/sites-available/daemu
-server {
-    server_name api.daemu.kr;
-    location / {
-        proxy_pass http://127.0.0.1:8001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    listen 80;
-}
+        title: '1단계 — Cafe24 클라우드 서버 신청',
+        body: `https://www.cafe24.com/ → 호스팅 → 클라우드 서버. Ubuntu 22.04 LTS / 1Core·1GB / SSD 50GB 가 데모/초기 운영 권장 (월 ~9,900원). 신청 후 SSH 접속 정보 + 공인 IP 발급.`,
+      },
+      {
+        title: '2단계 — DNS A record + Aiven IP allowlist',
+        body: `Cafe24 도메인센터(또는 Cloudflare) 에서 A record:
+- @         → 서버 공인 IP
+- www       → 서버 공인 IP
+DNS 전파 5분~24시간.
 
-ln -s /etc/nginx/sites-available/daemu /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-# Let's Encrypt SSL
-certbot --nginx -d api.daemu.kr
-# 자동 갱신 (cron 자동 등록됨)`,
+⚠ Aiven Console → "Allowed IP addresses" 에 서버 공인 IP 추가 필수. 누락 시 backend 가 DB 에 연결 못 함.`,
       },
       {
-        title: '8단계 — frontend 의 backend URL 변경',
-        body: `GitHub Actions 의 deploy-pages.yml 또는 직접 빌드 환경변수에서:`,
-        code: `VITE_API_BASE_URL=https://api.daemu.kr   # ← 변경
-# 빌드 → GitHub Pages 새 deploy → 자동 적용`,
-      },
-      {
-        title: '9단계 — 백업 cron',
-        code: `# /etc/cron.daily/daemu-backup.sh — Aiven MySQL 또는 self-host MySQL 모두 가능
-mysqldump -u USER -p'PASSWORD' -h HOST -P 21776 --ssl-mode=REQUIRED defaultdb \\
-    | gzip > /backups/daemu-$(date +%F).sql.gz
-find /backups -name 'daemu-*.sql.gz' -mtime +30 -delete
+        title: '3단계 — 서버 부트스트랩 (자동 스크립트)',
+        body: `setup.sh 한 줄로 nginx + python3.11 + node20 + certbot + ufw + fail2ban + systemd + 백업 cron 까지 일괄 설치.`,
+        code: `# 서버에서 (root)
+ssh root@<서버IP>
+cd /tmp && git clone https://github.com/JuYoungJun/daemu-website.git
+cd daemu-website
+sudo bash deploy/cafe24/setup.sh
 
-chmod +x /etc/cron.daily/daemu-backup.sh`,
+# 도메인 placeholder 일괄 치환
+DOMAIN="daemu.kr"   # 본인 도메인
+sudo sed -i "s/example\\.daemu\\.kr/$DOMAIN/g" /etc/nginx/sites-available/daemu
+sudo nginx -t && sudo systemctl reload nginx`,
       },
       {
-        title: '10단계 — 검증',
-        body: `curl https://api.daemu.kr/api/health → JSON 정상 + databaseConnected:true. 어드민 https://daemu.kr/admin 진입. UTM QR 새로 만들어 동작 확인. /admin/monitoring 모두 녹색.`,
+        title: '4단계 — .env 작성',
+        body: `Aiven URL + CA PEM + 시크릿 random 발급 + 시드 어드민. 모든 항목은 deploy/cafe24/.env.example 의 주석에 설명되어 있음.`,
+        code: `sudo cp /tmp/daemu-website/deploy/cafe24/.env.example /srv/daemu/backend/.env
+sudo nano /srv/daemu/backend/.env
+sudo chown daemu:daemu /srv/daemu/backend/.env
+sudo chmod 600 /srv/daemu/backend/.env
+
+# 시크릿 발급 1회용
+openssl rand -hex 32   # → JWT_SECRET
+openssl rand -hex 32   # → SHORT_LINK_HMAC_SECRET`,
+      },
+      {
+        title: '5단계 — 첫 배포 (로컬에서)',
+        body: `deploy.sh 가 npm build → rsync → 원격 venv 갱신 + systemctl restart 까지 자동.`,
+        code: `# 로컬에서
+cat >> ~/.daemu-deploy.env <<EOF
+export DEPLOY_HOST=daemu.kr
+export DEPLOY_USER=daemu
+export DEPLOY_KEY_PATH=$HOME/.ssh/id_ed25519
+EOF
+
+# daemu 가 sudo restart 가능하게 (서버에서 1회)
+ssh root@daemu.kr 'cat > /etc/sudoers.d/daemu-deploy <<EOL
+daemu ALL=(root) NOPASSWD: /bin/systemctl restart daemu-backend, /bin/systemctl reload nginx
+EOL
+chmod 440 /etc/sudoers.d/daemu-deploy'
+
+bash deploy/cafe24/deploy.sh   # 첫 배포`,
+      },
+      {
+        title: '6단계 — HTTPS (Let\'s Encrypt)',
+        body: `DNS 가 서버 IP 가리키는 게 확인되면 한 줄.`,
+        code: `sudo certbot --nginx \\
+  -d daemu.kr -d www.daemu.kr \\
+  --non-interactive --agree-tos -m admin@daemu.kr --redirect
+
+# 자동 갱신 cron 도 자동 등록.  systemctl status certbot.timer  로 확인.`,
+      },
+      {
+        title: '7단계 — 검증',
+        code: `# 1) backend health
+curl -fsS https://daemu.kr/api/health | jq '{ok, databaseConnected, emailProvider}'
+# → {"ok":true, "databaseConnected":true, "emailProvider":"resend"}
+
+# 2) admin
+# 브라우저 → https://daemu.kr/admin
+
+# 3) systemd 상태
+ssh daemu@daemu.kr 'sudo systemctl status daemu-backend'
+
+# 4) journalctl
+ssh daemu@daemu.kr 'sudo journalctl -u daemu-backend -n 20'
+
+# 5) 백업 cron
+ssh daemu@daemu.kr 'cat /etc/cron.d/daemu-backup'`,
+      },
+      {
+        title: '재배포 / 롤백',
+        body: `이후 코드 변경 시:`,
+        code: `# 재배포 (원격에서 매번 push 한 효과)
+bash deploy/cafe24/deploy.sh
+
+# 롤백 (직전 커밋으로)
+git checkout HEAD~1 -- backend-py/
+bash deploy/cafe24/deploy.sh
+
+# DB 복원 (재해 복구)
+ssh daemu@daemu.kr
+gunzip < /srv/daemu/backups/db/daemu-YYYYMMDD-HHMM.sql.gz | mysql ...`,
+      },
+      {
+        title: '트러블슈팅 (자주 발생)',
+        table: {
+          headers: ['증상', '원인 / 조치'],
+          rows: [
+            ['databaseConnected: false', 'Aiven IP allowlist 에 서버 공인 IP 누락. Aiven Console 에 추가.'],
+            ['Access denied for user', '비밀번호 url-unsafe 문자. logs 의 자동 url-encode 메시지 확인 또는 Aiven 에서 reset.'],
+            ['caching_sha2_password 핸드셰이크 실패', '.env 의 MYSQL_DRIVER=aiomysql 로 변경 + restart.'],
+            ['502 Bad Gateway', 'uvicorn 죽음. journalctl -u daemu-backend -n 50 으로 traceback 확인.'],
+            ['admin 새로고침 시 자동 로그아웃', 'JWT_SECRET 미설정 → 재배포마다 secret 갱신. 고정값 set.'],
+            ['QR redirect 만 500', 'logs 의 [short-links] rid=... 검색. tz-aware 비교 또는 DB 단절 가능.'],
+            ['nginx connect() failed', 'systemd unit port (8001) 와 nginx proxy_pass port 일치 확인.'],
+            ['인증서 만료 알림', 'systemctl status certbot.timer  + sudo certbot renew --dry-run.'],
+          ],
+        },
       },
     ],
   },
