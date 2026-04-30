@@ -63,7 +63,14 @@ load_dotenv()
 
 PORT = int(os.environ.get("PORT", "3000"))
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "DAEMU <onboarding@resend.dev>")
+# From 헤더 — 수신자가 받는 메일에서 *업체명* 이 크게 보이도록 RFC 5322
+# display-name 형식. "DAEMU 베이커리·카페 컨설팅" 부분이 메일 클라이언트의
+# 발신자 칸에 prominent 하게 표시되고, 실제 메일 주소는 그 뒤에 작게 노출.
+# 운영시 FROM_EMAIL env 로 도메인 메일 (예: noreply@daemu.kr) 로 교체.
+FROM_EMAIL = os.environ.get(
+    "FROM_EMAIL",
+    "DAEMU 베이커리·카페 컨설팅 <onboarding@resend.dev>",
+)
 PUBLIC_BASE = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 ALLOWED_ORIGINS = [
     o.strip()

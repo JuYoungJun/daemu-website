@@ -2,64 +2,50 @@
 # Site: https://juyoungjun.github.io/daemu-website/
 # Korean B2B brand for bakery & cafe consulting (전라남도 나주시)
 #
-# ⚠️ DOMAIN MIGRATION NOTE
-# 도메인 발급 후 마지막 줄 Sitemap URL을 새 도메인으로 교체.
-# (예: Sitemap: https://daemu.kr/sitemap.xml)
+# ⚠️ TEMPORARY FULL-BLOCK
+# 정식 도메인 발급 + 클라이언트 콘텐츠 확정 전까지 모든 크롤러를 차단.
+# GitHub Pages 임시 배포 주소가 검색엔진 색인에 노출되지 않도록 보호.
+#
+# 도메인 발급 + 색인 허용 시점이 오면 이 파일을 이전 버전(.bak)으로 되돌리거나
+# git history 의 a8ddb3d 시점 robots.txt 를 참고해 부분 허용으로 전환.
+#
+# 변경 일자: 2026-04-30 (DAEMU_운영전_체크리스트.md "검색엔진 색인 정책" 항목 참조)
 
 User-agent: *
-Allow: /
-Disallow: /admin/
-Disallow: /admin
-Disallow: /error/
-Disallow: /uploads/
+Disallow: /
 
-# AI / LLM crawlers — explicitly opted in for marketing visibility.
-# Per https://llmstxt.org best practice, expose the brand-marketing surface
-# but exclude admin/error pages from training.
+# 추가 명시 — AI / LLM 크롤러도 모두 차단 (학습 데이터 미수집).
 User-agent: GPTBot
-Allow: /
-Disallow: /admin/
-Disallow: /error/
+Disallow: /
 
 User-agent: ChatGPT-User
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: OAI-SearchBot
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: ClaudeBot
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: Claude-Web
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: PerplexityBot
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: Google-Extended
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: Applebot-Extended
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: cohere-ai
-Allow: /
-Disallow: /admin/
+Disallow: /
 
-# Naver / Daum
 User-agent: Yeti
-Allow: /
-Disallow: /admin/
+Disallow: /
 
 User-agent: Daumoa
-Allow: /
-Disallow: /admin/
+Disallow: /
 
-Sitemap: https://juyoungjun.github.io/daemu-website/sitemap.xml
+# Sitemap 노출 X — 색인 차단 정책과 일관성 유지.
