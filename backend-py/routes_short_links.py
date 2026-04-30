@@ -280,6 +280,14 @@ async def delete_link(
     row = await session.get(ShortLink, link_id)
     if not row:
         return
+    # FK 정리 — ShortLinkClick.short_link_id 가 NOT NULL FK 라 MySQL 에서는
+    # parent row 삭제 전 child rows 를 먼저 제거해야 한다. SQLite 는 PRAGMA
+    # foreign_keys=ON 일 때만 강제하지만, 양쪽 DB 모두에서 안전한 명시적
+    # cascade.
+    from sqlalchemy import delete as _sql_delete
+    await session.execute(
+        _sql_delete(ShortLinkClick).where(ShortLinkClick.short_link_id == link_id)
+    )
     await session.delete(row)
 
 

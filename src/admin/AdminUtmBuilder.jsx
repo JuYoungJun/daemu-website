@@ -503,6 +503,24 @@ export default function AdminUtmBuilder() {
                   Short Links ({shortLinks.length})
                 </span>
                 <span style={{ flex: 1 }} />
+                <button type="button" className="adm-btn-sm" onClick={() => downloadCSV(
+                  'daemu-short-links-' + new Date().toISOString().slice(0, 10) + '.csv',
+                  shortLinks,
+                  [
+                    { key: 'id', label: 'ID' },
+                    { key: 'short_id', label: 'Short ID' },
+                    { key: 'label', label: '라벨' },
+                    { key: 'short_url', label: 'Short URL' },
+                    { key: 'target_url', label: '대상 URL' },
+                    { key: 'click_count', label: '클릭수' },
+                    { key: 'max_clicks', label: '최대' },
+                    { key: (l) => l.last_clicked_at ? new Date(l.last_clicked_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '', label: '마지막 클릭' },
+                    { key: (l) => l.expires_at ? new Date(l.expires_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '', label: '만료' },
+                    { key: (l) => l.revoked_at ? '무효' : (l.expires_at && new Date(l.expires_at) < new Date() ? '만료' : '활성'), label: '상태' },
+                    { key: 'revoked_reason', label: '무효사유' },
+                    { key: (l) => l.created_at ? new Date(l.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '', label: '생성' },
+                  ],
+                )}>CSV</button>
                 <button type="button" className="adm-btn-sm" onClick={loadShortLinks} disabled={shortLoading}>
                   {shortLoading ? '불러오는 중…' : '새로고침'}
                 </button>
