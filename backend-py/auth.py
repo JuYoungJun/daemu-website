@@ -290,12 +290,12 @@ def decode_token(token: str) -> dict[str, Any]:
 
 async def _resolve_user(authorization: str | None, session: AsyncSession) -> AdminUser:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, detail="missing bearer token")
+        raise HTTPException(401, detail="인증이 필요합니다. 로그인 후 다시 시도해 주세요.")
     token = authorization[7:].strip()
     claims = decode_token(token)
     user = await session.get(AdminUser, int(claims["sub"]))
     if not user or not user.active:
-        raise HTTPException(401, detail="user inactive")
+        raise HTTPException(401, detail="비활성화된 계정입니다. 운영자에게 문의하세요.")
     if user.role not in ALL_ROLES:
         raise HTTPException(403, detail="unknown role")
     return user
@@ -473,10 +473,19 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
     # DB unreachable 인 경우 — 인증 자체가 불가능하므로 즉시 503 으로 응답.
     # 그렇지 않으면 SQLAlchemy 의 connection timeout (수십 초) 을 기다리다
     # 브라우저 fetch 가 끊기고 사용자에게는 raw "Failed to fetch" 가 노출됨.
+    # 8s — Aiven 의 cold-start (SSL handshake + 인증) 시 첫 연결이 3~5s
+    # 걸릴 수 있어 충분한 여유.
     try:
         from sqlalchemy import text as _sa_text
-        await asyncio.wait_for(session.execute(_sa_text("SELECT 1")), timeout=3.0)
-    except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+        await asyncio.wait_for(session.execute(_sa_text("SELECT 1")), timeout=8.0)
+    except asyncio.TimeoutError:
+        print("[auth] login DB ping timeout (8s) — Aiven 응답 지연")
+        raise HTTPException(
+            503,
+            detail="데이터베이스 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+        )
+    except Exception as _e:  # noqa: BLE001
+        print(f"[auth] login DB ping failed: {_e!r}")
         raise HTTPException(
             503,
             detail="데이터베이스에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -507,12 +516,21 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
 
     res = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
     user = res.scalar_one_or_none()
+    if not user:
+        # 사용자 자체가 DB 에 없음 — 진단용 logs (이메일 자체는 logs 에 OK,
+        # 비밀번호는 절대 X). PII 라 production logs aggregator 에 들어갈 때
+        # masking 정책 필요 — 현재는 raw stdout 로만 가니 운영자가 직접 검토.
+        print(f"[auth] login: no such user → email='{payload.email}' (DB에 등록되지 않은 계정)")
+    elif not user.active:
+        print(f"[auth] login: inactive user → email='{payload.email}'")
+    elif not verify_password(payload.password, user.password_hash):
+        print(f"[auth] login: password mismatch → email='{payload.email}'")
     if not user or not user.active or not verify_password(payload.password, user.password_hash):
         _login_throttle.record_failure(ip)
         await log_event(session, request, action="login.failure",
                         actor_email=payload.email,
                         detail={"reason": "bad-credentials" if user else "no-such-user"})
-        raise HTTPException(401, detail="invalid credentials")
+        raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
 
     # 2FA gate — only if the user opted in.
     if user.totp_enabled:
