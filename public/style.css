@@ -3406,21 +3406,33 @@ body{background:var(--bg)}
 body[data-page="admin"]{overflow-y:auto !important}
 body[data-page="admin"] main.page{min-height:auto;overflow:visible}
 
-/* 어드민 페이지 액션 바 — 페이지 본문(.wide; max 1040px, 좌우 87px 여백)
-   과 정확히 같은 좌우 정렬. 이전엔 max-width 1200px 라 본문보다 양 끝으로
-   더 펼쳐져 우상단에 붙어 보였음. */
+/* 어드민 페이지 액션 바 — 우측 하단 fixed floating dock.
+   각 페이지 상단에 inline 으로 들어갈 때 본문과 정렬이 미세하게 어긋나서
+   "우측 상단에 어색하게 박힌" 느낌이 났음. 모든 어드민 페이지에서 동일한
+   우하단 위치로 통일해 일관성 + 본문 가독성 확보. */
 .adm-page-actions{
-  display:flex;
-  justify-content:flex-end;
+  position:fixed;
+  right:24px;
+  bottom:24px;
+  display:inline-flex;
   align-items:center;
   gap:8px;
-  margin:20px auto 14px;
+  padding:8px 10px;
+  background:rgba(255,255,255,.96);
+  border:1px solid #e3dfd6;
+  border-radius:8px;
+  box-shadow:0 6px 18px rgba(48,38,16,.12);
+  backdrop-filter:saturate(140%) blur(4px);
+  z-index:80;
   flex-wrap:wrap;
-  width:min(calc(100% - 174px), 1040px);
+  max-width:min(calc(100vw - 48px), 520px);
   box-sizing:border-box;
 }
 @media (max-width:768px){
-  .adm-page-actions{width:min(calc(100% - 48px), 100%);margin-top:14px}
+  .adm-page-actions{
+    right:14px;bottom:14px;padding:6px 8px;gap:6px;
+    max-width:calc(100vw - 28px);
+  }
 }
 .adm-page-action-btn{
   display:inline-flex;

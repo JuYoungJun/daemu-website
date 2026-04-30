@@ -108,6 +108,10 @@ elif DATABASE_URL.startswith("mysql"):
                 "에서는 Aiven 콘솔의 CA PEM 을 MYSQL_SSL_CA 로 등록 권장."
             )
         connect_args = {"ssl": ctx}
+    # MySQL 연결 charset 을 utf8mb4 로 명시 — Aiven 의 기본은 utf8mb4 지만,
+    # 일부 managed MySQL / Cafe24 self-host 인스턴스는 latin1 또는 utf8mb3
+    # 를 default 로 둘 수 있다. 한글/이모지/중국어 4byte 문자 손실 방지.
+    connect_args["charset"] = "utf8mb4"
 
 engine = create_async_engine(
     DATABASE_URL,

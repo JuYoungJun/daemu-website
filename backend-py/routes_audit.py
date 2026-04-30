@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import require_perm
 from db import get_session
-from models import AuditLog
+from models import AuditLog, as_utc
 
 router = APIRouter(prefix="/api/audit-logs", tags=["audit"])
 
@@ -97,7 +97,8 @@ async def audit_summary(
         if not created_at:
             continue
         # 24시간 전 시점에서 몇 시간 떨어졌는지 → 0(가장 오래) ~ 23(현재)
-        diff_sec = (now - created_at).total_seconds()
+        # MySQL DATETIME 은 tzinfo 를 strip 하므로 naive 로 돌아올 수 있음. as_utc 로 보정.
+        diff_sec = (now - as_utc(created_at)).total_seconds()
         bucket = 23 - int(diff_sec // 3600)
         if 0 <= bucket < 24:
             if action == "login.failure":
