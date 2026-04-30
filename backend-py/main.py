@@ -218,64 +218,77 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # 명시적 DB 연결 테스트 — 어떤 host 에 연결되는지 / 실패 시 명확한 에러
-    # 메시지를 logs 에 노출. fail 해도 startup 은 진행 (health endpoint 가
-    # 진단 정보를 반환하도록).
+    # 설계 원칙: DB 단계가 실패해도 **startup 은 진행** — uvicorn 이 죽으면
+    # 서비스 전체 다운 + health endpoint 도 응답 못함. 그래서 ping/create_all/
+    # migration/seed 를 모두 try/except 로 감싸 *부분 실패* 모드로 진입 가능
+    # 하게 만든다. /api/health 의 databaseConnected 가 false 이면 사용자가
+    # logs 에서 원인을 본 뒤 DB 를 살리고 재배포.
     _db_url_safe = engine.url.render_as_string(hide_password=True)
     print(f"[daemu-backend-py] DB connecting to: {_db_url_safe}")
+
+    # 1) 연결 ping
+    db_alive = False
     try:
         from sqlalchemy import text as _sa_text
         async with engine.connect() as _conn:
             await _conn.execute(_sa_text("SELECT 1"))
         print(f"[daemu-backend-py] ✓ DB connection OK")
+        db_alive = True
     except Exception as _e:  # noqa: BLE001
         print(f"[daemu-backend-py] ✗ DB CONNECTION FAILED: {_e!r}")
-        # startup 은 계속 진행 — health endpoint 가 진단 정보를 노출.
+        print(f"[daemu-backend-py] ⚠ DB unreachable — startup 은 진행하지만 모든 DB 호출은 실패합니다.")
+        print(f"[daemu-backend-py] ⚠ Aiven 콘솔에서 서비스 상태 확인 (free tier 는 idle 시 hibernate 됨).")
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # 기존 테이블에 새 컬럼을 추가하는 idempotent 마이그레이션.
-        # create_all 은 새 테이블만 만들고 기존 테이블의 컬럼은 건드리지
-        # 않으므로, 모델에 컬럼을 추가한 뒤에는 이 단계가 필요합니다.
+    # 2) schema create_all + migrations — 연결 살아있을 때만 시도
+    if db_alive:
         try:
-            from migrations import install_migrations_sync
-            await conn.run_sync(install_migrations_sync)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                try:
+                    from migrations import install_migrations_sync
+                    await conn.run_sync(install_migrations_sync)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[migration] failed: {e!r}")
         except Exception as e:  # noqa: BLE001
-            print(f"[migration] failed: {e!r}")
-    async with SessionLocal() as session:
-        await ensure_default_users(session)
+            print(f"[bootstrap] schema create_all 실패: {e!r}")
+            db_alive = False  # schema 가 못 만들면 후속 seed 도 의미 없음
 
-        # 긴급 2FA 리셋 — 운영자가 본인 2FA 디바이스 분실/오류로 잠겼을 때
-        # 환경변수 DAEMU_RESET_TOTP_EMAIL 만 등록하면 다음 redeploy 에서
-        # 자동 reset. 보안상 한 번 사용 후 환경변수 즉시 삭제 권장.
-        # (남겨두면 매 redeploy 마다 reset 됨 → 침입자 시나리오 위험)
-        _reset_email = os.environ.get("DAEMU_RESET_TOTP_EMAIL", "").strip().lower()
-        if _reset_email:
-            try:
-                from sqlalchemy import select as _select
-                from models import AdminUser as _AdminUser
-                _r = await session.execute(_select(_AdminUser).where(_AdminUser.email == _reset_email))
-                _target = _r.scalar_one_or_none()
-                if _target:
-                    _target.totp_enabled = False
-                    _target.totp_secret = ""
-                    _target.recovery_codes = []
-                    await session.commit()
-                    print(f"[bootstrap] ✓ 2FA reset for {_reset_email} — 환경변수 DAEMU_RESET_TOTP_EMAIL 즉시 제거 권장")
-                else:
-                    print(f"[bootstrap] ⚠ DAEMU_RESET_TOTP_EMAIL={_reset_email} — 해당 사용자 없음")
-            except Exception as _e:  # noqa: BLE001
-                print(f"[bootstrap] 2FA reset 실패: {_e!r}")
-
-        # 표준 계약서/발주서 템플릿 자동 시드 (idempotent — 이미 있으면 skip)
+    # 3) ensure_default_users + seeds + 2FA reset — 연결 살아있을 때만
+    if db_alive:
         try:
-            from seeds import ensure_default_templates, ensure_demo_superadmin
-            await ensure_default_templates(session)
-            # ENV != prod 일 때만 데모 슈퍼관리자 자동 복원 (SQLite 휘발 대응)
-            await ensure_demo_superadmin(session)
+            async with SessionLocal() as session:
+                await ensure_default_users(session)
+
+                # 긴급 2FA 리셋 — DAEMU_RESET_TOTP_EMAIL env 한 번 사용 후 즉시 제거.
+                _reset_email = os.environ.get("DAEMU_RESET_TOTP_EMAIL", "").strip().lower()
+                if _reset_email:
+                    try:
+                        from sqlalchemy import select as _select
+                        from models import AdminUser as _AdminUser
+                        _r = await session.execute(_select(_AdminUser).where(_AdminUser.email == _reset_email))
+                        _target = _r.scalar_one_or_none()
+                        if _target:
+                            _target.totp_enabled = False
+                            _target.totp_secret = ""
+                            _target.recovery_codes = []
+                            await session.commit()
+                            print(f"[bootstrap] ✓ 2FA reset for {_reset_email} — 환경변수 DAEMU_RESET_TOTP_EMAIL 즉시 제거 권장")
+                        else:
+                            print(f"[bootstrap] ⚠ DAEMU_RESET_TOTP_EMAIL={_reset_email} — 해당 사용자 없음")
+                    except Exception as _e:  # noqa: BLE001
+                        print(f"[bootstrap] 2FA reset 실패: {_e!r}")
+
+                # 표준 계약서/발주서 템플릿 자동 시드 (idempotent)
+                try:
+                    from seeds import ensure_default_templates, ensure_demo_superadmin
+                    await ensure_default_templates(session)
+                    await ensure_demo_superadmin(session)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[seeds] auto-seed failed: {e!r}")
         except Exception as e:  # noqa: BLE001
-            print(f"[seeds] auto-seed failed: {e!r}")
-    print(f"[daemu-backend-py] DB ready ({engine.url.render_as_string(hide_password=True)})")
+            print(f"[bootstrap] session 단계 실패: {e!r}")
+
+    print(f"[daemu-backend-py] startup 완료 (db_alive={db_alive})")
 
     # Background retention task — Privacy Act art.21 compliance.
     stop_event = asyncio.Event()
