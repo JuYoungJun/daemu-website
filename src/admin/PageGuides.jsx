@@ -11,19 +11,55 @@ import { DB } from '../lib/db.js';
 import { downloadCSV } from '../lib/csv.js';
 
 // RawPage 어드민 페이지에 CSV 내보내기 버튼을 한 줄로 부착.
-// localStorage 키 + 컬럼 정의만 prop 으로 주면 좌측 상단에 inline 버튼이
-// 표시되고, 클릭하면 csv.js 의 미리보기 모달 → 다운로드 흐름으로 진행.
 //
-// 사용 예:
-//   <RawPageCsvButton
-//     storageKey="works"
-//     filename="daemu-works"
-//     columns={[{ key: 'title', label: '제목' }, ...]}
-//   />
-export function RawPageCsvButton({ storageKey, filename, columns }) {
-  const onClick = () => {
-    const rows = (DB.get(storageKey) || []);
+// 데이터 소스 우선순위:
+//   1) apiPath prop 이 있으면 클릭 시점에 backend 에서 fresh fetch — 가장 정확.
+//   2) hydrate 가 아직 진행 중이면 사용자에게 "동기화 중" 토스트 + 잠깐 대기.
+//   3) DB.get(storageKey) → localStorage. fallback (offline / api 미설정 / 옛 페이지).
+//
+// 사용 예 (backend hydrate 적용 페이지 — 권장):
+//   <RawPageCsvButton storageKey="orders" apiPath="/api/orders" filename="..." columns={...} />
+// 사용 예 (localStorage only — 옛 호환):
+//   <RawPageCsvButton storageKey="media" filename="daemu-media" columns={...} />
+//
+// 환경별 데이터 정합성: apiPath 사용 시 Mac/Windows/모바일 어디서 클릭해도
+// 같은 결과 (DB single source of truth). storageKey-only 모드는 환경별 차이 가능.
+export function RawPageCsvButton({ storageKey, filename, columns, apiPath, mapRow }) {
+  const onClick = async () => {
     const fname = (filename || storageKey) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+
+    // 1) apiPath 가 있으면 backend 에서 fresh fetch (가장 정확)
+    if (apiPath) {
+      try {
+        const { api } = await import('../lib/api.js');
+        const r = await api.get(apiPath);
+        if (r && r.ok && Array.isArray(r.items)) {
+          const rows = typeof mapRow === 'function' ? r.items.map(mapRow) : r.items;
+          downloadCSV(fname, rows, columns);
+          return;
+        }
+        // api 실패 시 — fallback 로 진행 (아래 localStorage)
+        try { (await import('../lib/dialog.js')).siteToast('백엔드 응답 실패 — localStorage 캐시로 진행합니다.', { tone: 'warn' }); } catch { /* ignore */ }
+      } catch (_) { /* fallthrough */ }
+    }
+
+    // 2) hydrate 가 진행 중이면 짧게 안내 후 대기 — race condition 방지
+    if (typeof window !== 'undefined' && typeof window.daemuIsHydrating === 'function' && window.daemuIsHydrating(storageKey)) {
+      try { (await import('../lib/dialog.js')).siteToast('데이터 동기화 중입니다. 잠시 후 다시 시도해 주세요.', { tone: 'info' }); } catch { /* ignore */ }
+      // 1.5s 대기 후 한 번 더 시도 — 보통 hydrate 가 그 안에 끝남
+      await new Promise((res) => setTimeout(res, 1500));
+    }
+
+    // 3) localStorage 폴백 (마지막)
+    const rows = (DB.get(storageKey) || []);
+    if (!rows.length && apiPath) {
+      // localStorage 도 비어있고 api 도 실패한 상태
+      try {
+        const { siteAlert } = await import('../lib/dialog.js');
+        siteAlert('내보낼 데이터를 가져오지 못했습니다. 페이지 새로고침 후 다시 시도해 주세요.');
+      } catch { /* ignore */ }
+      return;
+    }
     downloadCSV(fname, rows, columns);
   };
   return (

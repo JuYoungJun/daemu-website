@@ -32,7 +32,7 @@ export default function AdminPopup() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="popups" filename="daemu-popups" columns={POPUP_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="popups" apiPath="/api/popups?page_size=500" filename="daemu-popups" columns={POPUP_CSV_COLUMNS} />
         <GuideButton GuideComponent={PopupGuide} />
       </PageActions>
       <AdminHelp title="팝업 / 이벤트 사용 안내" items={[

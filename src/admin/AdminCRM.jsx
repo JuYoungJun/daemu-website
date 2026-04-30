@@ -25,7 +25,7 @@ export default function AdminCRM() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="crm" filename="daemu-crm" columns={CRM_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="crm" apiPath="/api/crm?page_size=500" filename="daemu-crm" columns={CRM_CSV_COLUMNS} />
         <GuideButton GuideComponent={CRMGuide} />
       </PageActions>
       <AdminHelp title="CRM 사용 안내" items={[

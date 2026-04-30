@@ -21,7 +21,7 @@ export default function AdminOrders() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="orders" filename="daemu-orders" columns={ORDERS_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="orders" apiPath="/api/orders?page_size=500" filename="daemu-orders" columns={ORDERS_CSV_COLUMNS} />
         <GuideButton GuideComponent={OrdersGuide} />
       </PageActions>
       <AdminHelp title="발주·계약 관리 안내" items={[

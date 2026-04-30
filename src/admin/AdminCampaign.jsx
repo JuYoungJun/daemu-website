@@ -22,7 +22,7 @@ export default function AdminCampaign() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="campaigns" filename="daemu-campaigns" columns={CAMPAIGN_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="campaigns" apiPath="/api/campaigns?page_size=500" filename="daemu-campaigns" columns={CAMPAIGN_CSV_COLUMNS} />
         <GuideButton GuideComponent={CampaignGuide} />
       </PageActions>
       <AdminHelp title="캠페인 / 뉴스레터 사용 안내" items={[

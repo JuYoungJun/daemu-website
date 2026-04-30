@@ -20,7 +20,7 @@ export default function AdminWorks() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="works" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="works" apiPath="/api/works?page_size=500" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
         <GuideButton GuideComponent={WorksGuide} />
       </PageActions>
       <AdminHelp title="작업사례 관리 사용 안내" items={[

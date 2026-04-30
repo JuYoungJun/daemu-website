@@ -21,7 +21,7 @@ export default function AdminPromotion() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="promotions" filename="daemu-promotions" columns={PROMO_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="promotions" apiPath="/api/promotions?page_size=500" filename="daemu-promotions" columns={PROMO_CSV_COLUMNS} />
         <GuideButton GuideComponent={PromotionGuide} />
       </PageActions>
       <AdminHelp title="프로모션 사용 안내" items={[

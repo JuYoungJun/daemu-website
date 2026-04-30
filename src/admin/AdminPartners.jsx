@@ -20,7 +20,7 @@ export default function AdminPartners() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="partners" filename="daemu-partners" columns={PARTNERS_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="partners" apiPath="/api/partners?page_size=500" filename="daemu-partners" columns={PARTNERS_CSV_COLUMNS} />
         <GuideButton GuideComponent={PartnersGuide} />
       </PageActions>
       <RawPage html={html} script="/admin-partners-page.js" />
