@@ -125,14 +125,17 @@ const API_PROBE_TARGETS = [
   { key: 'summary',        path: '/api/monitoring/summary',      label: '운영 요약',       group: 'core' },
   { key: 'inquiries',      path: '/api/inquiries?limit=1',       label: '문의',            group: 'business' },
   { key: 'users',          path: '/api/users?limit=1',           label: '사용자',          group: 'business' },
-  { key: 'contracts',      path: '/api/contracts?limit=1',       label: '계약/PO',         group: 'business' },
+  { key: 'documents',      path: '/api/documents?page_size=1',   label: '계약/PO',         group: 'business' },
   { key: 'short-links',    path: '/api/short-links?limit=1',     label: '단축 링크',       group: 'business' },
-  { key: 'partner-brands', path: '/api/partner-brands',          label: '파트너 브랜드',   group: 'content' },
-  { key: 'products',       path: '/api/products',                label: '상품',            group: 'content' },
-  { key: 'works',          path: '/api/works',                   label: '작업 사례',       group: 'content' },
-  { key: 'popups',         path: '/api/popups',                  label: '팝업',            group: 'content' },
-  { key: 'newsletter',     path: '/api/newsletter/subscribers?limit=1', label: '뉴스레터', group: 'content' },
+  // partner-brands 는 현재 localStorage 전용 — backend 마이그레이션 후 재추가.
+  { key: 'products',       path: '/api/products?page_size=1',    label: '상품',            group: 'content' },
+  { key: 'works',          path: '/api/works?page_size=1',       label: '작업 사례',       group: 'content' },
+  { key: 'popups',         path: '/api/popups?page_size=1',      label: '팝업',            group: 'content' },
+  { key: 'newsletter',     path: '/api/newsletter?page_size=1',  label: '뉴스레터',         group: 'content' },
+  { key: 'announcements',  path: '/api/announcements?page_size=1', label: '공지/프로모션',   group: 'content' },
+  { key: 'inventory-alerts', path: '/api/inventory/alerts',      label: '재고 알림',       group: 'content' },
   { key: 'audit-logs',     path: '/api/audit-logs?limit=1',      label: '감사 로그',       group: 'security' },
+  { key: 'resource',       path: '/api/health/resource',         label: '리소스 (메모리/DB)', group: 'security' },
 ];
 const PROBE_GROUP_LABEL = {
   core:     '코어',
