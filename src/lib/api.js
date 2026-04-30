@@ -17,6 +17,25 @@ function authHeader() {
   return { Authorization: `Bearer ${t}` };
 }
 
+// 네트워크/fetch 예외를 사용자 친화 한국어 메시지로 변환.
+// Render free tier cold-start, Aiven hibernate, CORS preflight, 일시 단절
+// 등 모두 같은 "TypeError: Failed to fetch" 로 떨어지므로 공통 안내 문구 사용.
+// detail 은 logs/디버그 용도로 별도 필드에 보존.
+function _friendlyFetchError(err) {
+  const raw = String(err || '');
+  // fetch 의 typical network error 들
+  if (/Failed to fetch|NetworkError|ERR_NETWORK|Load failed/i.test(raw)) {
+    return '서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요. (네트워크 또는 일시 점검)';
+  }
+  if (/timeout/i.test(raw)) {
+    return '요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (/AbortError|aborted/i.test(raw)) {
+    return '요청이 취소되었습니다. 다시 시도해 주세요.';
+  }
+  return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+}
+
 async function request(method, path, body, opts = {}) {
   if (!BASE) {
     if (method !== 'GET') logOutbox(path, body, 'simulated');
@@ -38,7 +57,19 @@ async function request(method, path, body, opts = {}) {
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { /* JSON 아님 */ }
     if (!res.ok) {
-      const err = (json && (json.error || json.detail)) || text || `HTTP ${res.status}`;
+      // 백엔드가 명확한 detail 을 줬으면 그대로, 없으면 status 별 친근 안내.
+      let err = (json && (json.error || json.detail)) || text;
+      if (!err || typeof err !== 'string') {
+        if (res.status >= 500 && res.status < 600) {
+          err = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+        } else if (res.status === 401 || res.status === 403) {
+          err = '인증이 필요합니다. 다시 로그인해 주세요.';
+        } else if (res.status === 404) {
+          err = '요청하신 항목을 찾을 수 없습니다.';
+        } else {
+          err = `요청을 처리하지 못했습니다. (HTTP ${res.status})`;
+        }
+      }
       if (method !== 'GET') logOutbox(path, body, 'failed', { status: res.status, response: text });
       return { ok: false, status: res.status, error: err, ...(json && typeof json === 'object' ? json : {}) };
     }
@@ -46,7 +77,7 @@ async function request(method, path, body, opts = {}) {
     return { ok: true, ...((json && typeof json === 'object') ? json : {}) };
   } catch (err) {
     if (method !== 'GET') logOutbox(path, body, 'error', { error: String(err) });
-    return { ok: false, error: String(err) };
+    return { ok: false, error: _friendlyFetchError(err), errorDetail: String(err) };
   }
 }
 

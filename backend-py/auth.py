@@ -24,6 +24,7 @@ your own values before opening to anyone outside your team.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from collections import defaultdict
@@ -469,6 +470,17 @@ def _verify_totp_or_recovery(user: AdminUser, code: str) -> tuple[bool, str | No
 @router.post("/login", response_model=LoginOut)
 async def login(payload: LoginIn, request: Request, session: AsyncSession = Depends(get_session)):
     from audit import log_event  # local import to avoid circular at module load
+    # DB unreachable 인 경우 — 인증 자체가 불가능하므로 즉시 503 으로 응답.
+    # 그렇지 않으면 SQLAlchemy 의 connection timeout (수십 초) 을 기다리다
+    # 브라우저 fetch 가 끊기고 사용자에게는 raw "Failed to fetch" 가 노출됨.
+    try:
+        from sqlalchemy import text as _sa_text
+        await asyncio.wait_for(session.execute(_sa_text("SELECT 1")), timeout=3.0)
+    except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+        raise HTTPException(
+            503,
+            detail="데이터베이스에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        )
     ip = _client_ip(request)
     if _login_throttle.is_locked(ip):
         await log_event(session, request, action="login.throttled",
