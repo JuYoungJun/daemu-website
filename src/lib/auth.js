@@ -122,8 +122,15 @@ export const Auth = {
   // Pull fresh /api/auth/me so a stale must_change_password flag
   // gets corrected after the user changes their password from
   // a different device or admin reset.
+  //
+  // Return shape:
+  //   { ok: true, ...user }                       — 정상
+  //   { ok: false, authFailed: true }             — 401/403 (토큰 만료/무효 → logout)
+  //   { ok: false, transient: true, status }      — 5xx / 네트워크 에러
+  //                                                 (Render dyno cold-start 등 → 세션 유지)
+  // 호출자는 authFailed 일 때만 logout 해야 함. transient 는 retry 또는 무시.
   async refreshMe() {
-    if (!api.isConfigured()) return null;
+    if (!api.isConfigured()) return { ok: false, transient: true };
     const r = await api.get('/api/auth/me');
     if (r.ok) {
       localStorage.setItem(USER_KEY, JSON.stringify({
@@ -132,9 +139,14 @@ export const Auth = {
         email_verified_at: r.email_verified_at || null,
         totp_enabled: !!r.totp_enabled,
       }));
-      return r;
+      return { ok: true, ...r };
     }
-    return null;
+    // 401/403 = 진짜 인증 실패 (토큰 만료/위조/계정 비활성)
+    if (r.status === 401 || r.status === 403) {
+      return { ok: false, authFailed: true, status: r.status };
+    }
+    // 그 외 (5xx, 네트워크 에러, status undefined) = 일시적 — 세션 유지
+    return { ok: false, transient: true, status: r.status || 0 };
   },
 
   logout() {

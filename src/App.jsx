@@ -176,31 +176,28 @@ function AdminSessionGuard() {
     prevAdmin.current = nowAdmin;
   }, [pathname]);
 
-  // 어드민 페이지에 머무는 동안 beforeunload 시 grace 마커 set.
-  // 다른 어드민 페이지로의 react-router 이동은 unload 트리거 안 함.
-  // 진짜 unload(탭 닫기·외부 이동·하드 리로드) 만 잡힘.
+  // 어드민 페이지에 머무는 동안 beforeunload 시 grace 마커만 set.
+  // **logout 은 호출하지 않음** — F5/하드 리로드 시 토큰이 살아있어야 다시
+  // 로그인 화면을 안 보여주기 때문. 진짜 logout 은 위 AdminSessionGuard 의
+  // pathname 비교 (admin → 공개 페이지 이동) 가 담당.
+  // 탭 닫기 / 외부 도메인 이동 시에는 어차피 브라우저가 페이지 컨텍스트를
+  // 통째로 정리하므로 별도 logout 불필요. 다음 어드민 진입 시 60분 inactivity
+  // 정책이 자동 logout 처리.
   useEffect(() => {
     if (!pathname.startsWith('/admin')) return;
     const onBefore = () => {
       try {
         sessionStorage.setItem('daemu_admin_reload_grace', String(Date.now()));
       } catch { /* ignore */ }
-      Auth.logout();
     };
     window.addEventListener('beforeunload', onBefore);
     return () => window.removeEventListener('beforeunload', onBefore);
   }, [pathname]);
 
-  // mount 시 grace 검사 — 1.5초 이내 unload 마커 + 같은 어드민 path 면
-  // F5/하드 리로드로 간주, 토큰을 다시 받아야 하니 사용자에게 친절하게 grace
-  // 메시지만(자동 재발급은 보안상 안 함). 1.5초 외면 무시.
+  // mount 시 grace 마커 정리 — 별도 동작 없이 1.5초 외 stale 마커만 제거.
   useEffect(() => {
     if (!pathname.startsWith('/admin')) return;
     try {
-      const ts = Number(sessionStorage.getItem('daemu_admin_reload_grace') || 0);
-      if (ts && Date.now() - ts < 1500) {
-        // F5/리로드 — 메시지 없이 로그인 페이지로 자연스럽게 fallback.
-      }
       sessionStorage.removeItem('daemu_admin_reload_grace');
     } catch { /* ignore */ }
   }, [pathname]);

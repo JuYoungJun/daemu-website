@@ -70,14 +70,25 @@ export default function AdminGate() {
 
   // Refresh /api/auth/me on mount so the forced-change flag stays accurate
   // even if it changed on another device or via admin reset.
+  //
+  // 중요: refreshMe 가 실패해도 logout 은 401/403 (authFailed) 일 때만.
+  // 5xx / 네트워크 에러(예: Render free tier 의 dyno cold-start, ipv6 끊김,
+  // CORS preflight 시점 일시 장애) 는 transient 로 분류해 세션 유지 — 사용자
+  // 가 어드민에 들어와 새로고침할 때마다 강제 로그아웃되던 버그 제거.
   useEffect(() => {
     if (loggedIn && api.isConfigured()) {
       setHydrating(true);
-      Auth.refreshMe().then((u) => {
-        if (u) {
-          setMustChange(!!u.must_change_password);
-          setNeedsEmailVerify(u.email_verified_at == null);
-        } else { Auth.logout(); setLoggedIn(false); }
+      Auth.refreshMe().then((res) => {
+        if (res && res.ok) {
+          setMustChange(!!res.must_change_password);
+          setNeedsEmailVerify(res.email_verified_at == null);
+        } else if (res && res.authFailed) {
+          // 토큰 만료 / 위조 / 계정 비활성 — 진짜 logout
+          Auth.logout();
+          setLoggedIn(false);
+        }
+        // transient (5xx/네트워크) — 기존 세션 그대로 유지. localStorage 의
+        // user 정보로 화면 진입. 다음 API 호출이 정상화되면 자동 회복.
       }).finally(() => setHydrating(false));
     } else {
       setHydrating(false);
