@@ -21,14 +21,15 @@ from models import AdminUser, AuditLog
 
 
 def _client_ip(request: Request | None) -> str:
+    """auth.py 의 _client_ip 와 동일 정책(TRUST_FORWARDED_FOR) 을 사용해
+    감사 로그의 IP 와 로그인 throttle 의 IP 가 어긋나지 않도록 통일."""
     if request is None:
         return ""
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        chain = [p.strip() for p in fwd.split(",") if p.strip()]
-        if chain:
-            return chain[-1][:45]
-    return (request.client.host if request.client else "")[:45]
+    try:
+        from auth import _client_ip as _auth_client_ip
+        return _auth_client_ip(request)[:45]
+    except Exception:  # noqa: BLE001
+        return (request.client.host if request.client else "")[:45]
 
 
 def _user_agent(request: Request | None) -> str:

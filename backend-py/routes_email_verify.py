@@ -259,8 +259,9 @@ async def _dispatch_verification_email(to_email: str, to_name: str, code: str) -
         return True
 
     # 실제 발송은 main.py 의 send_email() 헬퍼에 위임.
+    # send_email signature: (payload: dict) — Resend / SMTP 공통 dict.
     try:
-        from main import send_email  # type: ignore[import-not-found]
+        from main import send_email, FROM_EMAIL, RESEND_API_KEY, SMTP_FROM  # type: ignore[import-not-found]
         body = (
             f"안녕하세요 {to_name or ''}님,\n\n"
             f"대무 어드민 첫 접속 이메일 인증 코드입니다.\n\n"
@@ -269,13 +270,12 @@ async def _dispatch_verification_email(to_email: str, to_name: str, code: str) -
             "코드는 본인 외 누구와도 공유하지 마세요.\n"
             "본인이 요청하지 않은 경우 즉시 운영자(daemu_office@naver.com)로 알려주세요.\n"
         )
-        await send_email(
-            to_email=to_email,
-            to_name=to_name,
-            subject="[대무] 첫 접속 이메일 인증 코드",
-            body=body,
-            html=None,
-        )
+        await send_email({
+            "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+            "to": [to_email],
+            "subject": "[대무] 첫 접속 이메일 인증 코드",
+            "text": body,
+        })
         return False
     except Exception as e:  # noqa: BLE001
         # 발송 실패는 stderr 로만; cleartext 코드는 출력 안 함.
