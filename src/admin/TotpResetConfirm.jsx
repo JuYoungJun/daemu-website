@@ -54,10 +54,13 @@ export default function TotpResetConfirm() {
                   <h2 style={{ color: '#2e7d32' }}>✓ 2단계 인증이 해제되었습니다</h2>
                   <p style={{ fontSize: 13, color: '#5a534b', lineHeight: 1.7, marginTop: 12 }}>
                     {email && <><strong>{email}</strong> 계정의 2단계 인증이 해제되었습니다.</>}<br />
-                    이제 비밀번호로 로그인하실 수 있습니다.
+                    다음 화면에서 로그인하면 <strong>비밀번호 변경</strong>이 자동으로 요구됩니다.
                   </p>
-                  <p style={{ fontSize: 12, color: '#b87333', background: '#fff8ec', border: '1px solid #f0e3c4', padding: '10px 12px', borderRadius: 4, marginTop: 16 }}>
-                    🔒 보안 강화를 위해 <strong>로그인 직후 즉시 새 인증 앱으로 2단계 인증을 다시 등록</strong>해 주세요.
+                  <p style={{ fontSize: 12, color: '#b87333', background: '#fff8ec', border: '1px solid #f0e3c4', padding: '10px 12px', borderRadius: 4, marginTop: 16, lineHeight: 1.6 }}>
+                    🔒 <strong>보안 정책</strong> (3단계):<br />
+                    1. 로그인 → <strong>비밀번호 강제 교체</strong> (탈취된 비번 재사용 차단)<br />
+                    2. 비번 변경 후 → 즉시 <strong>새 인증 앱으로 2FA 다시 등록</strong><br />
+                    3. 본인이 요청한 게 아니라면 즉시 운영자에게 신고
                   </p>
                   <button type="button" className="btn" onClick={() => navigate('/admin', { replace: true })}
                     style={{ marginTop: 20, width: '100%' }}>

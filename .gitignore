@@ -13,11 +13,29 @@ _backup-static-*/
 .vscode/
 *.bak
 
-# Internal-only audits, reviews, and SEO planning docs.
-# Kept locally for reference but not pushed to GitHub (contains
-# threat-model details + finding references that aren't appropriate
-# for a public repo).
+# ─────────────────────────────────────────────────────────────────
+# 민감 문서 (CLAUDE.md docs sub-rule "민감 vs 공개 분리").
+# 클라이언트에 인도되는 사이트라 GitHub repo 가 외부 노출 가능 →
+# 보안 취약점 / 사고 이력 / 운영자 SOP 는 git 제외.
+# 신규 민감 문서 추가 시 아래 패턴에 포함되는지 확인.
+# ─────────────────────────────────────────────────────────────────
 .notes/
+
+# 보안 감사 보고서 (Critical/High finding + 파일 path 포함)
+docs/SECURITY_*.md
 SECURITY_AUDIT.md
+
+# 사고 분석 / incident postmortem
+docs/INCIDENT_*.md
+
+# 운영자 전용 SOP / 내부 review
+docs/INTERNAL_*.md
+docs/ADMIN_REVIEW_*.md
 CODE_REVIEW.md
+
+# 마케팅 / SEO planning (전략 노출 회피)
 SEO_REPORT.md
+
+# 운영 전 체크리스트 (사용자 Desktop 에 보관, repo 안에는 들어오지 않게)
+DAEMU_운영전_*.md
+PRODUCTION_CHECKLIST_*.md

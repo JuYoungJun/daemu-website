@@ -718,9 +718,12 @@ async def totp_disable(
 
 class TotpResetRequestIn(BaseModel):
     email: EmailStr
+    # 본인 확인 — 메일 access 만 가진 공격자가 reset 요청 못 하게 비번 강제.
+    # 산업 표준 step-up 패턴 (GitHub / Notion / Slack 등도 동일).
+    password: str
 
 
-_totp_reset_throttle = _LoginThrottle(max_failures=1, window_seconds=600)  # 1회/10분/email
+_totp_reset_throttle = _LoginThrottle(max_failures=3, window_seconds=900)  # 3회/15분/email
 
 
 @router.post("/totp-reset-request")
@@ -729,15 +732,22 @@ async def totp_reset_request(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """이메일 입력 받아 5분 TTL 복구 링크 발송. 사용자 존재 여부는
-    응답으로 leak 안 함 (항상 200 ok)."""
+    """이메일 + 비밀번호 본인 확인 후 5분 TTL 복구 링크 발송.
+
+    보안 정책 (다층 방어):
+    1. 이메일 + 현재 비밀번호 둘 다 일치해야 메일 발송 — 메일만 탈취한 공격자
+       block. 산업 표준 step-up 패턴.
+    2. 사용자 존재 / 비번 일치 여부 둘 다 leak 안 함 (항상 200 ok 응답).
+    3. email 단위 rate limit (3회/15분) — brute force 차단.
+    4. 잘못된 비번 시도도 audit_logs 에 기록 — 공격 패턴 추적.
+    5. 5분 TTL JWT 1회용 토큰 — 가로채도 짧은 시간만 유효.
+    """
     email_norm = (payload.email or "").strip().lower()
-    if not email_norm:
+    if not email_norm or not payload.password:
         return {"ok": True}  # silent
 
-    # email 단위 throttle (1회/10분)
+    # email 단위 throttle
     if _totp_reset_throttle.is_locked(email_norm):
-        # 응답은 동일하게 200 — 공격자가 lock 여부로 사용자 존재 추정 못 하게.
         return {"ok": True}
     _totp_reset_throttle.record_failure(email_norm)
 
@@ -746,12 +756,18 @@ async def totp_reset_request(
 
     from audit import log_event
     if not user or not user.active:
-        # 사용자 없거나 비활성 — silent.
         await log_event(session, request, action="totp.reset.requested.no_such_user",
                         actor_email=email_norm)
         return {"ok": True}
 
-    # JWT 발급 — purpose=totp_reset, TTL 5분.
+    # 비밀번호 검증 — 본인 확인. 잘못된 비번도 silent 200 응답으로 leak 방지,
+    # 단 audit log 와 throttle 는 정상 기록.
+    if not verify_password(payload.password, user.password_hash):
+        await log_event(session, request, action="totp.reset.requested.bad_password",
+                        actor_user=user)
+        return {"ok": True}
+
+    # JWT 발급
     now = datetime.now(timezone.utc)
     payload_jwt = {
         "sub": str(user.id),
@@ -762,23 +778,18 @@ async def totp_reset_request(
     }
     token = jwt.encode(payload_jwt, JWT_SECRET, algorithm=JWT_ALG)
 
-    # 메일 발송 — frontend 의 도메인은 PUBLIC_BASE_URL env 기반 (host-agnostic).
     public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
-    if not public_base:
-        # PUBLIC_BASE_URL 미설정 — frontend host 모름. 토큰만 메일에 적기.
-        link = f"(서버 도메인 미설정. 운영자 문의: token={token})"
-    else:
-        link = f"{public_base}/admin/totp-reset?token={token}"
+    link = f"{public_base}/admin/totp-reset?token={token}" if public_base else f"(token={token})"
 
     body = (
         f"{user.name or user.email}님,\n\n"
         f"DAEMU 어드민 2단계 인증 복구 요청을 받았습니다.\n"
-        f"본인이 요청한 것이 아니라면 이 메일을 무시하세요.\n\n"
+        f"본인이 요청한 것이 아니라면 이 메일을 무시하고 즉시 비밀번호를 변경하세요.\n\n"
         f"아래 링크를 5분 이내에 클릭하여 2단계 인증을 해제할 수 있습니다.\n"
         f"링크는 1회용이며 5분 후 만료됩니다.\n\n"
         f"{link}\n\n"
-        f"해제 후 어드민에 비밀번호로 로그인 → 즉시 2단계 인증을 다시\n"
-        f"설정해 주세요. 본인 외 누구와도 이 링크를 공유하지 마세요.\n\n"
+        f"⚠ 보안 정책: 해제 직후 다음 로그인 시 비밀번호 변경이 강제됩니다.\n"
+        f"본인 외 누구와도 이 링크를 공유하지 마세요.\n\n"
         f"DAEMU 베이커리·카페 컨설팅\n"
     )
     try:
@@ -809,7 +820,12 @@ async def totp_reset_confirm(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """이메일로 받은 토큰을 검증하고 2FA 해제."""
+    """이메일로 받은 토큰을 검증하고 2FA 해제. 보안 정책:
+    - 해제 직후 must_change_password=True 강제 — 다음 로그인 시 비번 변경 필수.
+      탈취된 비번 재사용 차단. 진짜 사용자가 발견하기 전 takeover 시간 단축.
+    - 별도 통보 메일 발송 ("본인이 아니면..." 안내) — 사후 발각 가능성 ↑.
+    - audit_logs.totp.reset.completed — /admin/security 에서 다른 admin 인지.
+    """
     if not payload.token:
         raise HTTPException(400, detail="복구 토큰이 비어있습니다.")
     try:
@@ -830,11 +846,39 @@ async def totp_reset_confirm(
     user.totp_secret = ""
     user.recovery_codes = []
     user.totp_app_label = ""
+    # 보안: reset 직후 비번 강제 교체. 탈취된 비번 재사용 차단.
+    user.must_change_password = True
     await session.flush()
 
     from audit import log_event
-    await log_event(session, request, action="totp.reset.completed", actor_user=user)
-    return {"ok": True, "email": user.email}
+    await log_event(session, request, action="totp.reset.completed", actor_user=user,
+                    detail={"forced_password_change": True})
+
+    # 사후 통보 메일 — "본인이 아니면..." 안내. 진짜 사용자가 빠르게 발견.
+    try:
+        from main import send_email, FROM_EMAIL
+        await send_email({
+            "from": FROM_EMAIL,
+            "to": [user.email],
+            "subject": "[대무] 2단계 인증이 해제되었습니다",
+            "text": (
+                f"{user.name or user.email}님,\n\n"
+                f"방금 어드민 2단계 인증이 해제되었습니다.\n"
+                f"보안 정책에 따라 다음 로그인 시 비밀번호 변경이 강제됩니다.\n\n"
+                f"⚠ 본인이 요청한 것이 아니라면:\n"
+                f"  1. 즉시 비밀번호를 변경하세요 (어드민 → 본인 비밀번호 변경).\n"
+                f"  2. 운영자(daemu_office@naver.com) 에게 즉시 신고하세요.\n"
+                f"  3. 어드민 → 보안 모니터링 (/admin/security) 에서 의심 활동을\n"
+                f"     확인하세요.\n\n"
+                f"본인이 한 작업이라면 이 메일을 무시하셔도 됩니다.\n\n"
+                f"DAEMU 베이커리·카페 컨설팅\n"
+            ),
+        })
+    except Exception as e:  # noqa: BLE001
+        print(f"[totp-reset] notification send failed for {user.email}: {e!r}")
+        # 통보 실패해도 reset 자체는 성공으로 진행.
+
+    return {"ok": True, "email": user.email, "must_change_password": True}
 
 
 class UnlockIn(BaseModel):

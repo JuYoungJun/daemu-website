@@ -66,25 +66,31 @@ export default function AdminGate() {
   const [pendingCreds, setPendingCreds] = useState(null);
   const [totpCode, setTotpCode] = useState('');
 
-  // 2FA 분실 복구 — 이메일 입력 modal.
+  // 2FA 분실 복구 — 이메일 + 본인 확인용 비밀번호 입력 modal.
   const [showTotpRecover, setShowTotpRecover] = useState(false);
   const [recoverEmail, setRecoverEmail] = useState('');
+  const [recoverPassword, setRecoverPassword] = useState('');
   const [recoverSent, setRecoverSent] = useState(false);
   const [recoverLoading, setRecoverLoading] = useState(false);
 
   const onTotpRecoverSubmit = async (e) => {
     e.preventDefault();
-    if (!recoverEmail.trim()) return;
+    if (!recoverEmail.trim() || !recoverPassword) return;
     setRecoverLoading(true);
-    // backend 는 사용자 존재 여부 leak 방지로 항상 200 응답.
-    await api.post('/api/auth/totp-reset-request', { email: recoverEmail.trim() }, { skipAuth: true });
+    // backend 는 사용자 존재/비번 일치 여부 leak 방지로 항상 200 응답.
+    await api.post('/api/auth/totp-reset-request', {
+      email: recoverEmail.trim(),
+      password: recoverPassword,
+    }, { skipAuth: true });
     setRecoverLoading(false);
     setRecoverSent(true);
+    setRecoverPassword('');  // 메모리에서 즉시 제거
   };
   const onTotpRecoverClose = () => {
     setShowTotpRecover(false);
     setRecoverSent(false);
     setRecoverEmail('');
+    setRecoverPassword('');
   };
 
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
@@ -326,13 +332,19 @@ export default function AdminGate() {
                   <p style={{ fontSize: 13, lineHeight: 1.7, color: '#5a534b' }}>
                     인증 앱과 백업 코드를 모두 잃은 경우, 등록된 이메일로 복구 링크를 받을 수 있습니다.
                   </p>
-                  <p style={{ fontSize: 11.5, color: '#8c867d', marginBottom: 14 }}>
-                    링크 클릭 시 2단계 인증이 해제되며, 비밀번호로 로그인 후 즉시 새로 등록해 주세요.
+                  <p style={{ fontSize: 12, color: '#b87333', background: '#fff8ec', border: '1px solid #f0e3c4', padding: '8px 10px', borderRadius: 4, marginBottom: 14 }}>
+                    🔒 본인 확인을 위해 <strong>이메일과 현재 비밀번호</strong>를 함께 입력해 주세요.
+                    링크 클릭 후 2단계 인증이 해제되며, 다음 로그인 시 비밀번호 변경이 강제됩니다.
                   </p>
                   <div className="admin-login-field">
                     <input type="email" autoComplete="username"
                       value={recoverEmail} onChange={(e) => setRecoverEmail(e.target.value)}
                       placeholder="등록된 어드민 이메일" required autoFocus />
+                  </div>
+                  <div className="admin-login-field">
+                    <input type="password" autoComplete="current-password"
+                      value={recoverPassword} onChange={(e) => setRecoverPassword(e.target.value)}
+                      placeholder="현재 비밀번호" required />
                   </div>
                   <div className="adm-action-row">
                     <button type="button" className="adm-btn-sm" onClick={onTotpRecoverClose}>취소</button>
