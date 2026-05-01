@@ -108,6 +108,7 @@ const AdminApiDocs = lazyWithReload(() => import('./admin/AdminApiDocs.jsx'));
 const AdminSecurityMonitoring = lazyWithReload(() => import('./admin/AdminSecurityMonitoring.jsx'));
 const AdminAnnouncements = lazyWithReload(() => import('./admin/AdminAnnouncements.jsx'));
 const AdminInventory = lazyWithReload(() => import('./admin/AdminInventory.jsx'));
+const TotpResetConfirm = lazyWithReload(() => import('./admin/TotpResetConfirm.jsx'));
 const SignDocument = lazyWithReload(() => import('./pages/SignDocument.jsx'));
 
 const AdminFallback = () => (
@@ -296,6 +297,8 @@ export default function App() {
         <Route path="/admin/security" element={wrap(<RequireAuth><AdminSecurityMonitoring /></RequireAuth>)} />
         <Route path="/admin/announcements" element={wrap(<RequireAuth><AdminAnnouncements /></RequireAuth>)} />
         <Route path="/admin/inventory" element={wrap(<RequireAuth><AdminInventory /></RequireAuth>)} />
+        {/* 2FA 분실 복구 — auth 불필요 (token 자체가 인증). */}
+        <Route path="/admin/totp-reset" element={wrap(<TotpResetConfirm />)} />
 
         {/* Public e-sign page — no auth, sign_token in path. */}
         <Route path="/sign/:token" element={wrap(<SignDocument />)} />

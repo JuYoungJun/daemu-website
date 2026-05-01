@@ -259,24 +259,14 @@ async def lifespan(_app: FastAPI):
             async with SessionLocal() as session:
                 await ensure_default_users(session)
 
-                # 긴급 2FA 리셋 — DAEMU_RESET_TOTP_EMAIL env 한 번 사용 후 즉시 제거.
-                _reset_email = os.environ.get("DAEMU_RESET_TOTP_EMAIL", "").strip().lower()
-                if _reset_email:
-                    try:
-                        from sqlalchemy import select as _select
-                        from models import AdminUser as _AdminUser
-                        _r = await session.execute(_select(_AdminUser).where(_AdminUser.email == _reset_email))
-                        _target = _r.scalar_one_or_none()
-                        if _target:
-                            _target.totp_enabled = False
-                            _target.totp_secret = ""
-                            _target.recovery_codes = []
-                            await session.commit()
-                            print(f"[bootstrap] ✓ 2FA reset for {_reset_email} — 환경변수 DAEMU_RESET_TOTP_EMAIL 즉시 제거 권장")
-                        else:
-                            print(f"[bootstrap] ⚠ DAEMU_RESET_TOTP_EMAIL={_reset_email} — 해당 사용자 없음")
-                    except Exception as _e:  # noqa: BLE001
-                        print(f"[bootstrap] 2FA reset 실패: {_e!r}")
+                # ※ DAEMU_RESET_TOTP_EMAIL env 기반 2FA 리셋은 제거됨 (2026-05-01).
+                # 사유: 호스트별로 env 등록/삭제 절차가 달라(Render Dashboard
+                # vs Cafe24 systemd EnvironmentFile + restart) 운영자 실수 +
+                # backdoor 위험. 대신 다음 host-agnostic 경로 사용:
+                #   1) 이메일 복구 링크: POST /api/auth/totp-reset-request →
+                #      이메일로 5분 TTL JWT 링크 발송 → 클릭 시 2FA 해제.
+                #   2) 비상 CLI: backend-py/manage.py reset-2fa --email <email>
+                #      (host shell 에서 1회 실행, 코드/env 안 건드림).
 
                 # 표준 계약서/발주서 템플릿 자동 시드 (idempotent)
                 try:

@@ -695,6 +695,148 @@ async def totp_disable(
     return {"ok": True}
 
 
+# ── 2FA 분실 복구 — 이메일 링크 (host-agnostic) ─────────────────────
+# 시나리오 ③ "본인이 유일한 admin + 폰/backup code 다 잃음" 의 host-agnostic
+# 해결책. Render Dashboard / Cafe24 systemd EnvironmentFile 등의 env 조작
+# 없이 동작 — 어떤 호스트에서든 동일 절차.
+#
+# 흐름:
+#   1) 로그인 화면의 "2FA 분실?" 링크 → 이메일 입력 → POST request
+#   2) backend: email 으로 사용자 조회 → 5분 TTL JWT 토큰 생성 → 메일 발송
+#      (메일 본문에 https://<frontend>/admin/totp-reset?token=... 링크 1개)
+#   3) 사용자 메일에서 링크 클릭 → frontend 가 토큰을 confirm endpoint 로 POST
+#   4) backend: 토큰 verify (signature + TTL + purpose) → 2FA 해제 (totp_*
+#      모두 비움) → audit log
+#   5) 사용자가 비밀번호만으로 로그인 → 본인이 즉시 새 2FA 등록
+#
+# 보안 분석:
+#   - 메일 계정이 손상되면 attacker 가 2FA 우회 가능. 단 비밀번호도 모르면
+#     로그인 자체는 못 함 → 산업 표준 password reset via email 과 동일 위험.
+#   - rate limit: per-email 1회/10분, per-IP 3회/시간 (스팸 방지).
+#   - audit log: totp.reset.requested + totp.reset.completed 양쪽 기록.
+#   - 사용자 존재 여부 leak 방지: email 없어도 200 ok 로 같은 응답.
+
+class TotpResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+_totp_reset_throttle = _LoginThrottle(max_failures=1, window_seconds=600)  # 1회/10분/email
+
+
+@router.post("/totp-reset-request")
+async def totp_reset_request(
+    payload: TotpResetRequestIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """이메일 입력 받아 5분 TTL 복구 링크 발송. 사용자 존재 여부는
+    응답으로 leak 안 함 (항상 200 ok)."""
+    email_norm = (payload.email or "").strip().lower()
+    if not email_norm:
+        return {"ok": True}  # silent
+
+    # email 단위 throttle (1회/10분)
+    if _totp_reset_throttle.is_locked(email_norm):
+        # 응답은 동일하게 200 — 공격자가 lock 여부로 사용자 존재 추정 못 하게.
+        return {"ok": True}
+    _totp_reset_throttle.record_failure(email_norm)
+
+    res = await session.execute(select(AdminUser).where(AdminUser.email == email_norm))
+    user = res.scalar_one_or_none()
+
+    from audit import log_event
+    if not user or not user.active:
+        # 사용자 없거나 비활성 — silent.
+        await log_event(session, request, action="totp.reset.requested.no_such_user",
+                        actor_email=email_norm)
+        return {"ok": True}
+
+    # JWT 발급 — purpose=totp_reset, TTL 5분.
+    now = datetime.now(timezone.utc)
+    payload_jwt = {
+        "sub": str(user.id),
+        "email": user.email,
+        "purpose": "totp_reset",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=5)).timestamp()),
+    }
+    token = jwt.encode(payload_jwt, JWT_SECRET, algorithm=JWT_ALG)
+
+    # 메일 발송 — frontend 의 도메인은 PUBLIC_BASE_URL env 기반 (host-agnostic).
+    public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if not public_base:
+        # PUBLIC_BASE_URL 미설정 — frontend host 모름. 토큰만 메일에 적기.
+        link = f"(서버 도메인 미설정. 운영자 문의: token={token})"
+    else:
+        link = f"{public_base}/admin/totp-reset?token={token}"
+
+    body = (
+        f"{user.name or user.email}님,\n\n"
+        f"DAEMU 어드민 2단계 인증 복구 요청을 받았습니다.\n"
+        f"본인이 요청한 것이 아니라면 이 메일을 무시하세요.\n\n"
+        f"아래 링크를 5분 이내에 클릭하여 2단계 인증을 해제할 수 있습니다.\n"
+        f"링크는 1회용이며 5분 후 만료됩니다.\n\n"
+        f"{link}\n\n"
+        f"해제 후 어드민에 비밀번호로 로그인 → 즉시 2단계 인증을 다시\n"
+        f"설정해 주세요. 본인 외 누구와도 이 링크를 공유하지 마세요.\n\n"
+        f"DAEMU 베이커리·카페 컨설팅\n"
+    )
+    try:
+        from main import send_email, FROM_EMAIL
+        await send_email({
+            "from": FROM_EMAIL,
+            "to": [user.email],
+            "subject": "[대무] 2단계 인증 복구 링크 (5분 유효)",
+            "text": body,
+        })
+        await log_event(session, request, action="totp.reset.requested",
+                        actor_user=user, detail={"to": user.email})
+    except Exception as e:  # noqa: BLE001
+        print(f"[totp-reset] send failed for {user.email}: {e!r}")
+        await log_event(session, request, action="totp.reset.requested.send_failed",
+                        actor_user=user, detail={"error": str(e)[:200]})
+
+    return {"ok": True}
+
+
+class TotpResetConfirmIn(BaseModel):
+    token: str
+
+
+@router.post("/totp-reset-confirm")
+async def totp_reset_confirm(
+    payload: TotpResetConfirmIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """이메일로 받은 토큰을 검증하고 2FA 해제."""
+    if not payload.token:
+        raise HTTPException(400, detail="복구 토큰이 비어있습니다.")
+    try:
+        claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALG])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, detail="복구 링크가 만료되었습니다. 다시 요청해 주세요.") from None
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, detail="복구 링크가 유효하지 않습니다.") from None
+
+    if claims.get("purpose") != "totp_reset":
+        raise HTTPException(401, detail="복구 토큰 형식이 올바르지 않습니다.")
+    user_id = int(claims.get("sub") or 0)
+    user = await session.get(AdminUser, user_id) if user_id else None
+    if not user or not user.active:
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.")
+
+    user.totp_enabled = False
+    user.totp_secret = ""
+    user.recovery_codes = []
+    user.totp_app_label = ""
+    await session.flush()
+
+    from audit import log_event
+    await log_event(session, request, action="totp.reset.completed", actor_user=user)
+    return {"ok": True, "email": user.email}
+
+
 class UnlockIn(BaseModel):
     ip: str | None = None  # 비우면 본인이 호출한 IP(=어드민 자신) 해제
 

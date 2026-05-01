@@ -66,6 +66,27 @@ export default function AdminGate() {
   const [pendingCreds, setPendingCreds] = useState(null);
   const [totpCode, setTotpCode] = useState('');
 
+  // 2FA 분실 복구 — 이메일 입력 modal.
+  const [showTotpRecover, setShowTotpRecover] = useState(false);
+  const [recoverEmail, setRecoverEmail] = useState('');
+  const [recoverSent, setRecoverSent] = useState(false);
+  const [recoverLoading, setRecoverLoading] = useState(false);
+
+  const onTotpRecoverSubmit = async (e) => {
+    e.preventDefault();
+    if (!recoverEmail.trim()) return;
+    setRecoverLoading(true);
+    // backend 는 사용자 존재 여부 leak 방지로 항상 200 응답.
+    await api.post('/api/auth/totp-reset-request', { email: recoverEmail.trim() }, { skipAuth: true });
+    setRecoverLoading(false);
+    setRecoverSent(true);
+  };
+  const onTotpRecoverClose = () => {
+    setShowTotpRecover(false);
+    setRecoverSent(false);
+    setRecoverEmail('');
+  };
+
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
 
   // Refresh /api/auth/me on mount so the forced-change flag stays accurate
@@ -253,6 +274,10 @@ export default function AdminGate() {
                       {error && <div style={{ color: '#b04a3b', fontSize: 12, margin: '4px 0 8px' }}>{error}</div>}
                       <button className="btn" type="submit" disabled={loading}>{loading ? '확인 중…' : '확인'}</button>
                       <button type="button" className="adm-btn-sm" style={{ marginTop: 8 }} onClick={onTotpCancel}>← 다시 로그인</button>
+                      <button type="button" onClick={() => setShowTotpRecover(true)}
+                        style={{ background: 'transparent', border: 'none', color: '#1f5e7c', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', marginTop: 14, display: 'block', width: '100%' }}>
+                        2단계 인증 분실? 이메일로 복구 링크 받기
+                      </button>
                     </form>
                   </>
                 ) : (
@@ -272,6 +297,54 @@ export default function AdminGate() {
             </div>
           </section>
         </main>
+        {showTotpRecover && (
+          <div className="adm-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onTotpRecoverClose(); }}
+            role="dialog" aria-modal="true" aria-label="2단계 인증 복구">
+            <div className="adm-modal-box is-narrow">
+              <div className="adm-modal-head">
+                <h2>2단계 인증 복구</h2>
+                <button type="button" className="adm-modal-close" onClick={onTotpRecoverClose} aria-label="닫기">×</button>
+              </div>
+              {recoverSent ? (
+                <div>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: '#2e7d32', fontWeight: 500 }}>
+                    ✓ 복구 링크 요청을 받았습니다.
+                  </p>
+                  <p style={{ fontSize: 12.5, lineHeight: 1.7, color: '#5a534b' }}>
+                    입력하신 이메일이 등록된 어드민 계정인 경우, <strong>5분 이내</strong>에 복구 링크가 도착합니다.
+                    스팸함도 함께 확인해 주세요. 링크는 1회용이며 5분 후 만료됩니다.
+                  </p>
+                  <p style={{ fontSize: 11.5, color: '#8c867d', marginTop: 12 }}>
+                    이메일이 도착하지 않아도 보안상 같은 응답을 드립니다 — 등록되지 않은 이메일이거나 발송 한도(10분 1회)에 걸린 경우입니다.
+                  </p>
+                  <div className="adm-action-row">
+                    <button type="button" className="btn" onClick={onTotpRecoverClose}>닫기</button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={onTotpRecoverSubmit}>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: '#5a534b' }}>
+                    인증 앱과 백업 코드를 모두 잃은 경우, 등록된 이메일로 복구 링크를 받을 수 있습니다.
+                  </p>
+                  <p style={{ fontSize: 11.5, color: '#8c867d', marginBottom: 14 }}>
+                    링크 클릭 시 2단계 인증이 해제되며, 비밀번호로 로그인 후 즉시 새로 등록해 주세요.
+                  </p>
+                  <div className="admin-login-field">
+                    <input type="email" autoComplete="username"
+                      value={recoverEmail} onChange={(e) => setRecoverEmail(e.target.value)}
+                      placeholder="등록된 어드민 이메일" required autoFocus />
+                  </div>
+                  <div className="adm-action-row">
+                    <button type="button" className="adm-btn-sm" onClick={onTotpRecoverClose}>취소</button>
+                    <button type="submit" className="btn" disabled={recoverLoading}>
+                      {recoverLoading ? '발송 중…' : '복구 링크 발송'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
       </AdminShell>
     );
   }

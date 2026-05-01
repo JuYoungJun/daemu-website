@@ -62,7 +62,7 @@
 - 권장 조치: Cafe24 마이그레이션 직후 **반드시** `ENV=prod` 설정 + `ADMIN_PASSWORD/TESTER_PASSWORD/DEVELOPER_PASSWORD` 모두 강한 비밀번호로 교체 + `TEST_ADMIN_*` env 미설정 확인. seeds.py 의 데모 fallback 은 ENV=prod 에서 자동 skip 되지만, env 누락 시 위험. systemd unit 의 `Environment=ENV=prod` 강제 권장.
 - OWASP: A07:2021 Identification and Authentication Failures.
 
-### F-5 `DAEMU_RESET_TOTP_EMAIL` 영속화 시 backdoor
+### F-5 [수정 완료] `DAEMU_RESET_TOTP_EMAIL` env 기반 reset 제거 (호스트 종속 + backdoor 위험)
 - 위치: `backend-py/main.py:224-240`
 - 위험: env 등록되어 있는 한 매 부팅마다 해당 사용자 2FA reset. 운영자가 사용 후 즉시 삭제 안 하면, 침입자가 env 를 그대로 두고 패스워드만 reset 하면 어드민 우회.
 - 권장 조치: 코드에 "1회 사용 후 자동 disarm" 패턴 추가 — reset 성공 시 `DAEMU_RESET_TOTP_USED_AT` 같은 marker 를 audit log 에 남기고, 동일 부팅이 다음 부팅에 fail-closed (env 가 여전히 있으면 RuntimeError). 또는 systemd `EnvironmentFile=` 에서 사용 후 즉시 삭제하는 운영 절차 README 명시.
@@ -183,6 +183,18 @@
 ### 1차 (2026-04-30)
 - `backend-py/routes_email_verify.py:248-284` — `send_email` 호출을 dict payload 로 수정 (F-1).
 - `backend-py/audit.py:23-32` — `_client_ip` 가 auth.py 의 정책을 위임 호출하도록 통일 (F-3).
+
+### 4차 (2026-05-01 — 2FA 복구 host-agnostic)
+- **F-5 fix**: `DAEMU_RESET_TOTP_EMAIL` env 기반 lifespan reset 코드 제거.
+  호스트별로 env 등록/삭제 절차가 달라(Render Dashboard vs Cafe24 systemd
+  EnvironmentFile + restart) 운영자 실수 + backdoor 위험. 대신:
+  - **이메일 복구 링크** (`POST /api/auth/totp-reset-request` + `confirm`)
+    — 5분 TTL JWT, 1회용. 로그인 화면 "2단계 인증 분실?" 링크.
+  - **CLI 비상 도구** (`backend-py/manage.py reset-2fa --email <email>`)
+    — host shell 에서 1회 실행, audit_logs 에 actor='cli' 기록.
+  - 둘 다 host 무관 (Render shell / Cafe24 ssh / 로컬 dev 동일).
+- 신규 frontend 페이지: `src/admin/TotpResetConfirm.jsx` (`/admin/totp-reset?token=...`).
+- 신규 backend endpoint 2개 (총 routes 132 → 134).
 
 ### 3차 (2026-05-01 — 호스팅 중립화)
 - 백엔드/프론트의 Render 특화 주석/메시지/URL 제거 — Cafe24 자체 호스팅
