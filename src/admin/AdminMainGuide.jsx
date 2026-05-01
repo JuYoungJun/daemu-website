@@ -104,7 +104,7 @@ export default function AdminMainGuide({ onClose }) {
         <ol style={guideListStyle}>
           <li>어드민 페이지가 500 — 새 빌드 deploy 직후 옛 chunk 캐시일 가능성. <strong>Cmd+Shift+R(맥)/Ctrl+Shift+R(윈)</strong> 로 강제 새로고침.</li>
           <li>모니터링에 발송 실패가 누적 — Resend API 키 / 도메인 인증 점검.</li>
-          <li>백엔드 응답이 느림 — Render free tier cold-start. 첫 요청은 30초 가능. 외부 cron(UptimeRobot 등) 등록 권장.</li>
+          <li>백엔드 응답이 느림 — 호스트 cold-start (free tier / 슬립 후 첫 요청). 첫 요청은 30초까지 가능. 외부 cron(UptimeRobot 등) 으로 주기적 ping 권장.</li>
           <li>그 외 — 모니터링의 운영자 진단 정보(<code>window.__daemu_lastError</code>) + 이슈 피드 CSV 를 daemu_office@naver.com 으로 전달.</li>
         </ol>
       </GuideSection>

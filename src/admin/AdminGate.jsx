@@ -72,7 +72,7 @@ export default function AdminGate() {
   // even if it changed on another device or via admin reset.
   //
   // 중요: refreshMe 가 실패해도 logout 은 401/403 (authFailed) 일 때만.
-  // 5xx / 네트워크 에러(예: Render free tier 의 dyno cold-start, ipv6 끊김,
+  // 5xx / 네트워크 에러(예: 백엔드 cold-start, DB 일시 단절, ipv6 끊김,
   // CORS preflight 시점 일시 장애) 는 transient 로 분류해 세션 유지 — 사용자
   // 가 어드민에 들어와 새로고침할 때마다 강제 로그아웃되던 버그 제거.
   useEffect(() => {

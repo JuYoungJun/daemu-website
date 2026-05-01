@@ -306,7 +306,8 @@ async def lifespan(_app: FastAPI):
 PROD = os.environ.get("ENV", "").lower() in {"prod", "production"}
 
 # Disable Swagger UI / OpenAPI in production (F-10 — reduces info leakage).
-# Set ENV=prod in Render once a real domain + customer data are wired up.
+# Set ENV=prod in your hosting env (Render/Cafe24 systemd EnvironmentFile/etc.)
+# once a real domain + customer data are wired up.
 app = FastAPI(
     title="DAEMU API",
     description=(
@@ -789,7 +790,7 @@ async def health():
         "uploadEndpoint": "/api/upload",
         "publicBase": PUBLIC_BASE or "(auto from request host)",
         "warnings": (
-            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 Render env에 설정하세요."]
+            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 백엔드 env (Render Dashboard / Cafe24 systemd EnvironmentFile / .env 등) 에 설정하세요."]
             if provider == "none" else []
         ),
     }

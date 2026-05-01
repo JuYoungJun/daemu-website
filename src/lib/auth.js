@@ -127,7 +127,7 @@ export const Auth = {
   //   { ok: true, ...user }                       — 정상
   //   { ok: false, authFailed: true }             — 401/403 (토큰 만료/무효 → logout)
   //   { ok: false, transient: true, status }      — 5xx / 네트워크 에러
-  //                                                 (Render dyno cold-start 등 → 세션 유지)
+  //                                                 (백엔드 cold-start / 일시 단절 등 → 세션 유지)
   // 호출자는 authFailed 일 때만 logout 해야 함. transient 는 retry 또는 무시.
   async refreshMe() {
     if (!api.isConfigured()) return { ok: false, transient: true };

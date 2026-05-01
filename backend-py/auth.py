@@ -89,9 +89,10 @@ _TRUST_FORWARDED = os.environ.get("TRUST_FORWARDED_FOR", "1").lower() not in {"0
 
 def _client_ip(request: Request) -> str:
     """N2-01 fix: only trust X-Forwarded-For when we know we're behind a
-    proxy that sets it (Render, Cloudflare). The header is a comma-
-    separated chain; the LAST entry is the trusted proxy's view of the
-    client. Take the rightmost-non-trusted entry, not the leftmost."""
+    proxy that sets it (Render / Cafe24 nginx / Cloudflare 등). The header is
+    a comma-separated chain; the LAST entry is the trusted proxy's view of
+    the client. Take the rightmost-non-trusted entry, not the leftmost.
+    TRUST_FORWARDED_FOR=1 일 때만 활성. 프록시 없이 직접 노출 시는 0."""
     if _TRUST_FORWARDED:
         fwd = request.headers.get("x-forwarded-for", "")
         if fwd:
@@ -121,11 +122,12 @@ DEVELOPER_PASSWORD = os.environ.get("DEVELOPER_PASSWORD", "dev1234")
 # end-to-end without going through the rotation flow on every fresh deploy.
 #
 # REMOVE AFTER TESTING:
-#   1) Render Dashboard → daemu-py → Environment → unset both vars
-#   2) Trigger redeploy. The DB row remains until explicitly deleted —
-#      log into the regular admin account and DELETE this user from
-#      /admin/users (or via DELETE /api/users/{id}).
-#   3) Confirm via /api/users (admin) that the row is gone.
+#   1) 백엔드 host env 에서 두 변수 제거
+#      (Render Dashboard / Cafe24 systemd EnvironmentFile / .env 등)
+#   2) 백엔드 재시작 또는 redeploy. DB row 는 명시적 삭제 전까지 남음 —
+#      regular admin 계정으로 로그인 후 /admin/users 에서 DELETE
+#      (또는 DELETE /api/users/{id}).
+#   3) /api/users (admin) 응답에 row 가 사라진 것 확인.
 TEST_ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
 TEST_ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 

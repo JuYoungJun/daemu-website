@@ -7,7 +7,8 @@
     · ipapi.co 무료 한도: 1,000 req/day. 같은 IP 로 분 단위 새로고침되면
       금방 소진된다.
     · TTL 1시간 — 같은 IP 의 위치는 그 사이에 거의 변하지 않음.
-    · 메모리 캐시(LRU 1024) — Render free tier 의 휘발 환경에서도 충분.
+    · 메모리 캐시(LRU 1024) — 단일 backend instance 가정. 재시작 시 휘발이지만
+      ipapi.co 한도(1000/day) 보호엔 충분.
     · DB 컬럼이 아님: GeoIP 값이 변할 때 재조회되어야 하므로.
 """
 

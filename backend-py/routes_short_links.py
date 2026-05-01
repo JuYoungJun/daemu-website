@@ -1,8 +1,8 @@
 """ShortLink — QR 캠페인 보안 단축 URL.
 
-QR_SECURITY.md Stage 2 의 백엔드 구현. 도메인 확정 전엔 Render URL
-(`https://daemu-py.onrender.com/r/{short_id}`) 을 short link prefix 로
-사용. 도메인 확정 시 SHORT_LINK_BASE env 만 갈아끼우면 됨.
+QR_SECURITY.md Stage 2 의 백엔드 구현. short link prefix 는 SHORT_LINK_BASE
+env 로 결정 — 호스팅 host (Render / Cafe24 / 임시 데모 URL 등) 와 무관하게
+도메인 결정 시점에 한 줄 교체로 즉시 반영.
 
 흐름:
   1. POST /api/short-links {target_url, label, expires_at?, max_clicks?}

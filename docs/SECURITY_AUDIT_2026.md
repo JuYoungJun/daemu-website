@@ -184,6 +184,24 @@
 - `backend-py/routes_email_verify.py:248-284` — `send_email` 호출을 dict payload 로 수정 (F-1).
 - `backend-py/audit.py:23-32` — `_client_ip` 가 auth.py 의 정책을 위임 호출하도록 통일 (F-3).
 
+### 3차 (2026-05-01 — 호스팅 중립화)
+- 백엔드/프론트의 Render 특화 주석/메시지/URL 제거 — Cafe24 자체 호스팅
+  마이그레이션 시 자연스럽게 동작하도록 호스팅-agnostic 으로 정리:
+  - `backend-py/db.py` 모듈 docstring (예시 URL)
+  - `backend-py/main.py` SwaggerUI prod 코멘트 + warnings 메시지
+  - `backend-py/auth.py` proxy 정책 + TEST_ADMIN_* 회수 절차 코멘트
+  - `backend-py/migrations.py` 운영 DB 시나리오 코멘트
+  - `backend-py/routes_crud.py` rate-limiter 코멘트
+  - `backend-py/routes_geo.py` 캐시 코멘트
+  - `backend-py/routes_short_links.py` 모듈 docstring
+  - `src/lib/keepAlive.js` 모듈 docstring
+  - `src/lib/api.js` / `src/lib/auth.js` / `src/admin/AdminGate.jsx` 코멘트
+  - `src/admin/InquiriesGuide.jsx` / `UtmBuilderGuide.jsx` / `AdminMainGuide.jsx`
+    의 사용자 노출 가이드 텍스트
+  - `src/admin/AdminInquiries.jsx` 의 fallback 안내 메시지
+- 실제 코드/로직 변경 없음 — 코멘트와 사용자 표시 텍스트만. 호스팅 제공자
+  변경 시 메시지가 자연스럽게 통하도록 generic 하게 표현.
+
 ### 2차 (2026-05-01)
 - `backend-py/auth.py` — login throttle lock 도달 시 `suspicious.record_async("brute_force_login", "high")` 자동 호출 (F-7).
 - `backend-py/suspicious.py` — `record_async()` 신규 (AsyncSession 호환).

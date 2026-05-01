@@ -61,8 +61,9 @@ export default function UtmBuilderGuide({ onClose }) {
 
       <GuideSection title="단축 링크 + QR 코드 (보안)">
         <p>
-          긴 UTM 링크를 <strong>단축 링크</strong>로 변환하면 <code>https://daemu-py.onrender.com/r/abc12</code> 처럼
+          긴 UTM 링크를 <strong>단축 링크</strong>로 변환하면 <code>https://&lt;도메인&gt;/r/abc12</code> 처럼
           짧은 형태로 사용할 수 있습니다. 카드·전단지·명함 QR 에 적합합니다.
+          (도메인은 backend env <code>SHORT_LINK_BASE</code> 로 설정 — 운영 도메인 확정 후 교체.)
         </p>
         <ul style={guideListStyle}>
           <li><strong>HMAC 서명</strong>으로 위·변조 방지 — 누군가 short_id 를 추측해 다른 곳으로 리다이렉트시킬 수 없습니다.</li>

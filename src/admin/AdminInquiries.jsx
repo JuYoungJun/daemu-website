@@ -79,13 +79,13 @@ export default function AdminInquiries() {
             setItems(mapped);
           } else {
             // 백엔드는 비어있지만 로컬 캐시에 데이터가 있을 수 있음.
-            // Render free tier 에서 SQLite 가 휘발 후 첫 부팅 시 자주 발생.
+            // 호스트 cold-start / 일시 응답 지연 / DB 단절 직후 자주 발생.
             // 사용자가 새로고침할 때 이미 보고 있던 데이터가 사라지는 것을
             // 막기 위해 로컬 캐시를 fallback 으로 표시.
             const local = DB.get(STORAGE_KEY) || [];
             if (local.length > 0) {
               setItems(local);
-              setError('백엔드에 문의 데이터가 비어있어 로컬 캐시를 표시합니다. (Render 무료 tier SQLite 가 재시작 시 휘발됩니다.)');
+              setError('백엔드 응답이 비어있어 로컬 캐시를 표시합니다. 잠시 후 새로고침하면 최신 데이터가 표시됩니다.');
             } else {
               setItems([]);
             }

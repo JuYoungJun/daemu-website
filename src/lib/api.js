@@ -18,8 +18,8 @@ function authHeader() {
 }
 
 // 네트워크/fetch 예외를 사용자 친화 한국어 메시지로 변환.
-// Render free tier cold-start, Aiven hibernate, CORS preflight, 일시 단절
-// 등 모두 같은 "TypeError: Failed to fetch" 로 떨어지므로 공통 안내 문구 사용.
+// 백엔드 cold-start, DB hibernate, CORS preflight, 일시 단절 등 모두 같은
+// "TypeError: Failed to fetch" 로 떨어지므로 공통 안내 문구 사용.
 // detail 은 logs/디버그 용도로 별도 필드에 보존.
 function _friendlyFetchError(err) {
   const raw = String(err || '');

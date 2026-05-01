@@ -1,13 +1,13 @@
-// Render free tier 슬립 방어 — 클라이언트 사이드 keep-alive.
+// 백엔드 슬립/cold-start 방어 — 클라이언트 사이드 keep-alive.
 //
-// Render free tier 는 15분간 트래픽이 없으면 dyno 가 sleep 상태로 들어가고
-// 첫 요청은 cold-start 로 30초+ 지연이 발생한다. GitHub Actions cron 은
-// hour-boundary 부하로 신뢰성이 낮고, 외부 cron(UptimeRobot 등) 등록을 안내
-// 하지만 사용자가 등록하기 전에는 슬립이 자주 발생한다.
+// 호스트 환경에 따라 free tier 가 일정 시간 idle 시 슬립 (Render free tier =
+// 15분, 기타 free PaaS = 다양). Cafe24 self-host VPS 는 슬립이 없으므로
+// 본 모듈이 거의 무해 (5분 ping 1회). 운영 호스트 결정 시점에 따라 자동
+// 적응 — 환경변수 의존 없음.
 //
-// 본 모듈은 보강책: 일반 방문자가 사이트에 들어와 있을 때 5분에 한 번씩만
-// 백엔드 /api/health 를 호출해 dyno 를 깨워 둔다. 새벽에 방문자가 0이면
-// 효과가 없으므로 외부 cron 과 함께 사용해야 슬립이 거의 들어가지 않는다.
+// 본 모듈: 일반 방문자가 사이트에 들어와 있을 때 5분에 한 번씩만 백엔드
+// /api/health 를 호출. 새벽에 방문자가 0이면 효과가 없으므로 외부 cron
+// (UptimeRobot 등) 과 함께 사용 권장.
 //
 // 부담:
 //   · 같은 탭에서 5분 throttle → 한 사용자가 한 시간 머물러도 12회 호출.

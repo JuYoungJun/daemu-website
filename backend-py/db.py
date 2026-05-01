@@ -1,8 +1,8 @@
 """Async SQLAlchemy setup.
 
 DATABASE_URL examples:
-    sqlite+aiosqlite:///./daemu.db                  (default — file-based, works on Render free tier)
-    mysql+asyncmy://user:pass@host:3306/daemu       (production / Cafe24)
+    sqlite+aiosqlite:///./daemu.db                  (default — file-based, dev / 임시 fallback)
+    mysql+aiomysql://user:pass@host:3306/daemu      (운영 — Aiven MySQL / Cafe24 self-host MariaDB)
 
 Schema is auto-created on startup via models.Base.metadata.create_all.
 For more controlled migrations later, switch to Alembic.

@@ -1,9 +1,10 @@
 """부팅 시 자동 실행되는 가벼운 스키마 마이그레이션.
 
 SQLAlchemy 의 `Base.metadata.create_all()` 은 *새* 테이블만 만들고
-기존 테이블의 컬럼 변경은 처리하지 않습니다. Render free tier 의 SQLite
-DB 는 deploy 사이에 유지되므로, 모델에 새 컬럼을 추가한 뒤 배포하면
-기존 테이블에는 컬럼이 없어 SELECT/UPDATE 시 500 이 발생합니다.
+기존 테이블의 컬럼 변경은 처리하지 않습니다. 운영 DB (Aiven MySQL /
+Cafe24 self-host MariaDB) 는 deploy 사이에 유지되므로, 모델에 새 컬럼을
+추가한 뒤 배포하면 기존 테이블에는 컬럼이 없어 SELECT/UPDATE 시 500 이
+발생합니다.
 
 이 모듈은:
   1. 현재 DB 의 컬럼 목록을 inspect 하고

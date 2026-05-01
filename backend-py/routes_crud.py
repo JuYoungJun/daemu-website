@@ -53,7 +53,8 @@ router = APIRouter(prefix="/api", tags=["crud"])
 
 # ---------------------------------------------------------------------------
 # Simple per-IP rate limiter (in-memory, sliding window).
-# Good enough for a single Render dyno; replace with Redis/Cloudflare if scaling.
+# Good enough for a single backend instance (Render dyno / Cafe24 single VPS);
+# multi-instance 배포 시 Redis/Cloudflare 기반으로 교체 필요.
 
 class RateLimiter:
     def __init__(self, max_calls: int, window_seconds: float, max_keys: int = 5000):

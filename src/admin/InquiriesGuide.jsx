@@ -9,7 +9,7 @@ export default function InquiriesGuide({ onClose }) {
       <GuideSection title="이 페이지는 어떤 곳인가요?">
         <p>
           홈페이지 <code>/contact</code> 폼과 사이트 곳곳의 상담 신청 폼을 통해 들어온 모든 문의를 한 곳에서 관리합니다.
-          백엔드 DB(<code>/api/inquiries</code>) 와 동기화되며, Render free tier 가 슬립으로 휘발됐을 때를 대비해
+          백엔드 DB(<code>/api/inquiries</code>) 와 동기화되며, 일시 응답 지연 / 단절 대비
           브라우저 localStorage 에도 캐시 사본을 보관합니다.
         </p>
       </GuideSection>
@@ -61,15 +61,16 @@ export default function InquiriesGuide({ onClose }) {
           <li>수집 목적: 상담 응대 + 발주 연결.</li>
           <li>보관 기간: <strong>3년</strong> (전자상거래법 — 소비자 불만/분쟁 처리 의무 기간).</li>
           <li>삭제: 보관기간 경과 또는 본인 요청 시. 본 페이지에서 즉시 삭제 가능.</li>
-          <li>제3자 제공: 없음. 백엔드(Render) 에만 저장되며, 외부 마케팅 도구로 흘러가지 않습니다.</li>
+          <li>제3자 제공: 없음. 자체 백엔드/DB 에만 저장되며, 외부 마케팅 도구로 흘러가지 않습니다.</li>
         </ul>
       </GuideSection>
 
-      <GuideSection title="Render 휘발 대비 캐시">
+      <GuideSection title="백엔드 일시 단절 대비 캐시">
         <p>
-          백엔드(<code>daemu-py.onrender.com</code>) 가 free tier 라 일정 기간 트래픽이 없으면 SQLite 가 휘발될 수 있습니다.
-          본 페이지는 백엔드 응답이 빈 배열일 때 localStorage 캐시를 보여주고 상단에 안내 배너를 표시합니다 — 가짜 비어있음으로
-          오인하지 않도록 디자인되어 있습니다. 운영 단계 이전 시 카페24 VPS / paid 백엔드로 옮기는 것을 권장합니다.
+          백엔드 또는 DB 가 일시적으로 응답하지 않을 때 (cold-start / 유지보수 / 네트워크 단절 등),
+          본 페이지는 응답이 빈 배열이면 localStorage 캐시를 보여주고 상단에 안내 배너를 표시합니다 —
+          가짜 비어있음으로 오인하지 않도록 디자인. 운영 호스트(자체 VPS / 클라우드) 와 Aiven MySQL
+          연결이 정상화되는 즉시 자동으로 최신 데이터가 반영됩니다.
         </p>
       </GuideSection>
 
