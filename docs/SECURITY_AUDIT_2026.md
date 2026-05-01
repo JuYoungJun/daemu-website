@@ -1,18 +1,24 @@
-# DAEMU 보안 감사 보고서 (2026-04-30)
+# DAEMU 보안 감사 보고서 (2026-04-30, 2026-05-01 갱신)
 
 > 운영 배포(Cafe24 VPS) 직전 검토. 대상: backend-py + src/admin + 운영 정책.
 > 보고 형식: CLAUDE.md 의 control-tower 분류 + OWASP Top 10 매핑.
 
 ## 요약
 
-| 등급 | 건수 |
-|---|---|
-| Critical | **2** |
-| High     | **4** |
-| Medium   | **6** |
-| Low / Informational | **5** |
+| 등급 | 건수 | 상태 (2026-05-01 갱신) |
+|---|---|---|
+| Critical | **2** | F-1 ✅ 수정 / F-2 사용자 작업 필요 |
+| High     | **4** | F-3 ✅ 수정 / F-4 사용자 / F-5 사용자 / F-6 사용자 |
+| Medium   | **6** | F-7 ✅ wired / F-8 ✅ sweep 추가 / 그 외 V2 |
+| Low / Informational | **5** | 모두 V2 |
 
-**즉시 수정 적용**: 3건 (F-1 일부, F-3, F-2 IP 정책 통일).
+**즉시 수정 적용 (누적)**: 5건
+- F-1 이메일 발송 signature
+- F-3 IP 정책 통일
+- F-7 SuspiciousEvent wired (login throttle → brute_force_login)
+- F-8 audit_logs / suspicious_events retention sweep cron
+- (신규) `routes_crud.py` 의 자동회신이 `send_email` 유니파이드 라우팅 → SMTP fallback 자동 적용
+
 **사용자 검토 권고**: 14건 (env 설정·운영 절차 위주).
 
 **운영 배포 차단 항목**:
@@ -72,7 +78,7 @@
 
 ## Medium findings
 
-### F-7 SuspiciousEvent 모듈은 정의됐지만 wired 안 됨
+### F-7 [수정 완료] SuspiciousEvent 모듈은 정의됐지만 wired 안 됨
 - 위치: `backend-py/suspicious.py` (정의), 호출처 0건.
 - 위험: `record()` 가 어디에서도 호출되지 않아 brute force / unauthorized admin / abnormal payload 패턴이 DB 에 기록되지 않음. sweep cron 도 lifespan 에 미등록.
 - 권장 조치:
@@ -81,7 +87,7 @@
   3. `_retention_cron` 에 `from suspicious import sweep_expired` 호출 추가.
 - OWASP: A09:2021 Security Logging Failures.
 
-### F-8 audit_logs retention 자동 sweep 부재
+### F-8 [수정 완료] audit_logs / suspicious_events retention 자동 sweep 부재
 - 위치: `backend-py/main.py:_retention_cron` (Inquiry/Outbox 만)
 - 위험: PIPA 제29조는 ≥1년 보존 요구. 5년 초과 시 자동 정리 없음 → DB 비대화 + 보존 한도 정책 위반(반대 방향).
 - 권장 조치: `_retention_cron` 에 `cutoff_audit = now - timedelta(days=int(os.environ.get("AUDIT_RETENTION_DAYS","1825")))` 분기 추가. 기본 5년.
@@ -172,9 +178,24 @@
 
 ---
 
-## 변경 적용 파일
+## 변경 적용 파일 (누적)
 
+### 1차 (2026-04-30)
 - `backend-py/routes_email_verify.py:248-284` — `send_email` 호출을 dict payload 로 수정 (F-1).
 - `backend-py/audit.py:23-32` — `_client_ip` 가 auth.py 의 정책을 위임 호출하도록 통일 (F-3).
 
-운영 코드 미수정 항목은 모두 운영 정책 합의 후 (env 또는 정책 결정) 적용 권장.
+### 2차 (2026-05-01)
+- `backend-py/auth.py` — login throttle lock 도달 시 `suspicious.record_async("brute_force_login", "high")` 자동 호출 (F-7).
+- `backend-py/suspicious.py` — `record_async()` 신규 (AsyncSession 호환).
+- `backend-py/main.py` — `_retention_cron` 에 `SuspiciousEvent` sweep 추가 (90일 / evidence 365일) (F-8).
+- `backend-py/routes_crud.py` — 자동회신 메일이 `send_email` 유니파이드 라우팅 통과 → Resend 미설정 시 SMTP fallback 자동.
+- `backend-py/main.py` — lifespan fail-soft (DB 죽어도 startup 진행) + login endpoint 의 8s DB ping (cold-start 호환).
+- `backend-py/auth.py` — login error message 한국어화 + login.failure 의 정확한 reason logs.
+- `src/lib/api.js` — fetch 에러를 친근한 한국어 메시지로 변환 (`TypeError: Failed to fetch` → "서버에 연결할 수 없습니다").
+- `src/lib/globals.js` — **`window.api` 노출** (모든 RawPage hydrate 가 silent fail 이던 critical bug fix).
+
+운영 코드 미수정 항목 (사용자 결정 필요):
+- F-2 JWT_SECRET fail-closed (현재 ephemeral fallback)
+- F-4 ENV=prod 강제 + 시드 비밀번호 교체 운영 절차
+- F-5 DAEMU_RESET_TOTP_EMAIL 1회 사용 후 자동 disarm
+- F-6 MYSQL_SSL_CA 미설정 + ENV=prod 시 fail-closed

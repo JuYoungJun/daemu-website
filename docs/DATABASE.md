@@ -54,7 +54,13 @@
 
 ### 8) 보안 / 감사
 - **audit_logs** — 모든 보안 이벤트. PIPA 제29조. **보존 ≥ 1년**, cron 이 sweep 안 함.
-- **suspicious_events** — 의심 이벤트 (token_leak / brute_force / rate_limit). 운영자 검토 후 resolve.
+- **suspicious_events** — 의심 이벤트 (brute_force_login / token_leak / rate_limit_exceeded / scrape_pattern). login throttle lock 도달 시 자동 기록. 운영자 검토 후 resolve. **자동 sweep cron** 적용 (90일 / evidence=true 365일).
+
+### 9) 커머스 / 재고
+- **products** — 발주 카탈로그 상품. SKU 표준 형식 `DAEMU-{CAT}-NNNN-LL` (CAT=BAK/CAF/EQP/PCK/MSC). `stock_count < 10` 시 알림.
+- **stock_lots** — LOT 단위 입고 + 유통기한. FIFO 차감 (expires_at 빠른 LOT 부터). 만료 시 자동 `quarantined=true`.
+- **announcements** — 공지/프로모션. kind=notice/promo/urgent, target=all/public/partner_portal.
+- **partner_brands** — Home 의 "함께하는 파트너사" 로고 카드. Partner (로그인 계정) 와 별도 디스플레이용.
 
 ## 외래 키 / 관계
 
@@ -76,7 +82,28 @@ short_links (1) ──< short_link_clicks.short_link_id
 crm_customers (1) ──< documents.crm_id
 orders        (1) ──< documents.order_id
 works         (1) ──< documents.work_id
+
+admin_users (1) ──< stock_lots.created_by
+admin_users (1) ──< announcements.created_by
 ```
+
+## SKU 표준
+
+```
+DAEMU-{CAT}-NNNN-LL
+       │     │    └─ 옵션 (사이즈/맛/색깔). 없으면 00.
+       │     └────── 카테고리 내 일련번호 (자동 할당, 4자리).
+       └──────────── 카테고리 (BAK 베이커리 / CAF 카페 / EQP 설비 / PCK 패키징 / MSC 기타).
+```
+
+`backend-py/skuutil.py` 가 `next_sku(category)` 로 다음 번호 계산. /admin/inventory 에서 신규 등록 시 자동 적용.
+
+## LOT / 유통기한 정책
+
+- **FIFO**: 발주 처리 시 expires_at 가장 이른 LOT 부터 차감.
+- **D-3 임박**: 만료 3일 전부터 /admin/inventory 알림 탭 표시 + (V2) 운영자 메일 알림.
+- **만료 격리**: cron 이 일 1회 만료 LOT 의 quarantined=true 로 자동 마크 → 발주 불가.
+- **추적**: 발주 처리 시 어느 LOT 차감했는지 order.items 의 metadata 에 기록 (food safety / recall 추적).
 
 ## PII / 보존 정책
 

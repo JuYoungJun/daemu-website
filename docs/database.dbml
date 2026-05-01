@@ -347,16 +347,85 @@ Table audit_logs {
 
 Table suspicious_events {
   id int [pk, increment]
-  ts datetime [default: `current_timestamp`]
-  kind varchar(40) [note: 'token_leak | brute_force | rate_limit | bot ...']
+  detected_at datetime [default: `current_timestamp`]
+  reason varchar(40) [note: 'brute_force_login | token_leak | scrape_pattern | rate_limit_exceeded ...']
   severity varchar(12) [default: 'medium', note: 'low | medium | high | critical']
   ip varchar(45) [default: '']
-  user_agent varchar(255) [default: '']
+  user_agent_hash varchar(64) [default: '', note: 'sha256(UA) — PII 최소화']
+  path varchar(255) [default: '']
+  method varchar(10) [default: '']
+  status_code int [default: 0]
+  request_id varchar(40) [default: '']
+  actor_user_id int [ref: > admin_users.id]
   detail json
-  resolved_at datetime
-  resolved_by int [ref: > admin_users.id]
-  resolution_note varchar(500) [default: '']
-  Note: '의심 이벤트 — 운영자가 검토 후 resolve. 90일/365일 보존 정책.'
+  evidence boolean [default: false, note: 'true=법적 절차용, sweep 면제']
+  evidence_note varchar(255) [default: '']
+  sealed_at datetime
+  sealed_by varchar(190) [default: '']
+  Note: '의심 이벤트 — login throttle lock 도달 시 자동 brute_force_login 기록. 90일/365일 보존 (cron auto sweep).'
+}
+
+// ─── 커머스 / 재고 ───────────────────────────────────────────────────
+
+Table products {
+  id int [pk, increment]
+  sku varchar(40) [unique, note: 'DAEMU-{CAT}-NNNN-LL (CAT=BAK|CAF|EQP|PCK|MSC)']
+  name varchar(120)
+  category varchar(8) [default: 'MSC']
+  unit varchar(20) [default: '개']
+  price int [default: 0]
+  stock_count int [default: 0, note: '< 10 시 알림']
+  description text [default: '']
+  image_url varchar(500) [default: '']
+  active boolean [default: true]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime [default: `current_timestamp`]
+  Note: '발주 카탈로그 상품. SKU 표준 형식 자동 발급 (skuutil.py).'
+}
+
+Table stock_lots {
+  id int [pk, increment]
+  sku varchar(40)
+  lot_number varchar(40) [note: '(sku, lot_number) UNIQUE']
+  quantity int [default: 0]
+  produced_at datetime
+  expires_at datetime [note: 'D-3 임박 + 만료 시 자동 quarantined']
+  received_at datetime [default: `current_timestamp`]
+  supplier varchar(120) [default: '']
+  note text [default: '']
+  quarantined boolean [default: false, note: '만료 시 cron 이 자동 true (발주 불가)']
+  created_by int [ref: > admin_users.id]
+  Note: 'LOT 단위 입고 — FIFO 차감 (expires_at 빠른 LOT 부터). 식품 B2B 추적용.'
+}
+
+Table announcements {
+  id int [pk, increment]
+  title varchar(190)
+  body text [default: '']
+  kind varchar(12) [default: 'notice', note: 'notice | promo | urgent']
+  target varchar(20) [default: 'all', note: 'all | public | partner_portal']
+  active boolean [default: true]
+  scheduled_start datetime
+  scheduled_end datetime
+  image_url varchar(500) [default: '']
+  cta_label varchar(40) [default: '']
+  cta_href varchar(500) [default: '']
+  created_by int [ref: > admin_users.id]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime [default: `current_timestamp`]
+  Note: '공지/프로모션 — 공개 사이트 + 파트너 포털 노출.'
+}
+
+Table partner_brands {
+  id int [pk, increment]
+  name varchar(190)
+  logo varchar(500) [default: '', note: '로고 URL (외부 또는 미디어 라이브러리)']
+  url varchar(500) [default: '', note: '클릭 시 이동']
+  sort_order int [default: 0]
+  active boolean [default: true]
+  created_at datetime [default: `current_timestamp`]
+  updated_at datetime [default: `current_timestamp`]
+  Note: 'Home 페이지의 함께하는 파트너사 로고 카드. Partner(로그인 계정)와 별도.'
 }
 
 // 관계는 위의 각 컬럼 정의에서 [ref: > target.id] 인라인으로 모두 명시.
