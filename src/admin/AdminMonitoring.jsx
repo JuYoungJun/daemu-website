@@ -127,7 +127,7 @@ const API_PROBE_TARGETS = [
   { key: 'users',          path: '/api/users?limit=1',           label: '사용자',          group: 'business' },
   { key: 'documents',      path: '/api/documents?page_size=1',   label: '계약/PO',         group: 'business' },
   { key: 'short-links',    path: '/api/short-links?limit=1',     label: '단축 링크',       group: 'business' },
-  // partner-brands 는 현재 localStorage 전용 — backend 마이그레이션 후 재추가.
+  { key: 'partner-brands', path: '/api/partner-brands?page_size=1', label: '파트너 브랜드',   group: 'content' },
   { key: 'products',       path: '/api/products?page_size=1',    label: '상품',            group: 'content' },
   { key: 'works',          path: '/api/works?page_size=1',       label: '작업 사례',       group: 'content' },
   { key: 'popups',         path: '/api/popups?page_size=1',      label: '팝업',            group: 'content' },

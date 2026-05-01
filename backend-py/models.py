@@ -598,3 +598,19 @@ class Announcement(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PartnerBrand(Base):
+    """홈 페이지의 '함께하는 파트너사' 섹션에 노출되는 협업 파트너 로고.
+    파트너 로그인 계정(Partner) 과 다른 개념 — 단순 노출용 디스플레이.
+    """
+    __tablename__ = "partner_brands"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(190))
+    logo: Mapped[str] = mapped_column(String(500), default="")  # 로고 URL (외부 또는 미디어 라이브러리)
+    url: Mapped[str] = mapped_column(String(500), default="")   # 클릭 시 이동할 외부 링크
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

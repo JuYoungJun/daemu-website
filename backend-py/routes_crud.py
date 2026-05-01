@@ -42,6 +42,7 @@ from models import (
     Order,
     Outbox,
     Partner,
+    PartnerBrand,
     Promotion,
     SitePopup,
     Work,
@@ -619,6 +620,11 @@ _crud(Outbox, "outbox",
 
 _crud(NewsletterSubscriber, "newsletter",
       allowed_fields={"email", "name", "source", "status"})
+
+# 함께하는 파트너사 — Home 페이지의 로고 디스플레이.
+# (Partner 모델은 파트너 *로그인 계정* 이고, 이건 별도 노출용 디스플레이.)
+_crud(PartnerBrand, "partner-brands",
+      allowed_fields={"name", "logo", "url", "sort_order", "active"})
 
 
 # ---------------------------------------------------------------------------

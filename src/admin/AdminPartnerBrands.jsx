@@ -4,13 +4,16 @@
 // 파트너 로고 카드들. (B2B 발주 포털에 로그인하는 파트너 "계정" 관리는
 // 별도 페이지인 /admin/partners 에서 다룹니다 — 두 개념이 다릅니다.)
 //
-// 데이터: localStorage 'daemu_partner_brands' — 형태:
-//   [
-//     { id, name, logo, url, order, active }
-//   ]
+// 데이터: backend MySQL `partner_brands` 테이블 (single source of truth).
+// localStorage 'daemu_partner_brands' 는 Home.jsx 의 호환 캐시 (기존 사이트
+// 코드가 그 키를 읽으므로 유지). 페이지 mount 시 backend → localStorage
+// hydrate. CRUD 는 backend + 동시에 localStorage 갱신.
 //
-// 데이터 1차 단일진실원은 localStorage이며 Home.jsx 가 같은 키를 읽습니다.
-// 향후 backend 연결 시 이 컴포넌트만 fetch로 바꾸면 됨.
+// backend shape:
+//   GET/POST/PATCH/DELETE /api/partner-brands
+//   { id, name, logo, url, sort_order, active, created_at, updated_at }
+// frontend shape (legacy):
+//   { id, name, logo, url, order, active }   ← `sort_order` ↔ `order` 매핑.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -19,13 +22,36 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { downloadCSV } from '../lib/csv.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { PartnerBrandLogoImg } from '../components/PartnerBrandLogo.jsx';
-import { siteAlert, siteConfirm } from '../lib/dialog.js';
+import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
 import { PageActions, GuideButton, PartnerBrandsGuide } from './PageGuides.jsx';
+import { api } from '../lib/api.js';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
-function readBrands() {
+// backend ↔ frontend shape 변환 — `sort_order` ↔ `order`.
+function fromBackend(it) {
+  return {
+    id: it.id,
+    name: it.name || '',
+    logo: it.logo || '',
+    url: it.url || '',
+    order: it.sort_order || 0,
+    active: !!it.active,
+    _backend: true,
+  };
+}
+function toBackend(b) {
+  return {
+    name: b.name || '',
+    logo: b.logo || '',
+    url: b.url || '',
+    sort_order: Number(b.order) || 0,
+    active: !!b.active,
+  };
+}
+
+function readBrandsCache() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     return Array.isArray(raw) ? raw : [];
@@ -34,22 +60,37 @@ function readBrands() {
   }
 }
 
-function saveBrands(list) {
+function saveCache(list) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
   window.dispatchEvent(new Event('daemu-db-change'));
 }
 
-function nextId(list) {
-  return list.length ? Math.max(...list.map((x) => Number(x.id) || 0)) + 1 : 1;
-}
-
 export default function AdminPartnerBrands() {
-  const [brands, setBrands] = useState(() => readBrands());
+  const [brands, setBrands] = useState(() => readBrandsCache());
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
 
+  // mount 시 backend hydrate — Mac/Windows 양쪽에서 같은 데이터.
   useEffect(() => {
-    const refresh = () => setBrands(readBrands());
+    let alive = true;
+    (async () => {
+      if (!api.isConfigured()) { setLoading(false); return; }
+      const r = await api.get('/api/partner-brands?page_size=200');
+      if (!alive) return;
+      setLoading(false);
+      if (r && r.ok && Array.isArray(r.items)) {
+        const mapped = r.items.map(fromBackend);
+        setBrands(mapped);
+        saveCache(mapped);
+      }
+      // 실패 시 localStorage 캐시 유지 (silent)
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setBrands(readBrandsCache());
     window.addEventListener('storage', refresh);
     window.addEventListener('daemu-db-change', refresh);
     return () => {
@@ -64,35 +105,66 @@ export default function AdminPartnerBrands() {
   );
   const activeCount = brands.filter((b) => b.active).length;
 
-  const upsert = (form) => {
+  // backend mirror: localStorage + backend 동시 업데이트. backend 실패 시
+  // 사용자에게 toast + localStorage rollback 은 다음 hydrate 가 처리.
+  const upsert = async (form) => {
     if (!form.name?.trim()) { siteAlert('파트너사 이름을 입력하세요.'); return; }
-    const next = [...brands];
-    if (form.id) {
-      const i = next.findIndex((x) => x.id === form.id);
-      if (i >= 0) next[i] = { ...next[i], ...form };
+    if (api.isConfigured()) {
+      const payload = toBackend(form);
+      const r = form.id
+        ? await api.patch(`/api/partner-brands/${form.id}`, payload)
+        : await api.post('/api/partner-brands', payload);
+      if (!r.ok) { siteAlert(r.error || '저장 실패'); return; }
+      const item = r.item ? fromBackend(r.item) : { ...form, id: form.id || (r.item && r.item.id) };
+      const next = form.id
+        ? brands.map((x) => x.id === form.id ? item : x)
+        : [...brands, item];
+      setBrands(next);
+      saveCache(next);
+      siteToast(form.id ? '수정 완료' : '등록 완료', { tone: 'success' });
     } else {
-      next.push({ ...form, id: nextId(next) });
+      // backend 미설정 — localStorage 만 (개발 mode)
+      const next = [...brands];
+      const id = form.id || (next.length ? Math.max(...next.map((x) => Number(x.id) || 0)) + 1 : 1);
+      if (form.id) {
+        const i = next.findIndex((x) => x.id === form.id);
+        if (i >= 0) next[i] = { ...next[i], ...form };
+      } else {
+        next.push({ ...form, id });
+      }
+      setBrands(next);
+      saveCache(next);
     }
-    setBrands(next);
-    saveBrands(next);
     setEditing(null);
     setCreating(false);
   };
 
   const remove = async (id) => {
     if (!(await siteConfirm('이 파트너사를 삭제하시겠습니까?'))) return;
+    if (api.isConfigured()) {
+      const r = await api.del(`/api/partner-brands/${id}`);
+      if (!r.ok && r.status !== 204) { siteAlert(r.error || '삭제 실패'); return; }
+    }
     const next = brands.filter((x) => x.id !== id);
     setBrands(next);
-    saveBrands(next);
+    saveCache(next);
+    siteToast('삭제 완료', { tone: 'success' });
   };
 
-  const toggleActive = (id) => {
-    const next = brands.map((x) => x.id === id ? { ...x, active: !x.active } : x);
+  const toggleActive = async (id) => {
+    const target = brands.find((x) => x.id === id);
+    if (!target) return;
+    const newActive = !target.active;
+    if (api.isConfigured()) {
+      const r = await api.patch(`/api/partner-brands/${id}`, { active: newActive });
+      if (!r.ok) { siteAlert(r.error || '변경 실패'); return; }
+    }
+    const next = brands.map((x) => x.id === id ? { ...x, active: newActive } : x);
     setBrands(next);
-    saveBrands(next);
+    saveCache(next);
   };
 
-  const move = (id, dir) => {
+  const move = async (id, dir) => {
     const list = [...sorted];
     const idx = list.findIndex((x) => x.id === id);
     if (idx < 0) return;
@@ -101,7 +173,19 @@ export default function AdminPartnerBrands() {
     [list[idx], list[j]] = [list[j], list[idx]];
     const reordered = list.map((b, i) => ({ ...b, order: i + 1 }));
     setBrands(reordered);
-    saveBrands(reordered);
+    saveCache(reordered);
+    // backend 미러링 — 두 swap 된 row 만 PATCH (다른 row 의 sort_order 도
+    // shift 됐을 수 있지만 표시 정합성에 큰 영향 없으니 핵심만 업데이트).
+    if (api.isConfigured()) {
+      const a = reordered[idx];
+      const b = reordered[j];
+      try {
+        await Promise.all([
+          api.patch(`/api/partner-brands/${a.id}`, { sort_order: a.order }),
+          api.patch(`/api/partner-brands/${b.id}`, { sort_order: b.order }),
+        ]);
+      } catch { /* silent — 다음 hydrate 가 정정 */ }
+    }
   };
 
   return (

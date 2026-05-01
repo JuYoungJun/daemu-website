@@ -120,19 +120,46 @@
     return out;
   }
 
-  function load() {
-    const d = JSON.parse(localStorage.getItem("daemu_mail") || "null") || defaults;
-    document.getElementById("m-subject").value = d.subject;
+  function applyTemplate(d) {
+    document.getElementById("m-subject").value = d.subject || defaults.subject;
     imagesCache = (d.images || []).map(im => ({
       contentId: im.contentId,
       filename: im.filename,
       url: im.url || im.previewUrl || '',
       previewUrl: im.previewUrl || im.url || ''
     }));
-    renderBody(d.body || '');
-    document.getElementById("m-active").value = d.active;
-    document.getElementById("m-category").value = d.category;
+    renderBody(d.body || defaults.body);
+    document.getElementById("m-active").value = d.active || defaults.active;
+    document.getElementById("m-category").value = d.category || defaults.category;
     updatePreview();
+  }
+
+  function load() {
+    // 1) localStorage 캐시로 즉시 화면 채움 (깜빡임 방지)
+    const local = JSON.parse(localStorage.getItem("daemu_mail") || "null") || defaults;
+    applyTemplate(local);
+    // 2) backend 에서 fresh fetch — 성공 시 캐시 갱신 + DOM 갱신
+    hydrateFromBackend();
+  }
+
+  async function hydrateFromBackend() {
+    try {
+      if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) return;
+      const r = await window.api.get('/api/mail-template/auto-reply');
+      if (!r || !r.ok || !r.template) return;
+      const t = r.template || {};
+      // backend → frontend shape 매핑. backend 는 { kind, subject, body, active(bool), category, images }.
+      const mapped = {
+        subject: t.subject || defaults.subject,
+        body: t.body || defaults.body,
+        active: t.active === false ? 'off' : 'on',
+        category: t.category || defaults.category,
+        images: Array.isArray(t.images) ? t.images : [],
+      };
+      try { localStorage.setItem('daemu_mail', JSON.stringify(mapped)); }
+      catch (_) { /* ignore */ }
+      applyTemplate(mapped);
+    } catch (_) { /* offline — localStorage 캐시로 진행 */ }
   }
 
   // Update HTML preview iframe
@@ -187,7 +214,7 @@
 </body></html>`;
   }
 
-  function saveMail() {
+  async function saveMail() {
     const subject = document.getElementById('m-subject').value;
     const body = readBody();
     const active = document.getElementById('m-active').value;
@@ -197,8 +224,27 @@
     const images = imagesCache
       .filter((i) => referenced.has(i.contentId))
       .map((i) => ({ contentId: i.contentId, filename: i.filename, url: i.url, previewUrl: i.previewUrl }));
+    // 1) localStorage 캐시 즉시 갱신 (낙관적)
     localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active, category, images }));
-    alert('저장되었습니다.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
+    // 2) backend 에 PUT /api/mail-template/auto-reply
+    let backendOk = false;
+    try {
+      if (window.api && window.api.isConfigured && window.api.isConfigured()) {
+        const r = await window.api.put('/api/mail-template/auto-reply', {
+          kind: 'auto-reply',
+          subject, body,
+          active: active !== 'off',
+          category,
+          images,
+        });
+        backendOk = !!(r && r.ok);
+      }
+    } catch (_) { /* fallthrough */ }
+    if (backendOk) {
+      alert('저장되었습니다 — 모든 환경에 반영.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
+    } else {
+      alert('저장되었습니다 (이 브라우저 캐시).\n백엔드 미연결 또는 일시 오류 — 다른 환경에서는 갱신이 보이지 않을 수 있습니다.');
+    }
   }
 
   function resetMail() {

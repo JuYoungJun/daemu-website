@@ -24,6 +24,10 @@ const escUrl = (s) => {
 if (typeof window !== 'undefined') {
   window.DB = DB;
   window.Auth = Auth;
+  // CRITICAL — admin-hydrate-helper.js + admin-inquiries-page.js + admin-content-page.js
+  // 등 RawPage script 들이 backend 동기화에 사용. 노출 안 되면 모든 hydrate 가
+  // silent fail → 환경별 데이터 차이 발생.
+  window.api = api;
   window.badge = badgeStr;
   window.confirmDel = confirmDel;
   window.escHtml = escHtml;
