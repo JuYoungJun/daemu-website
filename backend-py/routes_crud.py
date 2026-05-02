@@ -569,8 +569,14 @@ async def _order_pre_update(session, obj, payload, request, _u):
 
 async def _validate_stock_for_items(session, items: list):
     """각 item 의 sku 별 가용 재고를 합계로 검증. Product.stock_count 사용
-    (StockLot 까지는 V2 에서 FIFO 차감으로 확장)."""
+    (StockLot 까지는 V2 에서 FIFO 차감으로 확장).
+
+    perf: items 마다 SELECT 1개씩 → N+1. items 의 SKU 들을 1번의 IN 쿼리로
+    묶어 검증 → DB 왕복 1회. 발주 항목 10개면 10→1.
+    """
     from models import Product
+    # items 의 (sku, qty) 추출 — 같은 sku 가 여러 item 으로 들어오면 합산.
+    requested: dict[str, int] = {}
     for it in items:
         if not isinstance(it, dict):
             continue
@@ -578,12 +584,21 @@ async def _validate_stock_for_items(session, items: list):
         qty = int(it.get("qty") or it.get("quantity") or 0)
         if not sku or qty <= 0:
             continue
-        q = await session.execute(select(Product).where(Product.sku == sku).limit(1))
-        prod = q.scalar_one_or_none()
-        if not prod:
-            # 등록 안 된 SKU 는 통과 (legacy 발주 호환)
+        requested[sku] = requested.get(sku, 0) + qty
+    if not requested:
+        return
+
+    # 1회 IN 쿼리 — N+1 → 1.
+    q = await session.execute(
+        select(Product.sku, Product.stock_count).where(Product.sku.in_(requested.keys()))
+    )
+    available_map = {sku: int(stock or 0) for sku, stock in q.all()}
+
+    for sku, qty in requested.items():
+        # 등록 안 된 SKU 는 legacy 호환 (skip).
+        if sku not in available_map:
             continue
-        available = int(prod.stock_count or 0)
+        available = available_map[sku]
         if qty > available:
             raise HTTPException(
                 400,

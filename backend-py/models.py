@@ -123,14 +123,17 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True)
+    # FK 인덱스 — _crud(Order) 의 list 가 partner_id 별 필터 가능 + Partner 의
+    # relationship orders 양방향 join 성능.
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(190))
     status: Mapped[str] = mapped_column(String(24), default="접수", index=True)
     amount: Mapped[int] = mapped_column(Integer, default=0)
     items: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     note: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # /admin/orders 가 ORDER BY created_at DESC 로 정렬 — 인덱스 필수.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     partner: Mapped[Partner | None] = relationship(back_populates="orders")
@@ -154,8 +157,10 @@ class Work(Base):
     size_label: Mapped[str] = mapped_column(String(40), default="")
     floor_label: Mapped[str] = mapped_column(String(40), default="")
     published: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # /work 공개 페이지가 ORDER BY sort_order ASC, /admin/works 도 동일.
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    # _crud(Work) 의 list 가 ORDER BY created_at DESC.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -301,10 +306,13 @@ class Document(Base):
     # Recipients — multiple supported. Each entry: {name, email, role}.
     recipients: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     # Linked entities (optional) — kept loose so admins can reference any source.
-    crm_id: Mapped[int | None] = mapped_column(ForeignKey("crm_customers.id"), nullable=True)
-    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True)
-    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
-    work_id: Mapped[int | None] = mapped_column(ForeignKey("works.id"), nullable=True)
+    # FK 인덱스 — Document 가 4개 entity 와 연결되며 어드민에서 "이 partner/
+    # crm/order/work 에 발급된 문서들" 식으로 자주 lookup. 인덱스 없으면 큰
+    # documents 테이블에서 full scan.
+    crm_id: Mapped[int | None] = mapped_column(ForeignKey("crm_customers.id"), nullable=True, index=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True, index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
+    work_id: Mapped[int | None] = mapped_column(ForeignKey("works.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     # status: draft | sent | viewed | signed | canceled
     sign_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default="")

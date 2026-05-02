@@ -40,6 +40,22 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
 ]
 
 
+# 인덱스 보강 — 모델에 index=True 를 추가했을 때 기존 테이블에는 자동 적용
+# 안 되므로 idempotent ALTER 로 처리. (table, column, index_name).
+# CREATE INDEX IF NOT EXISTS 는 SQLite + MySQL 8 양쪽 지원.
+PENDING_INDEXES: list[tuple[str, str, str]] = [
+    ("admin_users", "created_at", "ix_admin_users_created_at"),
+    ("orders", "partner_id", "ix_orders_partner_id"),
+    ("orders", "created_at", "ix_orders_created_at"),
+    ("works", "sort_order", "ix_works_sort_order"),
+    ("works", "created_at", "ix_works_created_at"),
+    ("documents", "crm_id", "ix_documents_crm_id"),
+    ("documents", "partner_id", "ix_documents_partner_id"),
+    ("documents", "order_id", "ix_documents_order_id"),
+    ("documents", "work_id", "ix_documents_work_id"),
+]
+
+
 def _existing_columns(conn: Connection, table: str) -> set[str]:
     """SQLite + MySQL 호환 — information_schema 가 둘 다에 있어 안전."""
     dialect = conn.dialect.name
@@ -76,12 +92,14 @@ def _table_exists(conn: Connection, table: str) -> bool:
 
 def run_pending_migrations(conn: Connection) -> list[str]:
     """누락된 컬럼만 추가. 이미 있는 컬럼은 건드리지 않습니다.
+    인덱스도 누락 시 추가 (CREATE INDEX IF NOT EXISTS).
     returns 실행된 SQL statement 리스트 (로그용).
     """
     applied: list[str] = []
+
+    # 1) 컬럼 추가 (idempotent)
     for table, column, sql_type, default_clause in PENDING_COLUMNS:
         if not _table_exists(conn, table):
-            # create_all 이 먼저 실행되었거나 아직 사용 안 한 모델 — skip.
             continue
         existing = _existing_columns(conn, table)
         if column in existing:
@@ -94,8 +112,21 @@ def run_pending_migrations(conn: Connection) -> list[str]:
             applied.append(clause)
             print(f"[migration] applied: {clause}")
         except Exception as e:  # noqa: BLE001
-            # 동시 부팅 race 등으로 이미 추가된 경우는 무시.
             print(f"[migration] skip {clause!r}: {e!r}")
+
+    # 2) 인덱스 추가 (idempotent — CREATE INDEX IF NOT EXISTS).
+    #    SQLite / MySQL 8 양쪽 호환. 이미 있으면 silent skip.
+    for table, column, index_name in PENDING_INDEXES:
+        if not _table_exists(conn, table):
+            continue
+        clause = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"
+        try:
+            conn.execute(text(clause))
+            applied.append(clause)
+            print(f"[migration] applied: {clause}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[migration] skip {clause!r}: {e!r}")
+
     return applied
 
 
