@@ -85,6 +85,42 @@ class TestEnvValidation(unittest.TestCase):
         })
         self.assertEqual(rc, 0, f"dev mode import 실패: {err}")
 
+    def test_prod_db_module_does_not_log_password_fragments(self):
+        """ENV=prod 시 db.py 가 password 길이/시작/끝 글자를 stdout 에 출력하면 안 됨.
+
+        옛 동작은 dev 환경에 도움이 되지만 운영 logs aggregator 에 유출
+        시 brute-force 공간 축소 단서 제공. Cafe24 systemd journal /
+        Render dashboard 노출 위험.
+        """
+        import subprocess
+        full_env = {k: v for k, v in os.environ.items() if k != "ENV"}
+        full_env.update({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "mysql+aiomysql://daemu:supersecretpass@127.0.0.1:3306/daemu_db",
+            "ADMIN_PASSWORD": "Strong!Password#2026",
+        })
+        result = subprocess.run(
+            [str(_BACKEND / ".venv" / "bin" / "python"), "-c", "import db"],
+            cwd=str(_BACKEND),
+            env=full_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        combined = (result.stdout or "") + "\n" + (result.stderr or "")
+        # password 단편이 logs 에 나오면 fail
+        forbidden_patterns = [
+            "password 진단",
+            "길이=",
+            "시작='",
+            "supersecretpass",  # 실제 password 가 노출되면 안 됨
+            "password length=",  # dev-only 메시지가 prod 에서 안 나와야
+        ]
+        for pat in forbidden_patterns:
+            self.assertNotIn(pat, combined,
+                f"prod logs 에 '{pat}' 노출됨 — db.py 의 진단 출력이 prod 에서 차단되지 않음.")
+
 
 class TestMaskingUtils(unittest.TestCase):
     """security_utils 의 마스킹 함수 — log/응답 PII/secret 누설 차단."""

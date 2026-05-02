@@ -237,7 +237,9 @@ async def lifespan(_app: FastAPI):
     # migration/seed 를 모두 try/except 로 감싸 *부분 실패* 모드로 진입 가능
     # 하게 만든다. /api/health 의 databaseConnected 가 false 이면 사용자가
     # logs 에서 원인을 본 뒤 DB 를 살리고 재배포.
-    _db_url_safe = engine.url.render_as_string(hide_password=True)
+    # production 에선 host/user 도 redact, dev 에선 hide_password 만.
+    from security_utils import safe_db_url, safe_db_error, is_prod
+    _db_url_safe = safe_db_url(engine.url.render_as_string(hide_password=True))
     print(f"[daemu-backend-py] DB connecting to: {_db_url_safe}")
 
     # 1) 연결 ping
@@ -249,9 +251,12 @@ async def lifespan(_app: FastAPI):
         print(f"[daemu-backend-py] ✓ DB connection OK")
         db_alive = True
     except Exception as _e:  # noqa: BLE001
-        print(f"[daemu-backend-py] ✗ DB CONNECTION FAILED: {_e!r}")
-        print(f"[daemu-backend-py] ⚠ DB unreachable — startup 은 진행하지만 모든 DB 호출은 실패합니다.")
-        print(f"[daemu-backend-py] ⚠ Aiven 콘솔에서 서비스 상태 확인 (free tier 는 idle 시 hibernate 됨).")
+        # prod: 카테고리만 ('DB connection failed' 등). exception detail (자격
+        # 증명 / 호스트명) 누설 차단.
+        print(f"[daemu-backend-py] ✗ DB CONNECTION FAILED: {safe_db_error(_e)}")
+        print(f"[daemu-backend-py] ⚠ DB unreachable — startup 진행, DB 호출 실패. 운영자 점검 필요.")
+        if not is_prod():
+            print(f"[daemu-backend-py] ⚠ (dev hint) Aiven idle hibernate / SSL CA / IP allowlist 체크.")
 
     # 2) schema create_all + migrations — 연결 살아있을 때만 시도
     if db_alive:

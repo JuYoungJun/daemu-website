@@ -52,6 +52,14 @@ if DATABASE_URL.startswith("mysql+") and "&ssl-mode=" in DATABASE_URL:
 # 비밀번호 자동 URL-encode — Aiven 의 reset 후 비밀번호에 +/=/&/% 같은
 # url-unsafe 문자가 포함될 수 있다. 사용자가 raw 그대로 붙여넣어도 동작
 # 하도록, 이미 인코딩 안 된 경우 자동 quote 한다.
+#
+# 보안 주의: production (ENV=prod) 에서는 password fragment (길이/첫·끝글자)
+# 도 logs 에 출력하지 않는다 — log aggregator / Cafe24 systemd journal /
+# Render dashboard 등에 노출되면 brute-force 공간 축소 단서 제공.
+# dev/demo 에서만 진단 출력 (debugging 편의).
+_ENV_LOWER = os.environ.get("ENV", "").strip().lower()
+_LOG_DEV_DETAIL = _ENV_LOWER not in {"prod", "production"}
+
 if DATABASE_URL.startswith("mysql+"):
     from urllib.parse import urlparse, urlunparse, quote
     try:
@@ -64,19 +72,20 @@ if DATABASE_URL.startswith("mysql+"):
                 _port = f":{_parsed.port}" if _parsed.port else ""
                 _new_netloc = f"{_user}:{_encoded}@{_host}{_port}"
                 DATABASE_URL = urlunparse(_parsed._replace(netloc=_new_netloc))
-                print("[db] mysql password 자동 URL-encode 적용 (특수문자 포함)")
-        # 진단용 — 비밀번호 길이 + 첫/마지막 1글자만 logs 에 (값은 노출 X).
-        # 사용자가 의도한 비밀번호의 길이/시작/끝 글자와 비교 → 정확히 어디서
-        # 어긋났는지 시각 검증 가능.
-        if _parsed.password:
+                if _LOG_DEV_DETAIL:
+                    print("[db] mysql password URL-encode applied (special chars)")
+        # 진단 logs — DEV 전용. prod 에서는 0 출력.
+        if _parsed.password and _LOG_DEV_DETAIL:
             from urllib.parse import unquote as _unquote
             _raw = _unquote(_parsed.password)
             _len = len(_raw)
-            _head = _raw[0] if _len > 0 else ""
-            _tail = _raw[-1] if _len > 0 else ""
-            print(f"[db] mysql password 진단: 길이={_len}, 시작='{_head}', 끝='{_tail}'")
+            print(f"[db] mysql password length={_len} (dev diagnostic — disabled in prod)")
     except Exception as _e:  # noqa: BLE001
-        print(f"[db] URL parse 경고: {_e}")
+        # exception 메시지에도 password 가 포함될 가능성 → prod 에서 차단.
+        if _LOG_DEV_DETAIL:
+            print(f"[db] URL parse warning: {_e}")
+        else:
+            print("[db] URL parse warning (detail hidden in prod)")
 
 # SQLite needs check_same_thread=False to be safe across async contexts;
 # MySQL doesn't take that arg.
