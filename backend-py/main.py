@@ -22,8 +22,8 @@ Admin (Bearer JWT):
     PUT  /api/mail-template/{kind}
     PUT  /api/content/{key}
 
-DATABASE_URL env switches between sqlite+aiosqlite (default, demo) and
-mysql+asyncmy://user:pass@host/db (production).
+DATABASE_URL env switches between sqlite+aiosqlite (default, dev only) and
+mysql+aiomysql://user:pass@host/db (production — primary driver).
 
 Run locally:
     uvicorn main:app --reload --port 3000
@@ -102,6 +102,20 @@ EXT_TO_MIME = {
 
 VIDEO_EXTS = {".mp4", ".webm"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+# 명시 차단 — magic byte 검증 + extension allowlist 가 이중으로 차단하지만,
+# attacker 가 .html / .svg / .js 등 script-capable 확장자로 우회 시도하는 패턴
+# 을 logs 에 남기고 더 명확한 에러 메시지를 주기 위해 별도 deny set 유지.
+# (외부 코드 리뷰 Phase 2 권장 — 첨부/업로드 strict validation.)
+DENIED_EXTS = {
+    ".html", ".htm", ".xhtml", ".svg",
+    ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx",
+    ".php", ".phtml", ".phar",
+    ".exe", ".bat", ".cmd", ".sh", ".bash", ".zsh", ".ps1",
+    ".pl", ".py", ".rb",
+    ".jar", ".class", ".dll", ".so", ".dylib",
+    ".sql",
+}
 
 # F-06 + media library extension: image and video formats only. Each whitelisted
 # extension is paired with a magic byte signature so a renamed payload
@@ -478,13 +492,17 @@ async def attach_request_id(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(req: Request, exc: Exception):
-    """F-07: log the full traceback with a request ID, return a generic
-    error to the client (no stack leakage)."""
+    """F-07: log the traceback with a request ID, return a generic error to
+    the client. Phase 2: traceback 안의 inline secret (DB password / JWT /
+    Resend key 등) 도 logs 에서 masking — log aggregator 에 노출돼도 안전.
+    클라이언트 응답은 'internal' 만 → stack/exception detail 누설 0."""
+    from security_utils import _scrub_inline_secrets
     rid = getattr(req.state, "request_id", "no-id")
+    raw_tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    masked_tb = _scrub_inline_secrets(raw_tb)
     log.error(
         "unhandled exception rid=%s path=%s method=%s\n%s",
-        rid, req.url.path, req.method,
-        "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+        rid, req.url.path, req.method, masked_tb,
     )
     return JSONResponse(
         {"ok": False, "error": "internal", "request_id": rid},
@@ -769,8 +787,19 @@ async def admin_health(
     _user = Depends(require_perm("monitoring", "read")),
 ):
     """관리자 전용 상세 헬스체크. 운영자가 백엔드 진단에 사용.
-    require_perm('monitoring','read') — admin / developer 만 접근 가능.
+
+    권한: require_perm('monitoring','read') — admin / developer 만.
+    인증: _resolve_user 가 Authorization Bearer 검증 → 401 즉시 반환.
+    역할 검사: PERMISSIONS dict 기반 → 403 차단.
+    dev-mode bypass 없음 — 프로덕션이든 dev 든 동일하게 인증 강제.
+
+    민감 정보 마스킹 (production):
+      - DB URL 의 host/credentials → '[redacted]/dbname'
+      - DB 에러 → 카테고리만 ('DB connection failed' 등)
+    dev/demo 에선 디버그용 디테일 유지 (단 inline secret 패턴은 제거).
     """
+    from security_utils import safe_db_error, safe_db_url, is_prod
+
     provider = email_provider()
     db_connected = False
     db_error = ""
@@ -780,8 +809,9 @@ async def admin_health(
             await _conn.execute(_sa_text("SELECT 1"))
         db_connected = True
     except Exception as _e:  # noqa: BLE001
-        db_error = str(_e)[:280]
-    return {
+        db_error = safe_db_error(_e)
+
+    response = {
         "ok": True,
         "runtime": "python-fastapi",
         "version": "3.1",
@@ -789,20 +819,27 @@ async def admin_health(
         "emailProvider": provider,
         "resendConfigured": bool(RESEND_API_KEY),
         "smtpConfigured": bool(SMTP_HOST and SMTP_USER),
-        "smtpHost": (SMTP_HOST or ""),
-        "smtpFrom": (SMTP_FROM or ""),
-        "database": engine.url.render_as_string(hide_password=True),
+        "database": safe_db_url(engine.url.render_as_string(hide_password=True)),
         "databaseConnected": db_connected,
         "databaseError": db_error,
-        "from": FROM_EMAIL,
-        "allowedOrigins": ALLOWED_ORIGINS,
         "uploadEndpoint": "/api/upload",
-        "publicBase": PUBLIC_BASE or "(auto from request host)",
-        "warnings": (
-            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 백엔드 env (.env / systemd EnvironmentFile 등) 에 설정하세요."]
-            if provider == "none" else []
-        ),
     }
+
+    # production 에서는 SMTP host / from / allowed origins / public base 등
+    # 인프라 디테일은 노출 X (운영자도 체크리스트로 별도 확인).
+    if not is_prod():
+        response.update({
+            "smtpHost": (SMTP_HOST or ""),
+            "smtpFrom": (SMTP_FROM or ""),
+            "from": FROM_EMAIL,
+            "allowedOrigins": ALLOWED_ORIGINS,
+            "publicBase": PUBLIC_BASE or "(auto from request host)",
+        })
+
+    if provider == "none":
+        response["warnings"] = ["이메일 발송 미설정 — RESEND_API_KEY 또는 SMTP_HOST/USER/PASS 설정 필요."]
+
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -838,6 +875,11 @@ async def upload(
     ext_match = re.search(r"\.[a-z0-9]+$", safe, re.IGNORECASE)
     ext = ext_match.group(0).lower() if ext_match else ".bin"
 
+    # 명시적 deny — script-capable / executable 확장자 차단 (allowlist 가 이미
+    # 차단하지만 명확한 logs + 에러 메시지를 위해).
+    if ext in DENIED_EXTS:
+        raise HTTPException(415, detail="실행 가능한 / 스크립트 형식 파일은 업로드할 수 없습니다.")
+
     if ext not in UPLOAD_MAGIC:
         raise HTTPException(
             415,
@@ -852,7 +894,9 @@ async def upload(
         raise HTTPException(413, detail=f"file too large ({cap_mb}MB cap)")
 
     try:
-        buf = base64.b64decode(payload.content, validate=False)
+        # validate=True — 비-base64 문자가 끼어 있으면 즉시 reject. 옛 False
+        # 는 silent skip 으로 fuzzing 우회 가능. (외부 코드 리뷰 F-3.9.)
+        buf = base64.b64decode(payload.content, validate=True)
     except (binascii.Error, ValueError):
         raise HTTPException(400, detail="invalid base64 content") from None
 
@@ -893,17 +937,63 @@ async def upload(
     }
 
 
+# 첨부 파일 단일 크기 cap (이메일 첨부는 업로드와 다르게 더 작게 — Resend
+# 한도 + SMTP 의 대부분 서버가 25MB 차단).
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10MB / 첨부
+MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024  # 20MB / 메일 1통 합계
+
+
 def normalize_attachments(items: list[Attachment] | None) -> list[dict[str, Any]] | None:
+    """이메일 첨부 정규화 + 보안 검증 (Phase 2 강화).
+
+    검증 순서:
+    1. 개수 cap (MAX_ATTACHMENTS = 12)
+    2. 파일명 sanitize + 위험 확장자 deny
+    3. base64 strict decode (validate=True) — 잘못된 입력 즉시 reject
+    4. 단일 크기 cap (MAX_ATTACHMENT_BYTES = 10MB)
+    5. 합계 크기 cap (MAX_ATTACHMENT_TOTAL_BYTES = 20MB)
+    6. MIME 은 detect_mime 으로 확장자 기반 결정 (사용자 입력 무시)
+
+    실패 시 HTTPException 으로 400/413/415 반환 — 호출자에게 전파.
+    """
     if not items:
         return None
     out: list[dict[str, Any]] = []
+    total = 0
     for a in items[:MAX_ATTACHMENTS]:
         if not a.filename or not a.content:
             continue
+        # 파일명 sanitize — path traversal / control chars 제거
+        safe_name = safe_filename(str(a.filename))
+        ext_m = re.search(r"\.[a-z0-9]+$", safe_name, re.IGNORECASE)
+        ext = ext_m.group(0).lower() if ext_m else ""
+        if ext in DENIED_EXTS:
+            raise HTTPException(
+                415,
+                detail=f"첨부 형식이 허용되지 않습니다: {ext} (실행 가능 / 스크립트 형식 차단)",
+            )
+
+        # base64 strict decode + 사이즈 검증
+        content = str(a.content)
+        # pre-decode 합리적 한도 — base64 는 원본 대비 ~1.34x
+        if len(content) > MAX_ATTACHMENT_BYTES * 4 // 3 + 256:
+            raise HTTPException(413, detail=f"첨부 파일이 너무 큽니다 ({MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB 제한)")
+        try:
+            buf = base64.b64decode(content, validate=True)
+        except (binascii.Error, ValueError) as _e:
+            raise HTTPException(400, detail=f"첨부 파일 base64 형식이 올바르지 않습니다: {safe_name}") from _e
+        if not buf:
+            continue
+        if len(buf) > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(413, detail=f"첨부 파일이 너무 큽니다 ({MAX_ATTACHMENT_BYTES // (1024 * 1024)}MB 제한): {safe_name}")
+        total += len(buf)
+        if total > MAX_ATTACHMENT_TOTAL_BYTES:
+            raise HTTPException(413, detail=f"첨부 합계 크기 초과 ({MAX_ATTACHMENT_TOTAL_BYTES // (1024 * 1024)}MB 제한)")
+
         entry: dict[str, Any] = {
-            "filename": str(a.filename),
-            "content": str(a.content),
-            "content_type": detect_mime(a.filename, a.contentType),
+            "filename": safe_name,
+            "content": content,  # original base64 (이메일 provider 가 다시 디코드)
+            "content_type": detect_mime(safe_name, a.contentType),
         }
         if a.contentId:
             cid = str(a.contentId)

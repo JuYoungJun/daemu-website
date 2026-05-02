@@ -1,13 +1,11 @@
 {
-  "name": "daemu-api-cloudflare",
+  "name": "daemu-api-cloudflare-DISABLED",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.0-archived",
+  "description": "ARCHIVED — DO NOT DEPLOY. See archive/README.md for security review requirements before any reactivation.",
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "tail": "wrangler tail"
-  },
-  "devDependencies": {
-    "wrangler": "^3.95.0"
+    "deploy": "echo 'BLOCKED: This worker is archived as a security risk (no auth on email send API). Re-enabling requires a security review — see archive/README.md.' && exit 1",
+    "dev": "echo 'BLOCKED: This worker is archived. See archive/README.md.' && exit 1",
+    "tail": "echo 'BLOCKED: This worker is archived.' && exit 1"
   }
 }

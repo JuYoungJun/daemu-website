@@ -1,18 +1,19 @@
-// Cloudflare Worker — DAEMU email backend.
-// Same API surface as backend/server.js (Express). Either can be used.
+// ⚠️ ARCHIVED — DO NOT DEPLOY ⚠️
+// 본 Cloudflare Worker 는 archive 로 이동되어 운영 사용이 차단됩니다.
+// 재활성화 결정 시 archive/README.md 의 보안 요구사항을 모두 충족해야 합니다:
+//   - JWT 또는 HMAC 기반 server-to-server 인증
+//   - CORS allowlist 미일치 시 403 (현재는 첫 항목 fallback — 위험)
+//   - 첨부 파일 strict validation (size / MIME / base64)
+//   - rate limit (수신자 수 / 발송 횟수)
+// 위 충족 없이 deploy 시 외부에서 메일 릴레이로 악용 가능.
 //
-// Deploy:
-//   cd backend-cf
-//   npm install
-//   npx wrangler login          (first time)
-//   npx wrangler secret put RESEND_API_KEY        # paste key
-//   npx wrangler secret put ALLOWED_ORIGINS       # e.g. https://juyoungjun.github.io,http://localhost:8765
-//   npx wrangler deploy
-//
-// After deploy, set the Worker URL in:
-//   - Frontend .env (local):   VITE_API_BASE_URL=https://daemu-api.<your>.workers.dev
-//   - GitHub repo Variables:    VITE_API_BASE_URL  (same URL)
-//                              → demo branch redeploys with real backend wired
+// runtime guard — 실수로 deploy 됐을 때 첫 fetch 에서 503 반환.
+
+const ARCHIVED_MESSAGE = JSON.stringify({
+  ok: false,
+  error: 'archived',
+  message: 'This Worker is archived and intentionally disabled. See archive/README.md.',
+});
 
 const PATH_HEALTH   = '/api/health';
 const PATH_SEND     = '/api/email/send';
@@ -20,6 +21,18 @@ const PATH_CAMPAIGN = '/api/email/campaign';
 
 export default {
   async fetch(req, env) {
+    // Archived guard — 모든 요청에 대해 503 반환. 실수로 deploy 됐을 때 외부
+    // 사용자가 본 Worker 를 메일 릴레이로 악용하는 것 방지.
+    return new Response(ARCHIVED_MESSAGE, {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Archived': 'true',
+      },
+    });
+
+    // 옛 코드 (참조용 — 위 early return 가 항상 차단):
+    // eslint-disable-next-line no-unreachable
     const url = new URL(req.url);
     const origin = req.headers.get('Origin') || '';
     const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);

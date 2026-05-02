@@ -14,8 +14,7 @@ export default function AdminLayout({ title, subtitle, children }) {
         <Link to="/admin" className="adm-back">← Dashboard</Link>
         {title && <h1 className="page-title">{title}</h1>}
         {subtitle && (
-          <p className="adm-section-desc"
-             dangerouslySetInnerHTML={{ __html: subtitle }} />
+          <p className="adm-section-desc">{subtitle}</p>
         )}
         {children}
       </section>

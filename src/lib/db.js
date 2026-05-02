@@ -29,24 +29,35 @@ export const DB = {
   }
 };
 
+// HTML 문자열을 반환하는 옛 헬퍼들 — 외부 코드 리뷰 F-3.8 권장에 따라
+// status 값에 inline HTML escape 적용 (admin 페이지에서 사용자 입력이
+// status 자리로 흘러들어오는 케이스 방어).
+//
+// 권장 패턴: 신규 코드는 {status} 텍스트로 React 컴포넌트 사용 (StatusBadge
+// 같은 형태). 본 헬퍼는 RawPage 호환성용으로 유지하지만 escape 강제.
+function _escAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const _STATUS_CLASS_MAP = {
+  '운영중':'done','활성':'done','NEW':'new','준비중':'pending',
+  '대기':'pending','신규':'new','처리중':'pending','완료':'done',
+  '답변완료':'done','접수':'new','출고완료':'done','비활성':'pending','일시중지':'pending'
+};
+
 export function badge(status) {
-  const map = {
-    '운영중':'done','활성':'done','NEW':'new','준비중':'pending',
-    '대기':'pending','신규':'new','처리중':'pending','완료':'done',
-    '답변완료':'done','접수':'new','출고완료':'done','비활성':'pending','일시중지':'pending'
-  };
-  const cls = map[status] || 'done';
-  return { __html: '<span class="adm-badge adm-badge--' + cls + '">' + status + '</span>' };
+  const cls = _STATUS_CLASS_MAP[status] || 'done';
+  return { __html: '<span class="adm-badge adm-badge--' + cls + '">' + _escAttr(status) + '</span>' };
 }
 
 export function badgeStr(status) {
-  const map = {
-    '운영중':'done','활성':'done','NEW':'new','준비중':'pending',
-    '대기':'pending','신규':'new','처리중':'pending','완료':'done',
-    '답변완료':'done','접수':'new','출고완료':'done','비활성':'pending','일시중지':'pending'
-  };
-  const cls = map[status] || 'done';
-  return '<span class="adm-badge adm-badge--' + cls + '">' + status + '</span>';
+  const cls = _STATUS_CLASS_MAP[status] || 'done';
+  return '<span class="adm-badge adm-badge--' + cls + '">' + _escAttr(status) + '</span>';
 }
 
 export function confirmDel(msg) { return confirm(msg || '정말 삭제하시겠습니까?'); }

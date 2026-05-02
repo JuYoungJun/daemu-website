@@ -558,11 +558,16 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
         # 사용자 자체가 DB 에 없음 — 진단용 logs (이메일 자체는 logs 에 OK,
         # 비밀번호는 절대 X). PII 라 production logs aggregator 에 들어갈 때
         # masking 정책 필요 — 현재는 raw stdout 로만 가니 운영자가 직접 검토.
-        print(f"[auth] login: no such user → email='{payload.email}' (DB에 등록되지 않은 계정)")
+        # PII 마스킹 — production logs aggregator 노출 시 정찰 단서 제거.
+        # forensic 추적용 prefix 1자만 보존 (mask_email).
+        from security_utils import mask_email as _me
+        print(f"[auth] login: no such user → email={_me(payload.email)} (미등록 계정)")
     elif not user.active:
-        print(f"[auth] login: inactive user → email='{payload.email}'")
+        from security_utils import mask_email as _me
+        print(f"[auth] login: inactive user → email={_me(payload.email)}")
     elif not verify_password(payload.password, user.password_hash):
-        print(f"[auth] login: password mismatch → email='{payload.email}'")
+        from security_utils import mask_email as _me
+        print(f"[auth] login: password mismatch → email={_me(payload.email)}")
     if not user or not user.active or not verify_password(payload.password, user.password_hash):
         _login_throttle.record_failure(ip)
         await log_event(session, request, action="login.failure",

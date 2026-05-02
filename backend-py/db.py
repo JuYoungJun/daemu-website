@@ -1,8 +1,10 @@
 """Async SQLAlchemy setup.
 
 DATABASE_URL examples:
-    sqlite+aiosqlite:///./daemu.db                  (default — file-based, dev / 임시 fallback)
-    mysql+aiomysql://user:pass@host:3306/daemu      (운영 — Aiven MySQL / Cafe24 self-host MariaDB)
+    sqlite+aiosqlite:///./daemu.db                   (default — file-based, dev only)
+    mysql+aiomysql://user:pass@host:3306/daemu       (운영 — primary driver)
+    mysql://user:pass@host:3306/daemu                (자동으로 mysql+aiomysql:// 로 정규화)
+    mysql+asyncmy://user:pass@host:3306/daemu        (alternate driver — MYSQL_DRIVER=asyncmy)
 
 Schema is auto-created on startup via models.Base.metadata.create_all.
 For more controlled migrations later, switch to Alembic.
@@ -30,12 +32,13 @@ DATABASE_URL = os.environ.get(
 # SQLAlchemy 는 sync driver(mysqldb) 를 시도하다 실패한다. 우리가 설치한 건
 # async driver 이므로 자동으로 driver prefix 를 부착.
 #
-# 기본 driver: asyncmy. MySQL 8 의 caching_sha2_password 인증에서 핸드셰이크
-# 가 깨지는 케이스가 있어, 환경변수 MYSQL_DRIVER=aiomysql 로 aiomysql 로
-# swap 가능. aiomysql 은 caching_sha2_password 호환성이 더 좋다.
-_MYSQL_DRIVER = os.environ.get("MYSQL_DRIVER", "asyncmy").strip().lower()
+# 기본 driver: aiomysql. MySQL 8 의 caching_sha2_password 인증에서 asyncmy
+# 핸드셰이크가 깨지는 사례가 운영 사용자에서 확인됨 — aiomysql 이 호환성
+# 더 좋고 안정적. asyncmy 는 옵션 (MYSQL_DRIVER=asyncmy).
+# requirements.txt 에 둘 다 등록돼 있어 어느 쪽이든 즉시 사용 가능.
+_MYSQL_DRIVER = os.environ.get("MYSQL_DRIVER", "aiomysql").strip().lower()
 if _MYSQL_DRIVER not in {"asyncmy", "aiomysql"}:
-    _MYSQL_DRIVER = "asyncmy"
+    _MYSQL_DRIVER = "aiomysql"
 if DATABASE_URL.startswith("mysql://"):
     DATABASE_URL = f"mysql+{_MYSQL_DRIVER}://" + DATABASE_URL[len("mysql://"):]
 # Aiven Service URI 의 '?ssl-mode=REQUIRED' 쿼리는 asyncmy 가 알지 못해 무시
