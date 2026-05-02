@@ -195,8 +195,11 @@ export default function AdminMonitoring() {
         if (alive) setHealth({ ok: false, demo: true });
         return;
       }
+      // 어드민 모니터링 페이지는 인증된 사용자라 /api/admin/health 의
+      // 상세 진단 (emailProvider, version, warnings 등) 을 받음.
+      // 공개 /api/health 는 정찰 차단 위해 {ok:true} 만 반환 (Phase 1).
       const [h, s] = await Promise.all([
-        api.get('/api/health'),
+        api.get('/api/admin/health'),
         api.get('/api/monitoring/summary'),
       ]);
       if (!alive) return;
