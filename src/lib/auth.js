@@ -78,9 +78,19 @@ export const Auth = {
   //   { ok: false, error }                   — 그 외 실패
   async login(email, password, totpCode) {
     if (!api.isConfigured()) {
+      // 보안 (코드 리뷰 F-3.3, High): production build 에서는 시뮬레이션 admin
+      // 진입 차단 — VITE_API_BASE_URL 미설정 = 잘못된 배포로 간주하고 실패.
+      // 옛 버전은 아무 값이나 입력하면 admin role 로 진입되는 구조라 외부에
+      // URL 노출 시 사고 가능. dev/demo 빌드 (import.meta.env.DEV) 에서만 허용.
+      if (import.meta.env.PROD) {
+        return {
+          ok: false,
+          error: '백엔드 연결이 설정되지 않았습니다. 운영자에게 문의하세요.',
+        };
+      }
       if (!email || !password) return { ok: false, error: 'enter credentials' };
       localStorage.setItem(LEGACY_KEY, '1');
-      localStorage.setItem(USER_KEY, JSON.stringify({ email, name: '데모 관리자', role: 'admin', must_change_password: false, email_verified_at: new Date().toISOString() }));
+      localStorage.setItem(USER_KEY, JSON.stringify({ email, name: '데모 관리자 (DEV ONLY)', role: 'admin', must_change_password: false, email_verified_at: new Date().toISOString() }));
       this.touch();
       return { ok: true, simulated: true, mustChangePassword: false };
     }

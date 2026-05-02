@@ -109,6 +109,9 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALG = "HS256"
 JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", "12"))
 
+# 기본 시드 계정 — DEV/데모 전용 default. ENV=prod 일 때는 아래 fail-closed
+# 블록이 약한 default 값을 차단함 (코드 리뷰 F-3.2, High).
+# 운영 deploy 전 반드시 ADMIN_PASSWORD 등 env 로 강한 값 등록.
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@daemu.local")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "daemu1234")
 TESTER_EMAIL = os.environ.get("TESTER_EMAIL", "tester@daemu.local")
@@ -193,13 +196,46 @@ def role_can(role: str, resource: str, action: str) -> bool:
         return action == "read"
     return False
 
+# Production fail-closed (코드 리뷰 F-3.2, High):
+# ENV=prod / production 일 때 필수 secret 누락 → RuntimeError 로 즉시 실행
+# 중단. 옛 동작은 임시 secret 자동 생성이라 운영자가 보안 결함을 알아채지
+# 못하고 그대로 배포되는 위험이 있었음.
+_ENV = os.environ.get("ENV", "").strip().lower()
+_IS_PROD = _ENV in {"prod", "production"}
+
+if _IS_PROD:
+    _required_prod = {
+        "JWT_SECRET": JWT_SECRET,
+        "DATABASE_URL": os.environ.get("DATABASE_URL", "").strip(),
+        "ADMIN_PASSWORD": os.environ.get("ADMIN_PASSWORD", "").strip(),
+    }
+    _missing = [k for k, v in _required_prod.items() if not v]
+    if _missing:
+        raise RuntimeError(
+            f"[auth] ENV=prod 인데 필수 secret 미설정: {_missing}. "
+            "fail-closed — 백엔드 시작을 중단합니다. "
+            "운영 host 의 env (Render Dashboard / Cafe24 systemd EnvironmentFile / "
+            ".env 등) 에 등록 후 재시작하세요."
+        )
+    # ENV=prod 시 약한 default password 사용 시도도 차단.
+    _weak_defaults = {"daemu1234", "tester1234", "dev1234", "admin1234", "1234", "password"}
+    for _label, _pw in (
+        ("ADMIN_PASSWORD", ADMIN_PASSWORD),
+        ("TESTER_PASSWORD", TESTER_PASSWORD),
+        ("DEVELOPER_PASSWORD", DEVELOPER_PASSWORD),
+    ):
+        if _pw and _pw in _weak_defaults:
+            raise RuntimeError(
+                f"[auth] ENV=prod 인데 {_label} 가 약한 default 값 ({_pw!r}). "
+                "fail-closed — 강한 비밀번호로 교체 후 재시작하세요."
+            )
+
 if not JWT_SECRET:
-    # Generate an ephemeral secret per-process; tokens won't survive restart
-    # but the demo doesn't require persistent sessions. Set JWT_SECRET in env
-    # for production.
+    # 개발/데모 환경 (ENV != prod) 에서만 ephemeral secret. 프로세스 재시작 시
+    # 토큰 무효화되므로 운영 의존 금지 — 위 fail-closed 가 prod 에서 차단.
     import secrets
     JWT_SECRET = secrets.token_hex(32)
-    print("[auth] JWT_SECRET not set — using ephemeral secret. Set JWT_SECRET env for production.")
+    print("[auth] JWT_SECRET not set — using ephemeral secret (DEV ONLY). Set JWT_SECRET env for production.")
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 router = APIRouter(prefix="/api/auth", tags=["auth"])

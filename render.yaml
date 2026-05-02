@@ -15,6 +15,10 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
+      # 운영 모드 강제 — backend-py/auth.py 의 fail-closed 트리거.
+      # JWT_SECRET / DATABASE_URL / ADMIN_PASSWORD 미설정 시 시작 거부.
+      - key: ENV
+        value: prod
       - key: RESEND_API_KEY
         sync: false   # set in Render dashboard (secret)
       - key: JWT_SECRET
@@ -24,9 +28,12 @@ services:
       - key: ADMIN_PASSWORD
         sync: false   # set in Render dashboard (secret) — first-boot seed only
       - key: DATABASE_URL
-        # Default: SQLite file in the service container.
-        # On Cafe24 / production, override to mysql+asyncmy://user:pass@host:3306/daemu
-        value: sqlite+aiosqlite:///./daemu.db
+        # 운영 DB 는 반드시 dashboard 에서 secret 으로 설정 (코드 리뷰 F-4.4, High).
+        # 옛 default 인 SQLite 파일은 Render 컨테이너 재배포 시 휘발 + 동시성/
+        # 백업 한계 → 운영 부적합으로 제거. Cafe24 self-host MariaDB 또는
+        # Aiven/PlanetScale/RDS 등 managed MySQL 사용 권장.
+        # 형식: mysql+aiomysql://user:pass@host:3306/daemu_db?ssl=true
+        sync: false
       - key: ALLOWED_ORIGINS
         # N2-02 fix: production CORS only. Local dev origins live in
         # backend-py/.env.example for local runs.

@@ -752,8 +752,26 @@ async def monitoring_summary(_user = Depends(require_perm("monitoring", "read"))
 
 @app.get("/api/health")
 async def health():
+    """공개 헬스체크 — 최소 정보만 반환 (정찰 차단).
+
+    이전 버전은 emailProvider / SMTP host / DB URL / allowedOrigins / DB 에러
+    내용 등을 모두 노출해 공격자에게 인프라 정찰 단서를 제공했음 (코드 리뷰
+    F-3.1, High). 상세 진단은 /api/admin/health 로 분리 — 인증 필수.
+
+    공개 응답은 load balancer / uptime-monitor 가 'service alive?' 만 확인할
+    수 있도록 ok=true 만. 운영자가 디테일을 보려면 어드민 콘솔 로그인.
+    """
+    return {"ok": True}
+
+
+@app.get("/api/admin/health")
+async def admin_health(
+    _user = Depends(require_perm("monitoring", "read")),
+):
+    """관리자 전용 상세 헬스체크. 운영자가 백엔드 진단에 사용.
+    require_perm('monitoring','read') — admin / developer 만 접근 가능.
+    """
     provider = email_provider()
-    # 실시간 DB 연결 상태 진단 — 사용자가 health 한 번에 어디서 막혔는지 확인.
     db_connected = False
     db_error = ""
     try:
@@ -767,6 +785,7 @@ async def health():
         "ok": True,
         "runtime": "python-fastapi",
         "version": "3.1",
+        "env": os.environ.get("ENV", "").lower() or "dev",
         "emailProvider": provider,
         "resendConfigured": bool(RESEND_API_KEY),
         "smtpConfigured": bool(SMTP_HOST and SMTP_USER),
@@ -780,7 +799,7 @@ async def health():
         "uploadEndpoint": "/api/upload",
         "publicBase": PUBLIC_BASE or "(auto from request host)",
         "warnings": (
-            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 백엔드 env (Render Dashboard / Cafe24 systemd EnvironmentFile / .env 등) 에 설정하세요."]
+            ["이메일 발송 미설정 — 모든 발송이 simulated로 기록됩니다. RESEND_API_KEY 또는 SMTP_HOST/USER/PASS를 백엔드 env (.env / systemd EnvironmentFile 등) 에 설정하세요."]
             if provider == "none" else []
         ),
     }

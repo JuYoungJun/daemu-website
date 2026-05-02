@@ -38,6 +38,16 @@ function _friendlyFetchError(err) {
 
 async function request(method, path, body, opts = {}) {
   if (!BASE) {
+    // 보안 (코드 리뷰 F-3.3, High): production build 에서는 simulated 동작
+    // 차단 — outbox 기록도 안 함. 운영자가 backend 미연결 상태를 즉시 인지.
+    // dev/demo 에선 outbox 기록으로 발송 시뮬레이션 가능.
+    if (import.meta.env.PROD) {
+      return {
+        ok: false,
+        error: '백엔드 연결이 설정되지 않았습니다 (VITE_API_BASE_URL 미설정).',
+        configError: true,
+      };
+    }
     if (method !== 'GET') logOutbox(path, body, 'simulated');
     return { ok: false, simulated: true };
   }

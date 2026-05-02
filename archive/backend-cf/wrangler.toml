@@ -1,0 +1,7 @@
+# DEPLOY DISABLED — see archive/README.md.
+# 이 파일은 의도적으로 비어있습니다. Cloudflare Worker deploy 를 차단하기 위해
+# 옛 설정은 wrangler.toml.disabled 로 이동했습니다.
+# 재활성화 결정 시 archive/README.md 의 보안 요구사항 모두 충족 후 진행.
+
+# 의도적 빈 설정 — wrangler 가 fail 하도록.
+name = "DISABLED_DO_NOT_DEPLOY"
