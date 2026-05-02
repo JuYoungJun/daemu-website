@@ -123,9 +123,9 @@ export default function About() {
       <section className="dmabout-visual">
         <div className="wide">
           <div className="dmabout-visual-grid">
-            <div className="dmabout-visual-item"><img src={import.meta.env.BASE_URL + 'assets/about-why-1.png'} alt="대무 작업 공간" /></div>
-            <div className="dmabout-visual-item"><img src={import.meta.env.BASE_URL + 'assets/about-why-2.png'} alt="대무 프로젝트" /></div>
-            <div className="dmabout-visual-item"><img src={import.meta.env.BASE_URL + 'assets/about-why-3.png'} alt="대무 현장" /></div>
+            <div className="dmabout-visual-item"><img loading="lazy" decoding="async" src={import.meta.env.BASE_URL + 'assets/about-why-1.png'} alt="대무 작업 공간" /></div>
+            <div className="dmabout-visual-item"><img loading="lazy" decoding="async" src={import.meta.env.BASE_URL + 'assets/about-why-2.png'} alt="대무 프로젝트" /></div>
+            <div className="dmabout-visual-item"><img loading="lazy" decoding="async" src={import.meta.env.BASE_URL + 'assets/about-why-3.png'} alt="대무 현장" /></div>
           </div>
         </div>
       </section>

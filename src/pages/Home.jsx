@@ -241,7 +241,7 @@ export default function Home() {
           <div className="work-showcase" data-work-showcase="">
             <Link to="/work/beclassy-naju" className="work-card work-card--lg" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-beclassy-1.png'} alt="Be Classy project" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-beclassy-1.png'} alt="Be Classy project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -258,7 +258,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-croissants.png'} alt="bakery project" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-croissants.png'} alt="bakery project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -270,7 +270,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-desserts.png'} alt="dessert project" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-desserts.png'} alt="dessert project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -282,7 +282,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-morif.png'} alt="morif project" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-morif.png'} alt="morif project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">

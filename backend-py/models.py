@@ -71,7 +71,9 @@ class AdminUser(Base):
     # 보고 reset 처리.
     totp_app_label: Mapped[str] = mapped_column(String(40), default="")
     recovery_codes: Mapped[list | dict | None] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # admin 목록은 created_at 기준 정렬은 거의 안 하지만, 운영 통계 / cron sweep
+    # 시 데이터셋 작아 index 영향 미미 + 일관성 위해 추가.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 # ---------------------------------------------------------------------------

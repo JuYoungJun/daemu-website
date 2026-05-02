@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Cormorant+Garamond:wght@300;400;500;600&display=swap');
+/* 폰트 로드는 index.html 의 <link rel="stylesheet"> 가 담당 (preconnect 와
+   같이). 이전 @import 는 cascade 지연 원인이었음. */
 
 :root{
   --bg:#f2f0ec;

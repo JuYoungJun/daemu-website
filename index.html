@@ -58,21 +58,38 @@
     <link rel="apple-touch-icon" href="%BASE_URL%assets/logo.svg" />
     <link rel="mask-icon" href="%BASE_URL%favicon.svg" color="#231815" />
 
-    <!-- Performance: preconnect 만 index.html 에 둔다. 히어로 LCP 이미지의
-         preload 는 Home.jsx 의 useLayoutEffect 로 이동했음 — index.html 은
-         모든 SPA 라우트가 공유하므로 여기에 hardcode 하면 /admin, /work,
-         /partners 같이 home-hero-flower.png 를 쓰지 않는 페이지에서
-         "preloaded but not used within a few seconds" 경고가 떴다. -->
+    <!-- Performance:
+         · 폰트는 index.html 에서 preconnect + 명시적 stylesheet 로드. 이전엔
+           style.css 의 @import 라 "CSS 파싱 → 폰트 fetch" cascade 발생 (FCP
+           +150ms). 이제 HTML 파서가 폰트 stylesheet 를 같이 발견 → 병렬 fetch.
+         · display=swap — 폰트 로드 전 fallback 으로 즉시 텍스트 표시.
+         · admin-sub.css 는 /admin path 에서만 동적 로드 (public 페이지 FCP
+           ~36KB CSS 절감). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Cormorant+Garamond:wght@300;400;500;600&display=swap" />
 
     <link rel="stylesheet" href="%BASE_URL%style.css" />
     <link rel="stylesheet" href="%BASE_URL%home.css" />
     <link rel="stylesheet" href="%BASE_URL%team.css" />
     <link rel="stylesheet" href="%BASE_URL%work.css" />
     <link rel="stylesheet" href="%BASE_URL%about.css" />
-    <link rel="stylesheet" href="%BASE_URL%admin-sub.css" />
     <link rel="stylesheet" href="%BASE_URL%responsive.css" />
+    <script>
+      (function(){
+        try {
+          if (location.pathname && /\/admin(\/|$)/.test(location.pathname)) {
+            var styleLink = document.querySelector('link[href$="style.css"]');
+            if (styleLink) {
+              var l = document.createElement('link');
+              l.rel = 'stylesheet';
+              l.href = styleLink.href.replace(/style\.css$/, 'admin-sub.css');
+              document.head.appendChild(l);
+            }
+          }
+        } catch(_) {}
+      })();
+    </script>
 
     <!-- Global JSON-LD (Organization + WebSite). Per-page LD is injected
          by src/lib/seo.js on route changes. -->
