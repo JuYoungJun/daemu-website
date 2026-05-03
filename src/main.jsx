@@ -66,6 +66,29 @@ function adminPathFromLocation() {
   }
 })();
 
+// SPA 404 fallback 의 path 복원.
+// GitHub Pages 는 SPA rewrite 가 없어서 /daemu-website/admin/users 같은 경로로
+// 직접 새로고침하면 404 → public/404.html 이 location.href 를 sessionStorage
+// 에 저장하고 / (홈) 으로 redirect. 여기서 그 path 를 history.replaceState 로
+// 즉시 복원해 React Router 가 정상 라우팅 하도록 한다.
+//
+// 옛 동작: 404.html 가 redirect 하면 사용자가 홈만 보고 admin 페이지 못 봄.
+// 사용자가 "어드민 스타일이 깨졌다" 고 인식한 진짜 원인.
+(function () {
+  if (typeof window === 'undefined') return;
+  try {
+    const saved = sessionStorage.getItem('daemu_spa_redirect');
+    if (!saved) return;
+    sessionStorage.removeItem('daemu_spa_redirect');
+    const url = new URL(saved);
+    // 다른 origin 으로 임의 redirect 방어 — 같은 host 만 복원.
+    if (url.origin !== window.location.origin) return;
+    // 이미 그 path 면 skip (loop 방어).
+    if (url.pathname + url.search + url.hash === window.location.pathname + window.location.search + window.location.hash) return;
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  } catch (_) { /* ignore */ }
+})();
+
 // import.meta.env.BASE_URL is injected by Vite based on `base` config.
 // Strip trailing slash for React Router basename.
 const basename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
