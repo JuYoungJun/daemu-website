@@ -63,8 +63,11 @@
            style.css 의 @import 라 "CSS 파싱 → 폰트 fetch" cascade 발생 (FCP
            +150ms). 이제 HTML 파서가 폰트 stylesheet 를 같이 발견 → 병렬 fetch.
          · display=swap — 폰트 로드 전 fallback 으로 즉시 텍스트 표시.
-         · admin-sub.css 는 /admin path 에서만 동적 로드 (public 페이지 FCP
-           ~36KB CSS 절감). -->
+         · admin-sub.css 는 모든 페이지에 정적 link — SPA 라우팅(React Router)
+           에서는 페이지 reload 가 일어나지 않아 동적 loader 가 재실행 안 되는
+           버그가 있어 일반 link 로 원복. public 페이지에서도 함께 로드되지만
+           36KB 비용은 캐시되므로 두 번째 방문부터는 무료. /admin 진입 시
+           100% 스타일 적용 보장 (SPA 의 핵심 보장이 우선). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Cormorant+Garamond:wght@300;400;500;600&display=swap" />
@@ -74,22 +77,8 @@
     <link rel="stylesheet" href="%BASE_URL%team.css" />
     <link rel="stylesheet" href="%BASE_URL%work.css" />
     <link rel="stylesheet" href="%BASE_URL%about.css" />
+    <link rel="stylesheet" href="%BASE_URL%admin-sub.css" />
     <link rel="stylesheet" href="%BASE_URL%responsive.css" />
-    <script>
-      (function(){
-        try {
-          if (location.pathname && /\/admin(\/|$)/.test(location.pathname)) {
-            var styleLink = document.querySelector('link[href$="style.css"]');
-            if (styleLink) {
-              var l = document.createElement('link');
-              l.rel = 'stylesheet';
-              l.href = styleLink.href.replace(/style\.css$/, 'admin-sub.css');
-              document.head.appendChild(l);
-            }
-          }
-        } catch(_) {}
-      })();
-    </script>
 
     <!-- Global JSON-LD (Organization + WebSite). Per-page LD is injected
          by src/lib/seo.js on route changes. -->
