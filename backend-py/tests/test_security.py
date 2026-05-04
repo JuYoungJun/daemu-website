@@ -50,10 +50,11 @@ class TestEnvValidation(unittest.TestCase):
         )
         return result.returncode, result.stderr
 
-    def test_prod_missing_secrets_raises(self):
-        """ENV=prod + JWT_SECRET / ADMIN_PASSWORD 미설정 → RuntimeError.
-        DATABASE_URL 은 valid 값으로 set (db engine 생성 통과) — 실제 운영
-        에서 흔한 패턴 (DBA 가 DATABASE_URL 만 등록하고 secret 누락).
+    def test_prod_missing_jwt_secret_raises(self):
+        """ENV=prod + JWT_SECRET 미설정 → RuntimeError.
+
+        새 정책: JWT_SECRET / DATABASE_URL 만 prod 필수. ADMIN_PASSWORD 등
+        *_PASSWORD 변수는 옵션 (미설정 시 해당 계정 자동 seed 만 skip).
         """
         rc, err = self._run_subprocess({
             "ENV": "prod",
@@ -64,10 +65,35 @@ class TestEnvValidation(unittest.TestCase):
         self.assertNotEqual(rc, 0, "import 가 성공해서는 안 됨")
         self.assertIn("fail-closed", err)
         self.assertIn("JWT_SECRET", err)
-        self.assertIn("ADMIN_PASSWORD", err)
 
-    def test_prod_weak_password_raises(self):
-        """ENV=prod + 약한 default 비밀번호 → RuntimeError."""
+    def test_prod_missing_database_url_raises(self):
+        """ENV=prod + DATABASE_URL 미설정 → import 실패 (운영 자체 불가능).
+
+        DATABASE_URL 가 빈 값이면 db.py 의 sqlalchemy `create_async_engine`
+        가 ArgumentError 를 먼저 던지므로 (auth.py 의 fail-closed 검사보다
+        앞 단계), 여기서는 returncode != 0 + URL 파싱 에러 메시지만 검증.
+        """
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "",
+            "ADMIN_PASSWORD": "StrongAdmin!2026",
+        })
+        self.assertNotEqual(rc, 0, "import 가 성공해서는 안 됨")
+        # auth.py fail-closed 또는 db.py sqlalchemy ArgumentError 둘 다 OK —
+        # 핵심은 "운영 자체가 불가능" 이라는 점.
+        self.assertTrue(
+            ("fail-closed" in err and "DATABASE_URL" in err)
+            or "Could not parse SQLAlchemy URL" in err
+            or "ArgumentError" in err,
+            f"기대된 부팅 차단 메시지 부재: {err[:500]}"
+        )
+
+    def test_prod_explicit_weak_admin_password_fails(self):
+        """ENV=prod + ADMIN_PASSWORD 가 명시적으로 weak default 로 set → RuntimeError.
+
+        옵션 정책에서도 운영자가 의도해서 약한 값을 set 한 경우는 차단 (실수 방지).
+        """
         rc, err = self._run_subprocess({
             "ENV": "prod",
             "JWT_SECRET": "a" * 64,
@@ -76,6 +102,7 @@ class TestEnvValidation(unittest.TestCase):
         })
         self.assertNotEqual(rc, 0)
         self.assertIn("ADMIN_PASSWORD", err)
+        self.assertIn("fail-closed", err)
 
     def test_dev_no_required_env_ok(self):
         """ENV != prod 시 secret 누락이어도 ephemeral 로 진행 (success)."""
@@ -84,6 +111,22 @@ class TestEnvValidation(unittest.TestCase):
             "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
         })
         self.assertEqual(rc, 0, f"dev mode import 실패: {err}")
+
+    def test_prod_no_admin_password_no_longer_fails(self):
+        """ENV=prod + ADMIN_PASSWORD 미설정 + JWT_SECRET / DATABASE_URL 강한 값 → 부팅 통과.
+
+        이전 동작은 ADMIN_PASSWORD 를 prod 필수로 강제 → fail-closed RuntimeError.
+        새 동작: ADMIN_PASSWORD 미설정 시 admin 자동 seed 만 skip + 부팅 통과.
+        기존 DB 의 admin row 는 ensure_default_users 가 사용자 0명일 때만
+        호출되므로 별도로 보존됨.
+        """
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
+            # ADMIN_PASSWORD / TESTER_PASSWORD / DEVELOPER_PASSWORD 모두 미설정
+        })
+        self.assertEqual(rc, 0, f"prod 부팅 실패 (ADMIN_PASSWORD 미설정인데): {err}")
 
     def test_prod_no_tester_no_longer_fails(self):
         """ENV=prod + ADMIN_PASSWORD 강한 값 + TESTER/DEVELOPER env 미설정 → 부팅 통과.
