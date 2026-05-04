@@ -490,13 +490,187 @@ class TestEmailProviderSelection(unittest.TestCase):
         self.assertEqual(provider, "none")
 
     def test_provider_unknown_value_falls_back_to_auto(self):
-        """알 수 없는 EMAIL_PROVIDER 값 (예: 'garbage') → auto 동작 (Resend 우선)."""
+        """알 수 없는 EMAIL_PROVIDER 값 (예: 'garbage') → auto 동작 (SENDGRID 미설정 → Resend 우선)."""
         provider = self._eval_provider({
             "EMAIL_PROVIDER": "garbage",
             "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "SMTP_HOST": "mail.example.com",
         })
         self.assertEqual(provider, "resend")
+
+    # ── SendGrid provider 테스트 ────────────────────────────────
+
+    def test_provider_sendgrid_override_with_full_config(self):
+        """EMAIL_PROVIDER=sendgrid + SENDGRID_API_KEY + SENDGRID_FROM 둘 다 set → sendgrid."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "sendgrid",
+            "SENDGRID_API_KEY": "SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SENDGRID_FROM": "sender@example.com",
+        })
+        self.assertEqual(provider, "sendgrid")
+
+    def test_provider_sendgrid_override_missing_api_key_returns_none(self):
+        """EMAIL_PROVIDER=sendgrid + SENDGRID_API_KEY 미설정 → none."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "sendgrid",
+            "SENDGRID_API_KEY": "",
+            "SENDGRID_FROM": "sender@example.com",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_sendgrid_override_missing_from_returns_none(self):
+        """EMAIL_PROVIDER=sendgrid + SENDGRID_FROM 미설정 → none."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "sendgrid",
+            "SENDGRID_API_KEY": "SG.xxx",
+            "SENDGRID_FROM": "",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_auto_prefers_sendgrid_over_resend(self):
+        """auto 모드에서 SendGrid + Resend 둘 다 set → sendgrid 우선."""
+        provider = self._eval_provider({
+            "SENDGRID_API_KEY": "SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SENDGRID_FROM": "sender@example.com",
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "sendgrid")
+
+
+class TestSendGridPayload(unittest.TestCase):
+    """SendGrid Web API payload 검증 — httpx.MockTransport 로 호출 가로채기.
+
+    payload 가 다음을 정확히 보내는지 검증:
+      - personalizations.to (list[{email}])
+      - from.email = SENDGRID_FROM
+      - from.name  = SENDGRID_FROM_NAME
+      - subject (한국어 통과)
+      - content text/plain (text 있을 때)
+      - content text/html  (html 있을 때)
+      - reply_to.email     (replyTo 있을 때)
+    """
+
+    def test_payload_includes_text_html_replyto_and_name(self):
+        import json as _json
+        import subprocess
+
+        strip = {
+            "EMAIL_PROVIDER", "RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT",
+            "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "SMTP_USE_TLS",
+            "SENDGRID_API_KEY", "SENDGRID_FROM", "SENDGRID_FROM_NAME",
+            "SENDGRID_API_URL",
+            "ENV", "JWT_SECRET", "ADMIN_PASSWORD", "DATABASE_URL",
+        }
+        full_env = {k: v for k, v in os.environ.items() if k not in strip}
+        full_env.update({
+            "ENV": "dev",
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "JWT_SECRET": "x" * 64,
+            "ADMIN_PASSWORD": "abcd1234EFGH",
+            "SENDGRID_API_KEY": "SG.testkeyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "SENDGRID_FROM": "verified-sender@example.com",
+            "SENDGRID_FROM_NAME": "DAEMU 베이커리·카페 컨설팅",
+        })
+        # subprocess script — module-level env 가 import 시점에 evaluate 되므로 격리.
+        script = (
+            "import asyncio, json, httpx\n"
+            "from main import send_via_sendgrid\n"
+            "captured = {}\n"
+            "def handler(request):\n"
+            "    captured['body'] = json.loads(request.content)\n"
+            "    return httpx.Response(202, headers={'X-Message-Id':'test-msg-id'})\n"
+            "async def main():\n"
+            "    transport = httpx.MockTransport(handler)\n"
+            "    async with httpx.AsyncClient(transport=transport) as c:\n"
+            "        r = await send_via_sendgrid(c, {\n"
+            "            'to':['recipient@example.com'],\n"
+            "            'subject':'테스트 제목 한국어',\n"
+            "            'text':'평문 본문',\n"
+            "            'html':'<p>HTML 본문</p>',\n"
+            "            'reply_to':'reply@example.com',\n"
+            "        })\n"
+            "    assert r['ok'], 'send_via_sendgrid failed: ' + str(r)\n"
+            "    print('CAPTURED:' + json.dumps(captured['body'], ensure_ascii=False))\n"
+            "asyncio.run(main())\n"
+        )
+        result = subprocess.run(
+            [str(_BACKEND / ".venv" / "bin" / "python"), "-c", script],
+            cwd=str(_BACKEND),
+            env=full_env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            self.fail(f"send_via_sendgrid subprocess failed: {result.stderr}")
+        line = next((ln for ln in result.stdout.splitlines() if ln.startswith("CAPTURED:")), None)
+        self.assertIsNotNone(line, f"CAPTURED line 없음. stdout: {result.stdout}")
+        body = _json.loads(line[len("CAPTURED:"):])
+
+        # personalizations.to
+        self.assertEqual(body["personalizations"][0]["to"][0]["email"], "recipient@example.com")
+        # from.email + from.name
+        self.assertEqual(body["from"]["email"], "verified-sender@example.com")
+        self.assertEqual(body["from"]["name"], "DAEMU 베이커리·카페 컨설팅")
+        # subject
+        self.assertEqual(body["subject"], "테스트 제목 한국어")
+        # content — text/plain + text/html 둘 다 포함
+        types = {c["type"] for c in body["content"]}
+        self.assertIn("text/plain", types)
+        self.assertIn("text/html", types)
+        # reply_to
+        self.assertEqual(body["reply_to"]["email"], "reply@example.com")
+
+    def test_payload_omits_html_when_only_text(self):
+        """html 미제공 시 text/plain 만 포함."""
+        import json as _json
+        import subprocess
+
+        strip = {
+            "EMAIL_PROVIDER", "RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT",
+            "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "SMTP_USE_TLS",
+            "SENDGRID_API_KEY", "SENDGRID_FROM", "SENDGRID_FROM_NAME",
+            "SENDGRID_API_URL",
+            "ENV", "JWT_SECRET", "ADMIN_PASSWORD", "DATABASE_URL",
+        }
+        full_env = {k: v for k, v in os.environ.items() if k not in strip}
+        full_env.update({
+            "ENV": "dev",
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "JWT_SECRET": "x" * 64,
+            "ADMIN_PASSWORD": "abcd1234EFGH",
+            "SENDGRID_API_KEY": "SG.testkey",
+            "SENDGRID_FROM": "verified-sender@example.com",
+        })
+        script = (
+            "import asyncio, json, httpx\n"
+            "from main import send_via_sendgrid\n"
+            "captured = {}\n"
+            "def handler(request):\n"
+            "    captured['body'] = json.loads(request.content)\n"
+            "    return httpx.Response(202)\n"
+            "async def main():\n"
+            "    transport = httpx.MockTransport(handler)\n"
+            "    async with httpx.AsyncClient(transport=transport) as c:\n"
+            "        r = await send_via_sendgrid(c, {\n"
+            "            'to':['x@y.com'],'subject':'s','text':'본문 텍스트',\n"
+            "        })\n"
+            "    assert r['ok'], r\n"
+            "    print('CAPTURED:' + json.dumps(captured['body'], ensure_ascii=False))\n"
+            "asyncio.run(main())\n"
+        )
+        result = subprocess.run(
+            [str(_BACKEND / ".venv" / "bin" / "python"), "-c", script],
+            cwd=str(_BACKEND), env=full_env, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            self.fail(result.stderr)
+        line = next(ln for ln in result.stdout.splitlines() if ln.startswith("CAPTURED:"))
+        body = _json.loads(line[len("CAPTURED:"):])
+        types = {c["type"] for c in body["content"]}
+        self.assertEqual(types, {"text/plain"})
+        self.assertNotIn("reply_to", body)
 
 
 if __name__ == "__main__":

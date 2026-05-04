@@ -822,6 +822,7 @@ async def admin_health(
         "version": "3.1",
         "env": os.environ.get("ENV", "").lower() or "dev",
         "emailProvider": provider,
+        "sendgridConfigured": bool(SENDGRID_API_KEY and SENDGRID_FROM),
         "resendConfigured": bool(RESEND_API_KEY),
         "smtpConfigured": bool(SMTP_HOST and SMTP_USER),
         "database": safe_db_url(engine.url.render_as_string(hide_password=True)),
@@ -1088,28 +1089,115 @@ async def send_via_smtp(payload: dict[str, Any]) -> dict[str, Any]:
     return await asyncio.to_thread(_send_via_smtp_blocking, payload)
 
 
+# ---------------------------------------------------------------------------
+# SendGrid Web API (HTTPS) — Render Free 가 outbound SMTP 차단해도 동작.
+# 환경:
+#   SENDGRID_API_KEY (필수, 'SG.' prefix)
+#   SENDGRID_FROM    (필수, verified single sender 이메일)
+#   SENDGRID_FROM_NAME (선택, default 'DAEMU')
+#   SENDGRID_API_URL (선택, default https://api.sendgrid.com/v3/mail/send)
+# 사용:
+#   EMAIL_PROVIDER=sendgrid 또는 auto + 위 두 값 set 시 자동 선택.
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "").strip()
+SENDGRID_FROM = os.environ.get("SENDGRID_FROM", "").strip()
+SENDGRID_FROM_NAME = os.environ.get("SENDGRID_FROM_NAME", "DAEMU").strip() or "DAEMU"
+SENDGRID_API_URL = os.environ.get(
+    "SENDGRID_API_URL", "https://api.sendgrid.com/v3/mail/send"
+).strip()
+
+
+async def send_via_sendgrid(client: httpx.AsyncClient, payload: dict[str, Any]) -> dict[str, Any]:
+    """SendGrid Web API (HTTPS) 발송.
+
+    payload 호환 (send_via_resend / send_via_smtp 와 동일 인터페이스):
+        to (str | list[str]), subject, text, html, reply_to
+    SENDGRID_FROM / SENDGRID_FROM_NAME 은 module-level env 에서 사용 — caller
+    가 payload['from'] 으로 무엇을 넘기든 sendgrid path 는 무시 (verified
+    sender 만 발송 가능 정책).
+
+    응답:
+        2xx (보통 202 Accepted) → {ok:True, id:<X-Message-Id 또는 sg-<ts>>}
+        비-2xx → {ok:False, error:'SendGrid <status>: <text 200자>'}
+    """
+    if not SENDGRID_API_KEY:
+        return {"ok": False, "error": "SendGrid not configured (SENDGRID_API_KEY missing)"}
+    if not SENDGRID_FROM:
+        return {"ok": False, "error": "SendGrid sender not configured (SENDGRID_FROM missing)"}
+
+    to_list = payload.get("to") or []
+    if isinstance(to_list, str):
+        to_list = [to_list]
+    if not to_list:
+        return {"ok": False, "error": "SendGrid: empty recipient list"}
+
+    body: dict[str, Any] = {
+        "personalizations": [{"to": [{"email": addr} for addr in to_list]}],
+        "from": {"email": SENDGRID_FROM, "name": SENDGRID_FROM_NAME},
+        "subject": payload.get("subject", ""),
+        "content": [],
+    }
+
+    text_body = payload.get("text") or ""
+    html_body = payload.get("html") or ""
+    if text_body:
+        body["content"].append({"type": "text/plain", "value": text_body})
+    if html_body:
+        body["content"].append({"type": "text/html", "value": html_body})
+    if not body["content"]:
+        # SendGrid 요구: content 최소 1개. 빈 본문 방어.
+        body["content"].append({"type": "text/plain", "value": " "})
+
+    if payload.get("reply_to"):
+        body["reply_to"] = {"email": payload["reply_to"]}
+
+    try:
+        resp = await client.post(
+            SENDGRID_API_URL,
+            headers={
+                "Authorization": f"Bearer {SENDGRID_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=15.0,
+        )
+        if 200 <= resp.status_code < 300:
+            mid = resp.headers.get("X-Message-Id") or f"sg-{int(time.time() * 1000)}"
+            return {"ok": True, "id": mid}
+        # 비-2xx — 응답 본문 일부만 안전하게 보존 (시크릿 노출 가능성 낮으나 길이 제한)
+        err_text = (resp.text or "")[:200]
+        return {"ok": False, "error": f"SendGrid {resp.status_code}: {err_text}"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"SendGrid: {e!r}"[:200]}
+
+
 # EMAIL_PROVIDER override (기본 'auto'). 운영자가 강제로 한 provider 만 쓰고
-# 싶을 때 'smtp' / 'resend' / 'none' 중 하나로 set. 'auto' (또는 미설정 /
-# 알 수 없는 값) 은 기존 자동 분기 (Resend 우선 → SMTP → none) 보존.
-# 데모 시나리오: Resend 도메인 미인증 상태에서 임의 수신자 발송이 필요할 때
-# EMAIL_PROVIDER=smtp 로 두면 RESEND_API_KEY 가 still set 이어도 SMTP 강제.
+# 싶을 때 'sendgrid' / 'resend' / 'smtp' / 'none' 중 하나로 set. 'auto' (또는
+# 미설정 / 알 수 없는 값) 은 자동 분기 (SendGrid → Resend → SMTP → none).
+# 우선순위 변경 사유: Render Free 등 PaaS 가 SMTP 차단하므로 HTTPS API
+# (SendGrid / Resend) 가 일반적으로 더 안정. SendGrid 가 single-sender
+# verification 만으로 임의 수신자 발송 가능해 가장 빠르게 셋업 가능.
 EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "auto").strip().lower()
 
 
 def email_provider() -> str:
-    """선택된 email provider 반환 ('resend' | 'smtp' | 'none').
+    """선택된 email provider 반환 ('sendgrid' | 'resend' | 'smtp' | 'none').
 
-    EMAIL_PROVIDER override 가 'smtp' / 'resend' / 'none' 이면 그 값에 따라
-    강제 선택. 그 외 (auto / 미설정 / unknown) 는 기존 자동 분기.
+    EMAIL_PROVIDER override 가 'sendgrid' / 'resend' / 'smtp' / 'none' 이면
+    그 값에 따라 강제 선택 (필수 env 누락 시 'none'). 그 외 (auto / 미설정 /
+    unknown) 는 자동 분기 — SendGrid 우선 → Resend → SMTP → none.
     """
     override = EMAIL_PROVIDER
+    if override == "sendgrid":
+        return "sendgrid" if (SENDGRID_API_KEY and SENDGRID_FROM) else "none"
     if override == "smtp":
         return "smtp" if SMTP_HOST else "none"
     if override == "resend":
         return "resend" if RESEND_API_KEY else "none"
     if override == "none":
         return "none"
-    # auto / unknown — backward compat
+    # auto / unknown — SendGrid 우선 → Resend → SMTP → none
+    if SENDGRID_API_KEY and SENDGRID_FROM:
+        return "sendgrid"
     if RESEND_API_KEY:
         return "resend"
     if SMTP_HOST:
@@ -1118,9 +1206,12 @@ def email_provider() -> str:
 
 
 async def send_email(payload: dict[str, Any]) -> dict[str, Any]:
-    """Unified send — Resend if configured, else SMTP if configured,
-    else returns {ok:False, simulated:True} so the caller can record outbox."""
+    """Unified send — provider 별 분기. caller 는 동일 payload 인터페이스만
+    사용하면 됨. SendGrid path 는 SENDGRID_FROM 자체 사용 (payload.from 무시)."""
     provider = email_provider()
+    if provider == "sendgrid":
+        async with httpx.AsyncClient() as client:
+            return await send_via_sendgrid(client, payload)
     if provider == "resend":
         async with httpx.AsyncClient() as client:
             return await send_via_resend(client, payload)
@@ -1174,8 +1265,16 @@ async def email_send(
         )
         return {"ok": True, "simulated": True, "id": sim_id}
 
+    if provider_now == "sendgrid":
+        # send_via_sendgrid 가 SENDGRID_FROM/FROM_NAME 자체 처리.
+        # body["from"] 은 outbox 일관성용 placeholder.
+        from_addr = SENDGRID_FROM or FROM_EMAIL
+    elif provider_now == "smtp":
+        from_addr = SMTP_FROM or FROM_EMAIL
+    else:
+        from_addr = FROM_EMAIL
     body: dict[str, Any] = {
-        "from": (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL,
+        "from": from_addr,
         "to": [payload.to],
         "subject": payload.subject,
     }
@@ -1242,7 +1341,12 @@ async def email_campaign(
             "failed": 0,
         }
 
-    from_addr = (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL
+    if provider_now == "sendgrid":
+        from_addr = SENDGRID_FROM or FROM_EMAIL
+    elif provider_now == "smtp":
+        from_addr = SMTP_FROM or FROM_EMAIL
+    else:
+        from_addr = FROM_EMAIL
 
     sent = 0
     failed = 0

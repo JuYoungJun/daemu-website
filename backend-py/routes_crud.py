@@ -193,17 +193,21 @@ async def _send_auto_reply_inline(
     html_body = _wrap_html(body)
 
     # Use the unified send_email() from main.py — provider 선택은 main.py
-    # 의 email_provider() 가 EMAIL_PROVIDER / RESEND_API_KEY / SMTP_HOST 기반
-    # 으로 처리. SMTP 경로도 multipart/alternative 로 HTML body 정상 발송 (이전
-    # 구현은 RESEND_API_KEY 가 set 일 때만 html 전달 → SMTP 시 text only 회귀).
-    # Imported lazily to avoid a circular import at module load.
-    from main import send_email, email_provider, SMTP_FROM
+    # 의 email_provider() 가 EMAIL_PROVIDER / SENDGRID_API_KEY /
+    # RESEND_API_KEY / SMTP_HOST 기반으로 처리. SMTP/SendGrid/Resend 모두
+    # HTML body 정상 발송. Imported lazily to avoid a circular import at module load.
+    from main import send_email, email_provider, SMTP_FROM, SENDGRID_FROM
     status = "simulated"
     error = ""
     rid = None
     provider_now = email_provider()
     if provider_now != "none":
-        from_addr = (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL
+        if provider_now == "sendgrid":
+            from_addr = SENDGRID_FROM or FROM_EMAIL
+        elif provider_now == "smtp":
+            from_addr = SMTP_FROM or FROM_EMAIL
+        else:
+            from_addr = FROM_EMAIL
         result = await send_email({
             "from": from_addr,
             "to": [to_email],
