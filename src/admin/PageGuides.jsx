@@ -34,6 +34,19 @@ export function RawPageCsvButton({ storageKey, filename, columns, apiPath, mapRo
         const { api } = await import('../lib/api.js');
         const r = await api.get(apiPath);
         if (r && r.ok && Array.isArray(r.items)) {
+          // backend 가 빈 응답인데 localStorage 에 hydrate 캐시가 남아있는
+          // 경우 (예: Render redeploy 후 DB 초기화 + 어드민 화면은 옛 캐시
+          // 표시) — 화면에 보이는 데이터를 export 하는 게 사용자 기대와
+          // 일치. 빈 backend 가 곧바로 빈 CSV 가 되지 않도록 fallthrough.
+          if (r.items.length === 0) {
+            const cached = DB.get(storageKey) || [];
+            if (cached.length > 0) {
+              try { (await import('../lib/dialog.js')).siteToast('백엔드는 비어 있습니다 — 화면에 보이는 캐시 데이터로 진행합니다.', { tone: 'warn' }); } catch { /* ignore */ }
+              const rows = typeof mapRow === 'function' ? cached.map(mapRow) : cached;
+              downloadCSV(fname, rows, columns);
+              return;
+            }
+          }
           const rows = typeof mapRow === 'function' ? r.items.map(mapRow) : r.items;
           downloadCSV(fname, rows, columns);
           return;

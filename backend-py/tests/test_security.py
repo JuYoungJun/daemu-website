@@ -85,6 +85,62 @@ class TestEnvValidation(unittest.TestCase):
         })
         self.assertEqual(rc, 0, f"dev mode import 실패: {err}")
 
+    def test_prod_no_tester_no_longer_fails(self):
+        """ENV=prod + ADMIN_PASSWORD 강한 값 + TESTER/DEVELOPER env 미설정 → 부팅 통과.
+
+        이전 동작은 TESTER_PASSWORD/DEVELOPER_PASSWORD 가 default 'tester1234'/
+        'dev1234' 로 fall back 해 fail-closed 가 활성화 → Render deploy 실패.
+        새 동작: env 미설정 시 해당 계정 미생성 + fail-closed 트리거 안 함.
+        """
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
+            "ADMIN_PASSWORD": "StrongAdmin!2026",
+            # TESTER_PASSWORD / DEVELOPER_PASSWORD 미설정
+        })
+        self.assertEqual(rc, 0, f"prod 부팅 실패 (TESTER/DEVELOPER 미설정 인데): {err}")
+
+    def test_prod_explicit_weak_tester_fails(self):
+        """ENV=prod 에서 TESTER_PASSWORD 를 명시적으로 weak default 로 set → RuntimeError.
+
+        운영자가 의도해서 weak 값을 set 한 경우만 차단 (실수 방지).
+        """
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
+            "ADMIN_PASSWORD": "StrongAdmin!2026",
+            "TESTER_PASSWORD": "tester1234",
+        })
+        self.assertNotEqual(rc, 0, "약한 TESTER_PASSWORD 명시 set 인데 부팅 통과")
+        self.assertIn("TESTER_PASSWORD", err)
+        self.assertIn("fail-closed", err)
+
+    def test_prod_explicit_strong_tester_ok(self):
+        """ENV=prod 에서 TESTER_PASSWORD 가 명시 set + 강한 값 → 부팅 통과 + tester seed."""
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
+            "ADMIN_PASSWORD": "StrongAdmin!2026",
+            "TESTER_PASSWORD": "AlsoStrong!Tester2026",
+        })
+        self.assertEqual(rc, 0, f"prod 부팅 실패 (강한 TESTER_PASSWORD set): {err}")
+
+    def test_prod_explicit_weak_developer_fails(self):
+        """ENV=prod 에서 DEVELOPER_PASSWORD 가 명시 set + weak default → RuntimeError."""
+        rc, err = self._run_subprocess({
+            "ENV": "prod",
+            "JWT_SECRET": "a" * 64,
+            "DATABASE_URL": "sqlite+aiosqlite:///./_t.db",
+            "ADMIN_PASSWORD": "StrongAdmin!2026",
+            "DEVELOPER_PASSWORD": "dev1234",
+        })
+        self.assertNotEqual(rc, 0, "약한 DEVELOPER_PASSWORD 명시 set 인데 부팅 통과")
+        self.assertIn("DEVELOPER_PASSWORD", err)
+        self.assertIn("fail-closed", err)
+
     def test_prod_db_module_does_not_log_password_fragments(self):
         """ENV=prod 시 db.py 가 password 길이/시작/끝 글자를 stdout 에 출력하면 안 됨.
 

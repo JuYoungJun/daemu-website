@@ -114,10 +114,20 @@ JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", "12"))
 # 운영 deploy 전 반드시 ADMIN_PASSWORD 등 env 로 강한 값 등록.
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@daemu.local")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "daemu1234")
+# tester/developer 계정은 prod 에서 옵션. env 가 명시적으로 set 됐을 때만
+# 활성화. dev 환경에서는 default 값으로 편의 seed (개발 편의 보존).
+_TESTER_PASSWORD_RAW = os.environ.get("TESTER_PASSWORD", "").strip()
+_DEVELOPER_PASSWORD_RAW = os.environ.get("DEVELOPER_PASSWORD", "").strip()
+
 TESTER_EMAIL = os.environ.get("TESTER_EMAIL", "tester@daemu.local")
-TESTER_PASSWORD = os.environ.get("TESTER_PASSWORD", "tester1234")
+TESTER_PASSWORD = _TESTER_PASSWORD_RAW or "tester1234"
 DEVELOPER_EMAIL = os.environ.get("DEVELOPER_EMAIL", "dev@daemu.local")
-DEVELOPER_PASSWORD = os.environ.get("DEVELOPER_PASSWORD", "dev1234")
+DEVELOPER_PASSWORD = _DEVELOPER_PASSWORD_RAW or "dev1234"
+
+# 운영자가 명시적으로 env 에 set 했는지 추적 (default fallback 사용 vs 의도 set).
+# prod 에서 fail-closed + ensure_default_users 가 이 플래그로 분기.
+TESTER_PASSWORD_SET_BY_ENV = bool(_TESTER_PASSWORD_RAW)
+DEVELOPER_PASSWORD_SET_BY_ENV = bool(_DEVELOPER_PASSWORD_RAW)
 
 # ⚠️ TEMPORARY TEST SUPER-ADMIN ⚠️
 # Created only when both TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD are set.
@@ -217,17 +227,26 @@ if _IS_PROD:
             "운영 host 의 env (Render Dashboard / Cafe24 systemd EnvironmentFile / "
             ".env 등) 에 등록 후 재시작하세요."
         )
-    # ENV=prod 시 약한 default password 사용 시도도 차단.
+    # ENV=prod 시 약한 default password 사용 시도 차단.
+    # ADMIN_PASSWORD 는 항상 강한 값 강제 (admin 계정은 prod 필수).
+    # TESTER/DEVELOPER 는 prod 옵션 — env 에 명시 set 됐을 때만 검사. 미설정
+    # 시 fail-closed 안 함 + ensure_default_users 가 seed 자체 skip (운영
+    # 인스턴스에 사용 안 하는 약한 default 계정이 자동 생성되지 않도록).
     _weak_defaults = {"daemu1234", "tester1234", "dev1234", "admin1234", "1234", "password"}
-    for _label, _pw in (
-        ("ADMIN_PASSWORD", ADMIN_PASSWORD),
-        ("TESTER_PASSWORD", TESTER_PASSWORD),
-        ("DEVELOPER_PASSWORD", DEVELOPER_PASSWORD),
+    if ADMIN_PASSWORD in _weak_defaults:
+        raise RuntimeError(
+            f"[auth] ENV=prod 인데 ADMIN_PASSWORD 가 약한 default 값 ({ADMIN_PASSWORD!r}). "
+            "fail-closed — 강한 비밀번호로 교체 후 재시작하세요."
+        )
+    for _label, _set_by_env, _pw in (
+        ("TESTER_PASSWORD", TESTER_PASSWORD_SET_BY_ENV, TESTER_PASSWORD),
+        ("DEVELOPER_PASSWORD", DEVELOPER_PASSWORD_SET_BY_ENV, DEVELOPER_PASSWORD),
     ):
-        if _pw and _pw in _weak_defaults:
+        if _set_by_env and _pw in _weak_defaults:
             raise RuntimeError(
-                f"[auth] ENV=prod 인데 {_label} 가 약한 default 값 ({_pw!r}). "
-                "fail-closed — 강한 비밀번호로 교체 후 재시작하세요."
+                f"[auth] ENV=prod 에서 {_label} 가 명시적으로 set 됐지만 약한 default 값 "
+                f"({_pw!r}). fail-closed — 강한 비밀번호로 교체하거나 env 변수 자체를 "
+                "제거하세요 (제거 시 해당 계정은 미생성)."
             )
 
 if not JWT_SECRET:
@@ -436,11 +455,16 @@ async def ensure_default_users(session: AsyncSession) -> None:
         return
 
     weak_defaults = {"daemu1234", "tester1234", "dev1234"}
-    seeds = [
+    # Prod: tester/developer 는 env 명시 set 됐을 때만 seed (사용 안 하는
+    # 약한 default 계정이 운영 DB 에 자동 생성되지 않도록). dev: 개발 편의로
+    # 기존처럼 모두 seed (force_change_password 가 약한 default 시 적용).
+    seeds: list[tuple[str, str, str, str, bool]] = [
         (ADMIN_EMAIL, ADMIN_PASSWORD, "Default Admin", ROLE_ADMIN, True),
-        (TESTER_EMAIL, TESTER_PASSWORD, "Tester", ROLE_TESTER, True),
-        (DEVELOPER_EMAIL, DEVELOPER_PASSWORD, "Developer", ROLE_DEVELOPER, True),
     ]
+    if (not is_prod) or TESTER_PASSWORD_SET_BY_ENV:
+        seeds.append((TESTER_EMAIL, TESTER_PASSWORD, "Tester", ROLE_TESTER, True))
+    if (not is_prod) or DEVELOPER_PASSWORD_SET_BY_ENV:
+        seeds.append((DEVELOPER_EMAIL, DEVELOPER_PASSWORD, "Developer", ROLE_DEVELOPER, True))
     for email, password, name, role, force_change in seeds:
         if not email or not password:
             continue
