@@ -43,6 +43,10 @@ docs/INCIDENT_*.md
 docs/INTERNAL_*.md
 docs/ADMIN_REVIEW_*.md
 CODE_REVIEW.md
+# Phase 1 운영자 SOP — 배포·롤백·트러블슈팅·sign-off·시크릿 회전 절차.
+# DEMO_LIMITATIONS.md / CLIENT_HANDOFF.md 는 공개 OK 로 분류 (git tracked).
+docs/DEPLOYMENT_NOTES.md
+docs/PRODUCTION_CHECKLIST.md
 
 # 마케팅 / SEO planning (전략 노출 회피)
 SEO_REPORT.md
