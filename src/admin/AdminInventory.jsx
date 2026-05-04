@@ -116,14 +116,23 @@ function ProductsTab() {
   useEffect(() => { load(); }, []);
 
   const previewSku = async (category) => {
-    const r = await api.post('/api/inventory/sku/preview', { category });
+    const r = await api.post('/api/inventory/sku/preview', { category_code: category });
     if (r.ok) setSkuPreview(r.sku || '');
   };
   useEffect(() => { if (!editing) previewSku(form.category); }, [form.category, editing]);
 
   const onSave = async () => {
     if (!form.name.trim()) { siteAlert('상품명을 입력하세요.'); return; }
-    const body = { ...form, name: form.name.trim(), price: Number(form.price) || 0, stock_count: Number(form.stock_count) || 0 };
+    // backend ProductCreateIn 은 `category_code` 를 요구. form 의 `category` 키
+    // 그대로 spread 하면 backend 가 인식 못 해 `category_label` 기반 fallback →
+    // 모든 신규 상품이 MSC 카테고리로 등록됨. 명시적 매핑으로 의도된 카테고리 보존.
+    const body = {
+      ...form,
+      category_code: form.category,
+      name: form.name.trim(),
+      price: Number(form.price) || 0,
+      stock_count: Number(form.stock_count) || 0,
+    };
     const r = editing
       ? await api.patch(`/api/products/${editing}`, body)
       : await api.post('/api/products', body);
