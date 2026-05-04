@@ -48,6 +48,16 @@ CODE_REVIEW.md
 docs/DEPLOYMENT_NOTES.md
 docs/PRODUCTION_CHECKLIST.md
 
+# 시연용 운영자 1인 런북 (시크릿 placeholder 포함). 절대 commit/push 금지.
+# 명시 파일명 + 광범위하지 않은 prefix/keyword 매칭으로 실수 노출 방어.
+docs/DEMO_RUNBOOK_PRIVATE.md
+docs/PRIVATE_DEMO_RUNBOOK.md
+docs/*PRIVATE*.md
+docs/*RUNBOOK_PRIVATE*.md
+docs/*DEMO_SECRET*.md
+docs/*EMAIL_PRIVATE*.md
+docs/*CREDENTIAL*.md
+
 # 마케팅 / SEO planning (전략 노출 회피)
 SEO_REPORT.md
 
