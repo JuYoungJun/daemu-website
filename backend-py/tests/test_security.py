@@ -288,5 +288,117 @@ class TestAttachmentValidation(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 413)
 
 
+class TestEmailProviderSelection(unittest.TestCase):
+    """EMAIL_PROVIDER override 정확성 + backward-compat 자동 분기 검증.
+
+    main.py 가 module-level 에서 env 를 evaluation 하므로, subprocess 격리로
+    각 시나리오를 isolated python 프로세스에서 검증.
+    """
+
+    def _eval_provider(self, env: dict[str, str]) -> str:
+        """주어진 env 로 backend 를 격리 import 후 email_provider() 결과 반환."""
+        import subprocess
+
+        # email/auth 관련 env 는 시작 시 env 에서 깔끔히 제거 후 명시 set
+        strip = {
+            "EMAIL_PROVIDER", "RESEND_API_KEY", "SMTP_HOST", "SMTP_PORT",
+            "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "SMTP_USE_TLS",
+            "ENV", "JWT_SECRET", "ADMIN_PASSWORD", "DATABASE_URL",
+        }
+        full_env = {k: v for k, v in os.environ.items() if k not in strip}
+        # ENV=dev 강제 (fail-closed 우회) + 통과용 secrets
+        full_env.update({
+            "ENV": "dev",
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "JWT_SECRET": "x" * 64,
+            "ADMIN_PASSWORD": "abcd1234EFGH",
+        })
+        full_env.update(env)
+        result = subprocess.run(
+            [str(_BACKEND / ".venv" / "bin" / "python"), "-c",
+             "from main import email_provider; print(email_provider())"],
+            cwd=str(_BACKEND),
+            env=full_env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            self.fail(f"main import 실패: {result.stderr}")
+        # main.py 가 startup 시 안내 메시지를 stdout 에 출력 (예: "RESEND_API_KEY
+        # not set — emails will be simulated."). 마지막 줄만 email_provider() 결과.
+        lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+        return lines[-1].strip() if lines else ""
+
+    def test_provider_smtp_override_with_resend_set(self):
+        """EMAIL_PROVIDER=smtp 가 RESEND_API_KEY 가 set 되어 있어도 SMTP 강제."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "smtp",
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "smtp")
+
+    def test_provider_smtp_override_without_smtp_returns_none(self):
+        """EMAIL_PROVIDER=smtp 인데 SMTP_HOST 미설정이면 none."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "smtp",
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_resend_override_without_resend_returns_none(self):
+        """EMAIL_PROVIDER=resend 인데 RESEND_API_KEY 미설정이면 none (SMTP 있어도 무시)."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "resend",
+            "RESEND_API_KEY": "",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_none_override_disables_all(self):
+        """EMAIL_PROVIDER=none 은 강제 simulation."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "none",
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_auto_default_prefers_resend(self):
+        """EMAIL_PROVIDER 미설정 → 기본 'auto' → 둘 다 set 시 Resend 우선 (backward compat)."""
+        provider = self._eval_provider({
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "resend")
+
+    def test_provider_auto_with_only_smtp_uses_smtp(self):
+        """EMAIL_PROVIDER 미설정 + RESEND_API_KEY 미설정 + SMTP_HOST set → smtp."""
+        provider = self._eval_provider({
+            "RESEND_API_KEY": "",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "smtp")
+
+    def test_provider_auto_neither_returns_none(self):
+        """둘 다 미설정 + EMAIL_PROVIDER 미설정 → none."""
+        provider = self._eval_provider({
+            "RESEND_API_KEY": "",
+            "SMTP_HOST": "",
+        })
+        self.assertEqual(provider, "none")
+
+    def test_provider_unknown_value_falls_back_to_auto(self):
+        """알 수 없는 EMAIL_PROVIDER 값 (예: 'garbage') → auto 동작 (Resend 우선)."""
+        provider = self._eval_provider({
+            "EMAIL_PROVIDER": "garbage",
+            "RESEND_API_KEY": "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "SMTP_HOST": "mail.example.com",
+        })
+        self.assertEqual(provider, "resend")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

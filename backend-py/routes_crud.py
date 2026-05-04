@@ -192,21 +192,25 @@ async def _send_auto_reply_inline(
     body = _apply_vars(body_tpl, vars_)
     html_body = _wrap_html(body)
 
-    # Use the unified send_email() from main.py so auto-reply also benefits
-    # from the SMTP fallback (Gmail App Password) when RESEND_API_KEY is not
-    # configured. Imported lazily to avoid a circular import at module load.
+    # Use the unified send_email() from main.py — provider 선택은 main.py
+    # 의 email_provider() 가 EMAIL_PROVIDER / RESEND_API_KEY / SMTP_HOST 기반
+    # 으로 처리. SMTP 경로도 multipart/alternative 로 HTML body 정상 발송 (이전
+    # 구현은 RESEND_API_KEY 가 set 일 때만 html 전달 → SMTP 시 text only 회귀).
+    # Imported lazily to avoid a circular import at module load.
     from main import send_email, email_provider, SMTP_FROM
     status = "simulated"
     error = ""
     rid = None
-    if email_provider() != "none":
+    provider_now = email_provider()
+    if provider_now != "none":
+        from_addr = (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL
         result = await send_email({
-            "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+            "from": from_addr,
             "to": [to_email],
             "reply_to": DEFAULT_REPLY_TO,
             "subject": subject,
             "text": body,
-            **({"html": html_body} if RESEND_API_KEY else {}),
+            "html": html_body,
         })
         if result.get("ok"):
             status = "sent"

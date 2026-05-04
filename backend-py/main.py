@@ -1088,7 +1088,28 @@ async def send_via_smtp(payload: dict[str, Any]) -> dict[str, Any]:
     return await asyncio.to_thread(_send_via_smtp_blocking, payload)
 
 
+# EMAIL_PROVIDER override (기본 'auto'). 운영자가 강제로 한 provider 만 쓰고
+# 싶을 때 'smtp' / 'resend' / 'none' 중 하나로 set. 'auto' (또는 미설정 /
+# 알 수 없는 값) 은 기존 자동 분기 (Resend 우선 → SMTP → none) 보존.
+# 데모 시나리오: Resend 도메인 미인증 상태에서 임의 수신자 발송이 필요할 때
+# EMAIL_PROVIDER=smtp 로 두면 RESEND_API_KEY 가 still set 이어도 SMTP 강제.
+EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "auto").strip().lower()
+
+
 def email_provider() -> str:
+    """선택된 email provider 반환 ('resend' | 'smtp' | 'none').
+
+    EMAIL_PROVIDER override 가 'smtp' / 'resend' / 'none' 이면 그 값에 따라
+    강제 선택. 그 외 (auto / 미설정 / unknown) 는 기존 자동 분기.
+    """
+    override = EMAIL_PROVIDER
+    if override == "smtp":
+        return "smtp" if SMTP_HOST else "none"
+    if override == "resend":
+        return "resend" if RESEND_API_KEY else "none"
+    if override == "none":
+        return "none"
+    # auto / unknown — backward compat
     if RESEND_API_KEY:
         return "resend"
     if SMTP_HOST:
@@ -1143,7 +1164,8 @@ async def email_send(
     safe_attachments = normalize_attachments(payload.attachments)
     log_type = payload.type or "email"
 
-    if email_provider() == "none":
+    provider_now = email_provider()
+    if provider_now == "none":
         sim_id = f"sim-{int(time.time() * 1000)}"
         await log_outbox(
             session, type_=log_type, to=payload.to, subject=payload.subject,
@@ -1153,7 +1175,7 @@ async def email_send(
         return {"ok": True, "simulated": True, "id": sim_id}
 
     body: dict[str, Any] = {
-        "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+        "from": (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL,
         "to": [payload.to],
         "subject": payload.subject,
     }
@@ -1165,8 +1187,9 @@ async def email_send(
             body["text"] = payload.body
     else:
         body["text"] = payload.body or ""
-    if safe_attachments and RESEND_API_KEY:
+    if safe_attachments and provider_now == "resend":
         # Attachments only supported through Resend in this implementation.
+        # SMTP path 첨부 지원은 별도 작업.
         body["attachments"] = safe_attachments
 
     result = await send_email(body)
@@ -1204,7 +1227,8 @@ async def email_campaign(
 
     safe_attachments = normalize_attachments(payload.attachments)
 
-    if email_provider() == "none":
+    provider_now = email_provider()
+    if provider_now == "none":
         for r in payload.recipients:
             await log_outbox(
                 session, type_="campaign", to=r.email, subject=payload.subject,
@@ -1218,6 +1242,8 @@ async def email_campaign(
             "failed": 0,
         }
 
+    from_addr = (SMTP_FROM or FROM_EMAIL) if provider_now == "smtp" else FROM_EMAIL
+
     sent = 0
     failed = 0
     errors: list[dict[str, Any]] = []
@@ -1229,7 +1255,7 @@ async def email_campaign(
 
         personal_vars = {"name": recipient.name or ""}
         body: dict[str, Any] = {
-            "from": FROM_EMAIL if RESEND_API_KEY else (SMTP_FROM or FROM_EMAIL),
+            "from": from_addr,
             "to": [recipient.email],
             "subject": apply_vars(payload.subject, personal_vars),
         }
@@ -1241,7 +1267,7 @@ async def email_campaign(
                 body["text"] = apply_vars(payload.body, personal_vars)
         else:
             body["text"] = apply_vars(payload.body or "", personal_vars)
-        if safe_attachments and RESEND_API_KEY:
+        if safe_attachments and provider_now == "resend":
             body["attachments"] = safe_attachments
 
         try:
