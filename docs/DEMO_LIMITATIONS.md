@@ -1,8 +1,8 @@
 # DEMO_LIMITATIONS — 현재 데모 단계 운영 한계 (2026-05-04)
 
-> **이 문서는 "지금 이 시점의 사이트가 어떤 단계인지"** 를 기록합니다.
-> 운영 단계로 넘어갈 때 [`PRODUCTION_CHECKLIST.md`](./PRODUCTION_CHECKLIST.md) 와
-> [`DEPLOYMENT_NOTES.md`](./DEPLOYMENT_NOTES.md) 가 함께 사용됩니다.
+> **이 문서는 현재 데모 단계의 범위와 운영 전환 전 결정해야 할 사항을 정리한 안내서입니다.**
+> 운영 전환 시에는 별도의 내부 운영 체크리스트를 기준으로 서버, 도메인, 데이터베이스,
+> 보안 설정, 백업, 모니터링 등을 점검합니다.
 >
 > 작성 시점 가정: 클라이언트에게 **무상 데모**를 보여주는 단계.
 > 결제·계약·도메인·운영 DB 모두 미확정.
@@ -67,7 +67,7 @@
 - 데모 비밀번호 후보 리스트(`daemu1234` / `tester1234` / `dev1234` / `admin1234` / `1234` / `password`) 는 `backend-py/auth.py` 에서 **`ENV=prod` 일 때 부팅 거부**(RuntimeError)되도록 차단되어 있습니다 — 약한 기본값으로는 운영 부팅이 불가능합니다.
 - 데모 비밀번호는 본 개발자가 사전에 안전한 임시값으로 설정한 뒤 클라이언트에게 전달합니다.
 - 클라이언트는 데모 종료 후 본 개발자에게 비밀번호 폐기를 요청하면 됩니다.
-- 운영 전환 시: `ADMIN_PASSWORD` / `JWT_SECRET` / `RESEND_API_KEY` / DB 자격증명 모두 **재발급**합니다 (체크리스트는 `PRODUCTION_CHECKLIST.md` 참조).
+- 운영 전환 시: `ADMIN_PASSWORD` / `JWT_SECRET` / `RESEND_API_KEY` / DB 자격증명 모두 **재발급**합니다 (절차는 별도 내부 운영 체크리스트에 정리되어 있습니다).
 
 ---
 
@@ -96,7 +96,7 @@
   - `base64.b64decode(validate=True)` strict 디코딩
   - 차단 확장자: `.html .js .svg .exe .bat .sh .php` 등 22종 (`backend-py/main.py` `DENIED_EXTS`)
 - **다만 저장 위치가 Render 로컬 디스크라 휘발성**입니다. 업로드된 이미지는 재배포 시 사라집니다.
-- 운영 단계에서 영구 보존이 필요하면 S3 / Cloudflare R2 / Cafe24 자체 스토리지로 이전이 필수입니다 (`PRODUCTION_CHECKLIST.md` 참조).
+- 운영 단계에서 영구 보존이 필요하면 S3 / Cloudflare R2 / Cafe24 자체 스토리지로 이전이 필수입니다 (별도 내부 운영 체크리스트 참고).
 
 ---
 
@@ -129,7 +129,7 @@
   - `snyk.yml` (Snyk dependency check)
   - `lighthouse.yml` (성능)
 - **현 시점 보안 스캔은 informational only** — 실패해도 머지 차단되지 않습니다.
-- 운영 전환 시 critical/high finding 을 blocking 으로 승격해야 합니다 (`PRODUCTION_CHECKLIST.md` 참조).
+- 운영 전환 시 critical/high finding 을 blocking 으로 승격해야 합니다 (별도 내부 운영 체크리스트 참고).
 
 ---
 
@@ -138,7 +138,7 @@
 - `backend-py/tests/test_security.py` — 16건 (env validation, masking, attachment 거부 등).
 - 인증 happy/fail path, 권한 매트릭스, 업로드 거부 시나리오 등 **통합 테스트는 데모 단계 기준으로 부족합니다**.
 - 프론트엔드 자동화 테스트는 0건 (데모 한정 정상).
-- 운영 전환 시 smoke test 4~6건 추가 권장 (`PRODUCTION_CHECKLIST.md`).
+- 운영 전환 시 smoke test 4~6건 추가 권장 (별도 내부 운영 체크리스트).
 
 ---
 
@@ -158,7 +158,7 @@
 
 ## 11. 운영 전환 전 반드시 수정되어야 할 항목 (요약)
 
-세부 절차는 `PRODUCTION_CHECKLIST.md` 에 P0/P1/P2 로 분류되어 있습니다. 아래는 한눈 요약:
+세부 절차는 별도 내부 운영 체크리스트에 P0/P1/P2 로 분류되어 있습니다. 아래는 한눈 요약:
 
 ### 🔴 P0 (운영 부팅 차단 사유)
 - `MYSQL_SSL_CA` 미설정 시 `verify_mode=CERT_NONE` 로 fall-back 되는 동작 — 운영에서는 RuntimeError 로 차단되어야 함.
