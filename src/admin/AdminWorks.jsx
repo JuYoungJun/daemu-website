@@ -4,23 +4,32 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { PageActions, GuideButton, RawPageCsvButton, WorksGuide } from './PageGuides.jsx';
 import html from './raw/admin-works.html.js';
 
+// CSV 컬럼은 backend Work shape 와 raw page (admin-works-page.js) 의 admin
+// shape 둘 다 fallback. backend 빈 응답 + cached fallback 시 어느 source 든
+// 빈 칸 최소화.
+//   backend shape: id / slug / title / category / summary / hero_image_url /
+//                  sort_order / published / created_at
+//   admin SEED:    brand / name / slug / brandLine / overview / hero / status / year
 const WORKS_CSV_COLUMNS = [
-  { key: 'id', label: 'ID' },
-  { key: 'slug', label: 'slug' },
-  { key: 'title', label: '제목' },
-  { key: 'category', label: '카테고리' },
-  { key: 'summary', label: '요약' },
-  { key: 'hero_image_url', label: '히어로이미지' },
-  { key: 'sort_order', label: '정렬순서' },
-  { key: (r) => r.published ? '게시' : '숨김', label: '상태' },
-  { key: (r) => r.created_at || r.date || '', label: '등록일' },
+  { key: (r) => r.id ?? '', label: 'ID' },
+  { key: (r) => r.slug || '', label: 'slug' },
+  { key: (r) => r.name || r.title || r.brand || '', label: '제목' },
+  { key: (r) => r.category || r.brandLine || r.brand || '', label: '카테고리' },
+  { key: (r) => r.summary || r.overview || '', label: '요약' },
+  { key: (r) => r.hero_image_url || r.hero || r.image || '', label: '히어로이미지' },
+  { key: (r) => r.sort_order ?? '', label: '정렬순서' },
+  { key: (r) => (r.published === true ? '게시' : (r.published === false ? '숨김' : (r.status || ''))), label: '상태' },
+  { key: (r) => r.created_at || r.date || r.year || '', label: '등록일' },
 ];
 
 export default function AdminWorks() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="works" apiPath="/api/works?page_size=500" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
+        {/* storageKey 는 raw page (admin-works-page.js) 의 STORAGE_KEY="projects"
+            와 일치해야 backend 빈 응답 시 cached fallback 이 같은 localStorage
+            슬롯을 읽음. 옛 코드는 'works' 로 mismatch 였음 → 0행 CSV 회귀. */}
+        <RawPageCsvButton storageKey="projects" apiPath="/api/works?page_size=500" filename="daemu-works" columns={WORKS_CSV_COLUMNS} />
         <GuideButton GuideComponent={WorksGuide} />
       </PageActions>
       <AdminHelp title="작업사례 관리 사용 안내" items={[
