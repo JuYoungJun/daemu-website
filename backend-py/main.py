@@ -317,19 +317,20 @@ async def lifespan(_app: FastAPI):
                 except Exception as _e:  # noqa: BLE001
                     print(f"[seed] partner mail templates skipped: {_e!r}")
 
-                # 옛 partner row 의 password_hash 가 빈 경우 (status 무관) →
-                # 휴대폰 끝 4자리로 자동 시드. 이미 password_hash 가 있으면 절대
-                # 건드리지 않음 (운영자가 이미 set 한 비밀번호 보존). status 가
-                # 어떤 값이든 (대기 / 승인 / 비활성) 빈 hash 면 일관되게 backfill —
-                # 메일 안내(휴대폰 끝 4자리) 와 실제 비밀번호 정책 일치 보장.
+                # status='대기' + password_hash='' 인 옛 partner row 들에 대해
+                # 휴대폰 끝 4자리로 password_hash 한 번만 시드. fix 이전에 신청한
+                # row 들이 admin "활성화" 후 휴대폰 끝 4자리로 즉시 로그인 가능
+                # 하도록. 이미 password_hash 가 있으면 절대 건드리지 않음 (운영자
+                # 가 이미 set 한 비밀번호 보존).
                 try:
                     import re as _re
-                    from sqlalchemy import select as _sa_select, or_ as _or
+                    from sqlalchemy import select as _sa_select
                     from models import Partner
                     from auth import hash_password as _hash_pw
                     pending = (await session.execute(
                         _sa_select(Partner).where(
-                            _or(Partner.password_hash == None, Partner.password_hash == "")  # noqa: E711
+                            Partner.status == "대기",
+                            (Partner.password_hash == None) | (Partner.password_hash == ""),  # noqa: E711
                         )
                     )).scalars().all()
                     fixed = 0
