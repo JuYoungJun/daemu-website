@@ -4,7 +4,11 @@ const STORAGE_KEY = "partners";
 let editingId = null;
 
 // ── backend ↔ admin shape 매핑 ──────────────────────────────
+// Partner.status 값: '대기' (신청 직후) / '승인' (활성화 완료) / '비활성' (관리자가 비활성).
+// 활성화 = '승인' 인 row 만. '대기' / '비활성' / 빈 값 / 기타 → 비활성 (= 로그인/발주 불가).
 function _mapBackendPartner(it) {
+  const rawStatus = it.status || '대기';
+  const isApproved = rawStatus === '승인' || rawStatus === 'approved' || rawStatus === 'active' || rawStatus === '활성';
   return {
     id: it.id,
     name: it.company_name || '',
@@ -13,9 +17,9 @@ function _mapBackendPartner(it) {
     phone: it.phone || '',
     type: it.category || '',
     role: '발주 전용',
-    active: it.status === '비활성' ? 'inactive' : 'active',
+    active: isApproved ? 'active' : 'inactive',
     note: it.intro || '',
-    status: it.status || '대기',  // 대기 / 승인 / 비활성
+    status: rawStatus,  // 대기 / 승인 / 비활성
     approved_at: it.approved_at || null,
     date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko-KR') : '',
   };
@@ -56,15 +60,22 @@ function render() {
   document.getElementById("count").textContent = data.length + "건";
   document.getElementById("list").innerHTML = data.length ? data.map(d => {
     const isActive = (d.active || "active") === "active";
+    // 상태 라벨 — backend status 값 그대로 노출 (신청자가 본 운영자가 의미를 즉시 이해).
+    //   대기   → "신청 (대기)"  파란 배지
+    //   승인   → "활성"        초록 배지
+    //   비활성 → "비활성"      회색 배지
+    const statusLabel = d.status === '승인' ? '활성'
+      : d.status === '비활성' ? '비활성'
+      : '신청 (대기)';
     return `<tr>
       <td data-label="회사명">${escHtml(d.name)}</td>
       <td data-label="담당자">${escHtml(d.person||"-")}</td>
       <td data-label="연락처">${escHtml(d.phone||"-")}</td>
       <td data-label="업종">${escHtml(d.type||"-")}</td>
       <td data-label="권한">${escHtml(d.role||"-")}</td>
-      <td data-label="상태">${badge(isActive ? "활성" : "비활성")}</td>
+      <td data-label="상태">${badge(statusLabel)}</td>
       <td data-label="관리" class="col-actions">
-        <button class="adm-btn-sm" onclick="toggleActive(${escAttr(d.id)})">${isActive ? "비활성" : "활성"}</button>
+        <button class="adm-btn-sm" onclick="toggleActive(${escAttr(d.id)})">${isActive ? "비활성으로" : "승인/활성화"}</button>
         <button class="adm-btn-sm" onclick="openEdit(${escAttr(d.id)})">수정</button>
         <button class="adm-btn-sm danger" onclick="del(${escAttr(d.id)})">삭제</button>
       </td>

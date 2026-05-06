@@ -11,7 +11,13 @@ const PARTNERS_CSV_COLUMNS = [
   { key: 'email', label: '이메일' },
   { key: 'type', label: '업종' },
   { key: 'role', label: '권한' },
-  { key: (r) => (r.active === 'inactive' ? '비활성' : '활성'), label: '상태' },
+  { key: (r) => {
+      const s = r.status || (r.active === 'inactive' ? '비활성' : '활성');
+      if (s === '승인' || s === 'active' || s === '활성') return '활성';
+      if (s === '비활성') return '비활성';
+      if (s === '대기' || !s) return '신청 (대기)';
+      return s;
+    }, label: '상태' },
   { key: 'note', label: '메모' },
   { key: 'date', label: '등록일' },
 ];
