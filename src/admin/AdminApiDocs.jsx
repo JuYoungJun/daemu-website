@@ -46,6 +46,8 @@ export default function AdminApiDocs() {
   const [spec, setSpec] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // 운영 보안 정책상 OpenAPI 가 비공개 (404) 인 경우 별도 friendly 메시지로 표시.
+  const [docsDisabled, setDocsDisabled] = useState(false);
   const [search, setSearch] = useState('');
   const [activeTag, setActiveTag] = useState('');
   const [activeId, setActiveId] = useState('');
@@ -61,6 +63,12 @@ export default function AdminApiDocs() {
       }
       try {
         const res = await fetch(api.baseUrl() + '/openapi.json');
+        // 운영 모드에서는 backend 가 OpenAPI 를 의도적으로 차단(`openapi_url=None`).
+        // 404 는 결함이 아니라 보안 정책 — 사용자에게 raw "HTTP 404" 대신 안내 메시지.
+        if (res.status === 404) {
+          if (alive) { setDocsDisabled(true); setLoading(false); }
+          return;
+        }
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
         if (alive) { setSpec(json); setLoading(false); }
@@ -175,6 +183,18 @@ export default function AdminApiDocs() {
           {mainTab === 'deploy' && <DeployTab />}
 
           {mainTab === 'api' && loading && <div style={{ padding: '40px 0', color: '#8c867d' }}>API 문서 로드 중…</div>}
+          {mainTab === 'api' && docsDisabled && (
+            <div style={{ background: '#faf8f4', border: '1px solid #e6e3dd', padding: '20px 22px', color: '#5a534b', fontSize: 13, lineHeight: 1.7 }}>
+              <strong style={{ color: '#2a2724' }}>운영 환경에서는 API 문서를 비공개로 전환했습니다.</strong>
+              <div style={{ marginTop: 8, color: '#6f6b68' }}>
+                보안 정책상 운영 배포(<code>ENV=prod</code>)에서는 OpenAPI / Swagger UI 가 외부 노출되지 않도록 설정되어 있습니다.
+                상단의 <strong>DB 스키마</strong> · <strong>권한 매트릭스</strong> · <strong>배포 / 마이그레이션</strong> 탭은 정상 사용 가능합니다.
+              </div>
+              <div style={{ marginTop: 8, color: '#6f6b68' }}>
+                개발 환경에서는 동일 페이지에서 자동 생성된 OpenAPI 사양 + 엔드포인트 목록이 표시됩니다.
+              </div>
+            </div>
+          )}
           {mainTab === 'api' && error && (
             <div style={{ background: '#fff0ec', border: '1px solid #f0c4c0', padding: '12px 16px', color: '#7a1a14', fontSize: 12.5 }}>
               로드 실패: {error}

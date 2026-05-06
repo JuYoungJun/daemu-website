@@ -12,64 +12,66 @@ import { downloadCSV } from '../lib/csv.js';
 
 // RawPage 어드민 페이지에 CSV 내보내기 버튼을 한 줄로 부착.
 //
-// 데이터 소스 우선순위:
-//   1) apiPath prop 이 있으면 클릭 시점에 backend 에서 fresh fetch — 가장 정확.
-//   2) hydrate 가 아직 진행 중이면 사용자에게 "동기화 중" 토스트 + 잠깐 대기.
-//   3) DB.get(storageKey) → localStorage. fallback (offline / api 미설정 / 옛 페이지).
+// 정책 (2026-05 변경):
+//   · apiPath 가 있으면 **backend 가 single source of truth**. CSV 는 backend 응답 그대로 export.
+//     backend 가 비어 있으면 CSV 도 비어 있음 (사용자에게 warn 토스트로 명확히 안내).
+//     이전 동작 — backend 비었지만 localStorage 캐시 fallback — 은 "데이터 살아 있는 것처럼"
+//     보이게 만들어 client demo 에서 혼란을 주므로 제거함.
+//   · apiPath 가 없는 페이지 (예: 미디어 라이브러리 등 의도적 local-only) 는 localStorage 그대로 export.
 //
 // 사용 예 (backend hydrate 적용 페이지 — 권장):
 //   <RawPageCsvButton storageKey="orders" apiPath="/api/orders" filename="..." columns={...} />
-// 사용 예 (localStorage only — 옛 호환):
+// 사용 예 (의도적 local-only):
 //   <RawPageCsvButton storageKey="media" filename="daemu-media" columns={...} />
-//
-// 환경별 데이터 정합성: apiPath 사용 시 Mac/Windows/모바일 어디서 클릭해도
-// 같은 결과 (DB single source of truth). storageKey-only 모드는 환경별 차이 가능.
 export function RawPageCsvButton({ storageKey, filename, columns, apiPath, mapRow }) {
   const onClick = async () => {
     const fname = (filename || storageKey) + '-' + new Date().toISOString().slice(0, 10) + '.csv';
 
-    // 1) apiPath 가 있으면 backend 에서 fresh fetch (가장 정확)
+    // 1) apiPath 가 있으면 backend 가 source of truth — fresh fetch.
     if (apiPath) {
+      // hydrate 진행 중이면 짧게 대기 — race condition 방지.
+      if (typeof window !== 'undefined' && typeof window.daemuIsHydrating === 'function' && window.daemuIsHydrating(storageKey)) {
+        try { (await import('../lib/dialog.js')).siteToast('데이터 동기화 중입니다. 잠시 후 다시 시도해 주세요.', { tone: 'info' }); } catch { /* ignore */ }
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+
       try {
         const { api } = await import('../lib/api.js');
         const r = await api.get(apiPath);
         if (r && r.ok && Array.isArray(r.items)) {
-          // backend 가 빈 응답인데 localStorage 에 hydrate 캐시가 남아있는
-          // 경우 (예: Render redeploy 후 DB 초기화 + 어드민 화면은 옛 캐시
-          // 표시) — 화면에 보이는 데이터를 export 하는 게 사용자 기대와
-          // 일치. 빈 backend 가 곧바로 빈 CSV 가 되지 않도록 fallthrough.
-          if (r.items.length === 0) {
-            const cached = DB.get(storageKey) || [];
-            if (cached.length > 0) {
-              try { (await import('../lib/dialog.js')).siteToast('백엔드는 비어 있습니다 — 화면에 보이는 캐시 데이터로 진행합니다.', { tone: 'warn' }); } catch { /* ignore */ }
-              const rows = typeof mapRow === 'function' ? cached.map(mapRow) : cached;
-              downloadCSV(fname, rows, columns);
-              return;
-            }
-          }
+          // 빈 backend → 빈 CSV. 캐시 fallback 없음.
           const rows = typeof mapRow === 'function' ? r.items.map(mapRow) : r.items;
+          if (rows.length === 0) {
+            try {
+              const { siteAlert } = await import('../lib/dialog.js');
+              siteAlert('내보낼 데이터가 없습니다.');
+            } catch { /* ignore */ }
+            return;
+          }
           downloadCSV(fname, rows, columns);
           return;
         }
-        // api 실패 시 — fallback 로 진행 (아래 localStorage)
-        try { (await import('../lib/dialog.js')).siteToast('백엔드 응답 실패 — localStorage 캐시로 진행합니다.', { tone: 'warn' }); } catch { /* ignore */ }
-      } catch (_) { /* fallthrough */ }
+        // backend 응답 실패 (5xx / network / 401 etc.) — 빈 CSV 만들지 않고 사용자에게 명확히 알림.
+        try {
+          const { siteAlert } = await import('../lib/dialog.js');
+          siteAlert('서버에 일시적인 문제가 있어 데이터를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        } catch { /* ignore */ }
+        return;
+      } catch (_) {
+        try {
+          const { siteAlert } = await import('../lib/dialog.js');
+          siteAlert('서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+        } catch { /* ignore */ }
+        return;
+      }
     }
 
-    // 2) hydrate 가 진행 중이면 짧게 안내 후 대기 — race condition 방지
-    if (typeof window !== 'undefined' && typeof window.daemuIsHydrating === 'function' && window.daemuIsHydrating(storageKey)) {
-      try { (await import('../lib/dialog.js')).siteToast('데이터 동기화 중입니다. 잠시 후 다시 시도해 주세요.', { tone: 'info' }); } catch { /* ignore */ }
-      // 1.5s 대기 후 한 번 더 시도 — 보통 hydrate 가 그 안에 끝남
-      await new Promise((res) => setTimeout(res, 1500));
-    }
-
-    // 3) localStorage 폴백 (마지막)
+    // 2) apiPath 없는 의도적 local-only 페이지 — localStorage 그대로 export.
     const rows = (DB.get(storageKey) || []);
-    if (!rows.length && apiPath) {
-      // localStorage 도 비어있고 api 도 실패한 상태
+    if (!rows.length) {
       try {
         const { siteAlert } = await import('../lib/dialog.js');
-        siteAlert('내보낼 데이터를 가져오지 못했습니다. 페이지 새로고침 후 다시 시도해 주세요.');
+        siteAlert('내보낼 데이터가 없습니다.');
       } catch { /* ignore */ }
       return;
     }

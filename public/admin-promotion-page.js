@@ -40,7 +40,8 @@ async function hydrateFromBackend() {
     storageKey: STORAGE_KEY,
     endpoint: '/api/promotions?page=1&page_size=200',
     mapItem: _mapBackendCoupon,
-    preserveLocal: true,
+    // 정책 (2026-05): backend Aiven MySQL 이 single source of truth.
+    // backend 가 비었으면 화면도 비어야 — preserveLocal 제거.
   });
 }
 

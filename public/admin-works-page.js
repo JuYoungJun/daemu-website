@@ -50,37 +50,13 @@
       storageKey: STORAGE_KEY,
       endpoint: '/api/works?page=1&page_size=500',
       mapItem: _mapBackendWork,
-      preserveLocal: true,  // backend 가 비어있으면 첫 부팅 시드 데이터 유지
+      // 정책 (2026-05): backend Aiven MySQL 이 single source of truth.
+      // backend 가 비었으면 화면도 비어야 함 — 옛 하드코딩 시드(6건) 가
+      // "백엔드는 비어 있습니다" 토스트 + CSV-vs-display 불일치를 만들었음.
     });
   }
-
-  if (!DB.get(STORAGE_KEY).length) {
-    [
-      {brand:"Beclassy", name:"나주점", slug:"beclassy-naju", size:"170평", year:"2018", status:"운영중", addr:"전라남도 나주시 노안면 건재로 524-11",
-       brandLine:"BECLASSY · COFFEE & BAKERY", title:"Beclassy <em>나주점</em>",
-       tags:["브랜드 런칭","메뉴 개발","운영 설계","공간 설계"],
-       stats:[{label:"SIZE",val:"170평"},{label:"YEAR",val:"2018"},{label:"FLOORS",val:"4층"}],
-       overview:"비클래시 나주점은 대무의 첫 번째 프로젝트로, 브랜드 전략부터 메뉴 개발, 공간 설계, 운영 시스템까지 전 과정을 설계한 플래그십 매장입니다.",
-       process:[
-         {num:"01", title:"브랜드 전략 수립", desc:"타겟 고객 분석, 경쟁 환경 조사, 브랜드 포지셔닝 전략 수립"},
-         {num:"02", title:"메뉴 R&D", desc:"시그니처 몽블랑 개발, 음료/베이커리 라인업 구성, 레시피 표준화"},
-         {num:"03", title:"공간 설계 & 시공", desc:"4층 동선 설계, 주방 레이아웃, 인테리어 컨셉 & 시공 감리"},
-         {num:"04", title:"오픈 & 운영", desc:"운영 매뉴얼 제작, 직원 교육, 오픈 지원, 지속 운영 컨설팅"}
-       ],
-       hero:"/assets/work-beclassy-1.png", images:[]},
-      {brand:"Beclassy", name:"인천 을왕리점", slug:"beclassy-incheon", size:"350평", year:"2024", status:"운영중", addr:"인천광역시 중구 용유서로 402-11",
-       brandLine:"BECLASSY · COFFEE & BAKERY", title:"Beclassy <em>인천점</em>",
-       tags:["지점 확장","공간 디자인","메뉴 현지화"],
-       stats:[{label:"SIZE",val:"350평"},{label:"YEAR",val:"2024"},{label:"CONCEPT",val:"오션뷰"}],
-       overview:"비클래시 인천점은 을왕리 해변가에 위치한 350평 규모의 오션뷰 카페입니다.",
-       process:[],
-       hero:"/assets/work-beclassy-10.png", images:[]},
-      {brand:"Pumjang", name:"나주 본점", slug:"pumjang-naju", size:"-", year:"2020", status:"운영중", addr:"전라남도 나주시", hero:"/assets/work-pumjang.png", images:[]},
-      {brand:"Pumjang", name:"인천점", slug:"pumjang-incheon", size:"-", year:"2024", status:"NEW", addr:"인천광역시", hero:"/assets/work-beclassy-6.png", images:[]},
-      {brand:"Morif", name:"상무점", slug:"morif-sangmu", size:"-", year:"2022", status:"운영중", addr:"광주광역시 서구", hero:"/assets/work-morif.png", images:[]},
-      {brand:"Morif", name:"수완점", slug:"morif-suwan", size:"-", year:"2023", status:"운영중", addr:"광주광역시 광산구", hero:"/assets/work-beclassy-8.png", images:[]}
-    ].forEach(d => DB.add(STORAGE_KEY, d));
-  }
+  // 옛 하드코딩 시드 6건 (Beclassy / Pumjang / Morif) 제거 — 같은 사유.
+  // 어드민에서 등록한 작업사례만 표시되도록 변경.
 
   function setMode(m) {
     mode = m;

@@ -43,32 +43,16 @@ async function hydrateFromBackend() {
     storageKey: STORAGE_KEY,
     endpoint: '/api/popups?page=1&page_size=200',
     mapItem: _mapBackendPopup,
-    preserveLocal: true,
+    // 정책 (2026-05): backend Aiven MySQL 이 single source of truth.
+    // backend 가 비어있으면 화면도 비어야 함 — 옛 하드코딩 시드 1건이
+    // "샘플 팝업이 진짜 데이터" 처럼 보이게 했음.
   });
 }
 
 const POSITION_LABEL = { center: "중앙", "bottom-right": "우하단", top: "상단" };
 const FREQ_LABEL = { always: "매번", daily: "하루 1회", once: "영구 1회" };
 const PAGE_LABEL = { all:"전체", home:"메인", about:"About", service:"Service", team:"Team", process:"Process", work:"Work", contact:"Contact", partners:"Partners" };
-
-if (!DB.get(STORAGE_KEY).length) {
-  DB.add(STORAGE_KEY, {
-    title: "2026 봄 시즌 안내",
-    body: "비클래시 봄 시즌 한정 메뉴가 출시되었습니다.\n주요 매장에서 만나보세요.",
-    image: "",
-    ctaText: "메뉴 보기",
-    ctaUrl: "work.html",
-    position: "center",
-    delay: 2,
-    frequency: "daily",
-    from: "",
-    to: "",
-    targetPages: ["home"],
-    status: "paused",
-    impressions: 0,
-    clicks: 0
-  });
-}
+// 옛 하드코딩 시드("2026 봄 시즌 안내") 제거 — 어드민에서 등록한 팝업만 표시.
 
 function getCheckedPages() {
   return Array.from(document.querySelectorAll('#target-pages input:checked')).map(i => i.value);
