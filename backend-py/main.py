@@ -873,6 +873,82 @@ async def admin_health(
     return response
 
 
+@app.get("/api/admin/__schema_diag")
+async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
+    """일시 진단 endpoint — ORM 모델과 실제 DB 테이블의 컬럼 diff 를 반환.
+    schema drift / mutation 500 진단 후 즉시 제거 예정.
+    """
+    from sqlalchemy import inspect as _sa_inspect, text as _sa_text
+    from models import (
+        Work, Inquiry, Partner, PartnerBrand, Order, SitePopup, Promotion,
+        Campaign, CrmCustomer, NewsletterSubscriber, Announcement,
+        Document, DocumentTemplate, ShortLink, Outbox, MailTemplate, AdminUser,
+    )
+    try:
+        from models import MediaAsset
+    except Exception:  # noqa: BLE001
+        MediaAsset = None
+    try:
+        from models import Product
+    except Exception:  # noqa: BLE001
+        Product = None
+
+    targets = [
+        Work, Inquiry, Partner, PartnerBrand, Order, SitePopup, Promotion,
+        Campaign, CrmCustomer, NewsletterSubscriber, Announcement,
+        Document, DocumentTemplate, ShortLink, Outbox, MailTemplate, AdminUser,
+    ]
+    if MediaAsset is not None:
+        targets.append(MediaAsset)
+    if Product is not None:
+        targets.append(Product)
+
+    diff: list[dict[str, Any]] = []
+    last_error = ""
+    try:
+        async with engine.connect() as _conn:
+            def _diff(sync_conn):
+                rows: list[dict[str, Any]] = []
+                insp = _sa_inspect(sync_conn)
+                tables = insp.get_table_names()
+                for m in targets:
+                    t = m.__tablename__
+                    if t not in tables:
+                        rows.append({"table": t, "exists": False})
+                        continue
+                    actual = {c["name"] for c in insp.get_columns(t)}
+                    orm = {c.name for c in m.__table__.columns}
+                    missing = sorted(orm - actual)
+                    extra = sorted(actual - orm)
+                    rows.append({
+                        "table": t, "exists": True,
+                        "actual_cols": len(actual),
+                        "orm_cols": len(orm),
+                        "missing_in_db": missing,
+                        "extra_in_db": extra,
+                    })
+                return rows
+            diff = await _conn.run_sync(_diff)
+    except Exception as e:  # noqa: BLE001
+        last_error = f"{type(e).__name__}: {str(e)[:300]}"
+
+    # 단일 INSERT smoke (Work 최소 row) + 즉시 rollback
+    smoke = {"attempted": False, "ok": False, "error": ""}
+    try:
+        async with engine.begin() as _conn:
+            smoke["attempted"] = True
+            await _conn.execute(_sa_text(
+                "INSERT INTO works (slug, title) VALUES "
+                "('__schema_diag_smoke__', '__schema_diag_smoke__')"
+            ))
+            await _conn.execute(_sa_text("DELETE FROM works WHERE slug = '__schema_diag_smoke__'"))
+            smoke["ok"] = True
+    except Exception as e:  # noqa: BLE001
+        smoke["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+
+    return {"ok": True, "diff": diff, "smoke_works_insert": smoke, "diag_error": last_error}
+
+
 # ---------------------------------------------------------------------------
 # Static uploads (cache 7 days, immutable)
 
