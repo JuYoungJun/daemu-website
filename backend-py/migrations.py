@@ -131,6 +131,87 @@ def _table_exists(conn: Connection, table: str) -> bool:
     return bool(r)
 
 
+def _safe_default_clause_for_column(col) -> str:
+    """ORM Column 의 nullable / type / default 정보를 보고 *MySQL/SQLite 양쪽
+    안전한* DDL fragment 를 만든다. 빈 문자열 반환 시 NOT NULL 도 DEFAULT 도
+    안 붙음 (= 호출자가 NULL 허용 컬럼을 만들겠다는 뜻).
+
+    rationale: SQLAlchemy `Column(..., default=…)` 은 *Python-side* default
+    이라 ALTER TABLE ADD COLUMN 시 DDL 에 들어가지 않는다. ORM 으로 생성된
+    INSERT 는 Python default 를 채워주지만, 테이블에 직접 INSERT 하거나
+    SQLAlchemy 세션이 dirty default 를 안 채우는 edge case 에서는 'Field …
+    doesn't have a default value' 가 발생. 이를 막으려면 DDL 에 server-side
+    default 를 부착해야 함.
+    """
+    try:
+        py_type = col.type.python_type
+    except (NotImplementedError, AttributeError):
+        py_type = None
+    if py_type is bool:
+        return "NOT NULL DEFAULT 0"
+    if py_type is int:
+        return "NOT NULL DEFAULT 0"
+    if py_type is float:
+        return "NOT NULL DEFAULT 0"
+    if py_type is str:
+        # TEXT/MEDIUMTEXT 컬럼은 MySQL 5.x 에서 DEFAULT 못 가짐 — NULL 허용으로
+        # 두는 게 호환성 안전. SQLAlchemy `Text` 컬럼 검출.
+        from sqlalchemy import Text
+        if isinstance(col.type, Text):
+            return ""  # NULL 허용
+        return "NOT NULL DEFAULT ''"
+    # JSON 컬럼 — MySQL 8.0.13+ JSON DEFAULT 지원하지만 (JSON_ARRAY()) 같은
+    # expression default 는 5.7 호환 X. NULL 허용으로 두는 게 안전.
+    from sqlalchemy import JSON
+    if isinstance(col.type, JSON):
+        return ""
+    # DateTime / 그 외 — NULL 허용.
+    return ""
+
+
+def _column_ddl(col, dialect) -> str:
+    """`name TYPE [NOT NULL DEFAULT …]` ALTER TABLE 용 fragment."""
+    type_compiled = col.type.compile(dialect=dialect)
+    parts = [f"`{col.name}`", type_compiled]
+    default_clause = _safe_default_clause_for_column(col)
+    if default_clause:
+        parts.append(default_clause)
+    return " ".join(parts)
+
+
+def auto_align_columns(conn: Connection, models: list) -> list[str]:
+    """ORM 모델의 컬럼이 실제 DB 테이블과 일치하도록 자동 ALTER.
+
+    · `Base.metadata.create_all()` 이 새 테이블만 만들고 기존 테이블의 신규
+      컬럼은 안 만들어 발생하는 schema drift 를 보강.
+    · 누락 컬럼만 ADD COLUMN — 기존 컬럼은 절대 변경하지 않음 (DROP / ALTER
+      TYPE 안 함). data 손실 0.
+    · NOT NULL + safe default 자동 부여 (위 `_safe_default_clause_for_column`).
+    · 실패해도 다음 컬럼/테이블 계속 — fail-soft.
+    """
+    msgs: list[str] = []
+    dialect = conn.dialect
+    for model in models:
+        table = getattr(model, "__tablename__", None)
+        if not table:
+            continue
+        if not _table_exists(conn, table):
+            continue
+        existing = _existing_columns(conn, table)
+        for col in model.__table__.columns:
+            if col.name in existing:
+                continue
+            try:
+                ddl = _column_ddl(col, dialect)
+                stmt = f"ALTER TABLE `{table}` ADD COLUMN {ddl}"
+                conn.execute(text(stmt))
+                msgs.append(stmt)
+                print(f"[align+] {stmt}")
+            except Exception as e:  # noqa: BLE001
+                print(f"[align!] {table}.{col.name}: {type(e).__name__}: {str(e)[:200]}")
+    return msgs
+
+
 def run_pending_migrations(conn: Connection) -> list[str]:
     """누락된 컬럼만 추가. 이미 있는 컬럼은 건드리지 않습니다.
     인덱스도 누락 시 추가 (CREATE INDEX IF NOT EXISTS).
@@ -167,6 +248,36 @@ def run_pending_migrations(conn: Connection) -> list[str]:
             print(f"[migration] applied: {clause}")
         except Exception as e:  # noqa: BLE001
             print(f"[migration] skip {clause!r}: {e!r}")
+
+    # 3) ORM 모델 ↔ 실제 테이블 자동 정렬 — schema drift 보강.
+    #    (mutation 영향 받는 모델만 — admin_users / outbox / mail_templates 등은
+    #    전용 entry 가 PENDING_COLUMNS 에 이미 있으므로 중복 skip 됨.)
+    try:
+        from models import (
+            Work, Inquiry, Partner, PartnerBrand, Order, SitePopup, Promotion,
+            Campaign, CrmCustomer, NewsletterSubscriber, Announcement,
+            Document, DocumentTemplate, ShortLink,
+        )
+        align_models = [
+            Work, Inquiry, Partner, PartnerBrand, Order, SitePopup, Promotion,
+            Campaign, CrmCustomer, NewsletterSubscriber, Announcement,
+            Document, DocumentTemplate, ShortLink,
+        ]
+        # MediaAsset 은 routes_media 가 별도 처리 — 있으면 추가.
+        try:
+            from models import MediaAsset
+            align_models.append(MediaAsset)
+        except Exception:  # noqa: BLE001
+            pass
+        # Product 도 중요 (SKU INSERT path).
+        try:
+            from models import Product
+            align_models.append(Product)
+        except Exception:  # noqa: BLE001
+            pass
+        applied.extend(auto_align_columns(conn, align_models))
+    except Exception as e:  # noqa: BLE001
+        print(f"[align] auto_align_columns failed: {e!r}")
 
     return applied
 
