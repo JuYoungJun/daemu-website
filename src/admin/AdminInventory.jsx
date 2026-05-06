@@ -280,6 +280,10 @@ function LotsTab() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ sku: '', within_days: '' });
   const [form, setForm] = useState({ sku: '', lot_number: '', quantity: 0, produced_at: '', expires_at: '', supplier: '', note: '' });
+  // 등록된 product 들을 SKU select 에서 사용. (admin 입력 부담 ↓)
+  const [products, setProducts] = useState([]);
+  // backend 자동 생성 lot_number preview — SKU/생산일 변경 시 갱신.
+  const [lotPreviewBusy, setLotPreviewBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -293,10 +297,45 @@ function LotsTab() {
   };
   useEffect(() => { load(); }, [filter]);
 
+  // 상품 목록 1회 로드 — SKU select 의 데이터 source.
+  useEffect(() => {
+    api.get('/api/products?page_size=500').then((r) => {
+      if (r && r.ok && Array.isArray(r.items)) setProducts(r.items);
+    });
+  }, []);
+
+  // SKU/생산일 바뀌면 backend 의 표준 LOT 번호 미리보기 자동 갱신.
+  // (사용자가 수동 override 할 수 있도록 readonly 강제는 안 함.)
+  useEffect(() => {
+    if (!form.sku) return;
+    let alive = true;
+    setLotPreviewBusy(true);
+    const t = setTimeout(async () => {
+      const r = await api.post('/api/inventory/lots/preview', {
+        sku: form.sku,
+        produced_at: form.produced_at ? new Date(form.produced_at).toISOString() : null,
+      });
+      if (!alive) return;
+      setLotPreviewBusy(false);
+      if (r && r.ok && r.lot_number) setForm((f) => ({ ...f, lot_number: r.lot_number }));
+    }, 250);
+    return () => { alive = false; clearTimeout(t); setLotPreviewBusy(false); };
+  }, [form.sku, form.produced_at]);
+
+  const onPickProduct = (sku) => {
+    const p = products.find((x) => x.sku === sku);
+    setForm((f) => ({
+      ...f,
+      sku: sku || '',
+      // 자동 채움 — 옵션. 사용자가 곧장 입고 수량/유통기한만 입력하도록.
+      ...(p ? { supplier: f.supplier || '' } : {}),
+    }));
+  };
+
   const onSave = async () => {
-    if (!form.sku.trim() || !form.lot_number.trim()) { siteAlert('SKU 와 LOT 번호는 필수입니다.'); return; }
+    if (!form.sku.trim()) { siteAlert('SKU 가 필요합니다. 위 목록에서 상품을 선택하세요.'); return; }
     const r = await api.post('/api/inventory/lots', {
-      ...form, sku: form.sku.trim(), lot_number: form.lot_number.trim(),
+      ...form, sku: form.sku.trim(), lot_number: (form.lot_number || '').trim(),
       quantity: Number(form.quantity) || 0,
     });
     if (!r.ok) { siteAlert(r.error || '저장 실패'); return; }
@@ -317,8 +356,23 @@ function LotsTab() {
       <h3 className="admin-section-title">신규 LOT 입고</h3>
       <div style={{ display: 'grid', gap: 10, marginBottom: 24 }}>
         <Row>
-          <Field label="SKU *"><input type="text" value={form.sku} onChange={(e) => setForm(f => ({ ...f, sku: e.target.value }))} style={inputStyle} placeholder="DAEMU-BAK-0001-00" /></Field>
-          <Field label="LOT 번호 *"><input type="text" value={form.lot_number} onChange={(e) => setForm(f => ({ ...f, lot_number: e.target.value }))} style={inputStyle} maxLength={40} /></Field>
+          <Field label="상품 선택 *">
+            <select value={form.sku} onChange={(e) => onPickProduct(e.target.value)} style={inputStyle}>
+              <option value="">— 등록된 상품에서 선택 —</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.sku}>
+                  {p.sku} · {p.name} ({p.category_label || p.category_code || '기타'})
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={'LOT 번호' + (lotPreviewBusy ? ' (자동 생성 중…)' : ' (자동 생성)')}>
+            <input type="text" value={form.lot_number}
+              onChange={(e) => setForm(f => ({ ...f, lot_number: e.target.value }))}
+              style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 12 }}
+              placeholder={form.sku ? '자동 생성 중...' : '먼저 상품을 선택하세요'}
+              maxLength={40} />
+          </Field>
           <Field label="수량 *"><input type="number" value={form.quantity} onChange={(e) => setForm(f => ({ ...f, quantity: e.target.value }))} style={inputStyle} min={1} /></Field>
         </Row>
         <Row>

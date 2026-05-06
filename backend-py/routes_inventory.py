@@ -278,13 +278,60 @@ async def adjust_stock(
 
 class LotCreateIn(BaseModel):
     sku: str
-    lot_number: str = Field(min_length=1, max_length=40)
+    lot_number: str = Field(default="", max_length=40)  # 빈 값이면 backend 가 자동 생성
     quantity: int = Field(ge=0)
     produced_at: datetime | None = None
     expires_at: datetime | None = None
     received_at: datetime | None = None
     supplier: str = ""
     note: str = ""
+
+
+class LotPreviewIn(BaseModel):
+    sku: str
+    produced_at: datetime | None = None
+
+
+def _build_lot_number(sku: str, on_date: datetime) -> str:
+    """표준 LOT 형식: LOT-{SKU}-{YYYYMMDD}-{SEQ3}.
+    SEQ 는 호출 시점에 backend 가 같은 SKU + 같은 date prefix 의 마지막 SEQ +1.
+    실제 INSERT 시 unique constraint 충돌이 나면 caller (create_lot) 가 retry."""
+    sku_part = (sku or "").strip().upper()[:30] or "UNK"
+    date_part = on_date.strftime("%Y%m%d")
+    return f"LOT-{sku_part}-{date_part}-001"
+
+
+async def _next_lot_number(session: AsyncSession, sku: str, on_date: datetime) -> str:
+    """같은 SKU + 같은 YYYYMMDD prefix 안에서 다음 sequence 할당."""
+    sku_part = (sku or "").strip().upper()[:30] or "UNK"
+    date_part = on_date.strftime("%Y%m%d")
+    prefix = f"LOT-{sku_part}-{date_part}-"
+    res = await session.execute(
+        select(StockLot.lot_number)
+        .where(StockLot.sku == sku, StockLot.lot_number.like(prefix + "%"))
+    )
+    seqs = []
+    for (ln,) in res.all():
+        try:
+            seqs.append(int(str(ln).rsplit("-", 1)[-1]))
+        except Exception:  # noqa: BLE001
+            continue
+    next_seq = (max(seqs) + 1) if seqs else 1
+    return f"{prefix}{next_seq:03d}"
+
+
+@router.post("/inventory/lots/preview")
+async def preview_lot_number(
+    payload: LotPreviewIn,
+    session: AsyncSession = Depends(get_session),
+    _me: AdminUser = Depends(require_perm("products", "write")),
+):
+    """LOT 자동 생성 미리보기 — frontend 가 SKU/생산일 입력 직후 호출.
+    반환된 lot_number 가 즉시 사용 가능한 후보.
+    """
+    on_date = payload.produced_at or datetime.now(timezone.utc)
+    lot_number = await _next_lot_number(session, payload.sku, on_date)
+    return {"ok": True, "lot_number": lot_number, "sku": payload.sku}
 
 
 class LotUpdateIn(BaseModel):
@@ -332,9 +379,22 @@ async def create_lot(
     res = await session.execute(select(Product).where(Product.sku == payload.sku))
     product = res.scalar_one_or_none()
 
+    # lot_number 가 비었거나 동일 SKU+date 에 이미 있는 lot 와 충돌 시 backend 자동 할당.
+    on_date = payload.produced_at or datetime.now(timezone.utc)
+    lot_number = (payload.lot_number or "").strip()
+    if not lot_number:
+        lot_number = await _next_lot_number(session, payload.sku, on_date)
+    else:
+        # 사용자 지정 LOT 번호의 중복 검사 — 같은 SKU 안에서 unique 강제.
+        dup = await session.execute(
+            select(StockLot.id).where(StockLot.sku == payload.sku, StockLot.lot_number == lot_number)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(409, detail=f"이미 존재하는 LOT 번호입니다: {lot_number}")
+
     obj = StockLot(
         sku=payload.sku,
-        lot_number=payload.lot_number,
+        lot_number=lot_number,
         quantity=payload.quantity,
         produced_at=payload.produced_at,
         expires_at=payload.expires_at,
@@ -353,9 +413,10 @@ async def create_lot(
     session.add(StockHistory(
         sku=payload.sku, lot_id=obj.id, delta=payload.quantity,
         reason="restock", ref_type="lot", ref_id=str(obj.id),
-        note=f"LOT 입고 ({payload.lot_number})", actor_user_id=me.id,
+        note=f"LOT 입고 ({lot_number})", actor_user_id=me.id,
     ))
     await session.flush()
+    await session.refresh(obj)
     return {"ok": True, "item": _model_to_dict(obj)}
 
 

@@ -660,7 +660,7 @@ async def monitoring_summary(_user = Depends(require_perm("monitoring", "read"))
     DB 응답 시간, 최근 24h Outbox 통계, 최근 실패 발송 건수, 미답변 문의 등
     한 호출에 모아 반환."""
     from datetime import datetime, timedelta, timezone as _tz
-    from sqlalchemy import func as _func
+    from sqlalchemy import select, func as _func
     from models import Inquiry, Outbox, AuditLog, Document, NewsletterSubscriber, Partner
     cutoff = datetime.now(_tz.utc) - timedelta(hours=24)
     out: dict[str, Any] = {"ok": True, "ts": datetime.now(_tz.utc).isoformat()}

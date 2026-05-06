@@ -146,6 +146,8 @@ function LoginForm({ onLogin }) {
 function SignupForm({ onDone }) {
   const [form, setForm] = useState({ company:'', person:'', phone:'', email:'', type:'', message:'' });
   const [submitted, setSubmitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   // phone 은 자동 dash 포맷, email 은 공백 제거. 기타는 그대로.
   const u = (k) => (e) => {
     const raw = e.target.value;
@@ -155,10 +157,32 @@ function SignupForm({ onDone }) {
     setForm((f) => ({ ...f, [k]: v }));
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    PartnerAuth.signup(form);
-    setSubmitted(true);
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const { api } = await import('../lib/api.js');
+      const r = await api.post('/api/partners/apply', {
+        company_name: form.company || '',
+        contact_name: form.person || '',
+        email: normalizeEmail(form.email || ''),
+        phone: form.phone || '',
+        category: form.type || '',
+        intro: form.message || '',
+        privacy_consent: true,
+      });
+      if (r && r.ok) {
+        setSubmitted(true);
+      } else {
+        setErr(r?.error || '신청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+    } catch (_e) {
+      setErr('서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (submitted) {
@@ -187,7 +211,10 @@ function SignupForm({ onDone }) {
       <div className="partners-login-field"><input type="email" placeholder="이메일" value={form.email} onChange={u('email')} required /></div>
       <div className="partners-login-field"><input type="text" placeholder="업종 (예: 원두 납품)" value={form.type} onChange={u('type')} /></div>
       <div className="partners-login-field"><textarea placeholder="소개 / 요청사항 (선택)" value={form.message} onChange={u('message')} rows={3} style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit'}}></textarea></div>
-      <button className="btn partners-login-btn" type="submit">신청 보내기</button>
+      {err && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>{err}</div>}
+      <button className="btn partners-login-btn" type="submit" disabled={busy}>
+        {busy ? '신청 중…' : '신청 보내기'}
+      </button>
     </form>
   );
 }

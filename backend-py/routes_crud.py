@@ -739,6 +739,59 @@ class NewsletterSubscribeIn(BaseModel):
 _newsletter_limiter = RateLimiter(max_calls=5, window_seconds=600)
 
 
+# ── 파트너 가입 신청 (공개 POST) ─────────────────────────────────────────
+# `/partners` 가입 신청 폼이 호출. status='대기' 로 Partner 행 생성 → admin 이
+# `/admin/partners` 에서 승인 + 비밀번호 시드 후 partner 가 로그인 가능.
+# 이미 존재 (email 매치) 시 idempotent — 기존 행 그대로 두고 200 반환.
+
+class PartnerApplyIn(BaseModel):
+    company_name: str
+    contact_name: str = ""
+    email: EmailStr
+    phone: str = ""
+    category: str = ""
+    intro: str = ""
+    privacy_consent: bool = False
+
+
+_partner_apply_limiter = RateLimiter(max_calls=4, window_seconds=600)
+
+
+@router.post("/partners/apply", status_code=201)
+async def partner_apply(
+    payload: PartnerApplyIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """공개 — 파트너 가입 신청. 인증 필요 X. status='대기' 로 신규 Partner 행
+    추가. admin 이 `/admin/partners` 에서 승인 + 비밀번호 시드 후 로그인 가능."""
+    ip = _client_ip(request)
+    if not _partner_apply_limiter.check(ip):
+        raise HTTPException(429, detail="신청이 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.")
+    if not payload.privacy_consent:
+        raise HTTPException(400, detail="개인정보 수집·이용 동의가 필요합니다.")
+    email = str(payload.email).strip().lower()
+    if not email:
+        raise HTTPException(400, detail="이메일이 필요합니다.")
+    res = await session.execute(select(Partner).where(Partner.email == email))
+    existing = res.scalar_one_or_none()
+    if existing:
+        return {"ok": True, "already": True, "partner_id": existing.id, "status": existing.status}
+    partner = Partner(
+        company_name=str(payload.company_name).strip()[:190],
+        contact_name=str(payload.contact_name or "").strip()[:120],
+        email=email,
+        phone=str(payload.phone or "").strip()[:40],
+        category=str(payload.category or "").strip()[:60],
+        intro=str(payload.intro or "")[:2000],
+        status="대기",
+    )
+    session.add(partner)
+    await session.flush()
+    await session.refresh(partner)
+    return {"ok": True, "partner_id": partner.id, "status": partner.status}
+
+
 @router.post("/newsletter/subscribe", status_code=201)
 async def newsletter_subscribe(
     payload: NewsletterSubscribeIn,

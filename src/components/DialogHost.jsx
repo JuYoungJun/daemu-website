@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
 
 // Replaces window.alert / confirm / prompt with site-styled modals.
 //
@@ -16,6 +17,28 @@ import { createPortal } from 'react-dom';
 // 위해 *native* 그대로 둡니다. React 측 새 코드는 siteConfirm 사용을 권장.
 export default function DialogHost() {
   const [queue, setQueue] = useState([]);
+  const location = useLocation();
+
+  // 라우트 변경 시 모든 modal/toast/CSV-preview 즉시 정리.
+  // 사용자가 CSV preview 가 떠 있는 상태에서 브라우저 Back 을 누르면 portal 이
+  // 다음 페이지에 그대로 남는 버그 fix. pending Promise 는 cancel 의미로 resolve.
+  useEffect(() => {
+    setQueue((q) => {
+      if (!q.length) return q;
+      for (const it of q) {
+        if (typeof it.resolve === 'function') {
+          try {
+            // 의미상 "취소" — confirm/csv-preview 는 false, prompt 는 null, alert 는 undefined.
+            const cancelValue = it.type === 'prompt' ? null
+              : (it.type === 'confirm' || it.type === 'csv-preview') ? false
+              : undefined;
+            it.resolve(cancelValue);
+          } catch { /* ignore */ }
+        }
+      }
+      return [];
+    });
+  }, [location.pathname, location.search, location.hash]);
 
   useEffect(() => {
     const nativeAlert = window.alert.bind(window);

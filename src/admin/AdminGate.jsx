@@ -361,14 +361,31 @@ export default function AdminGate() {
     );
   }
 
-  const inq = DB.get('inquiries');
-  const ord = DB.get('orders');
-  const crm = DB.get('crm');
-  const cmp = DB.get('campaigns');
-  const newInq = inq.filter(i => i.status === '신규').length;
-  const pendingOrd = ord.filter(o => o.status === '접수' || o.status === '처리중').length;
-  const leads = crm.filter(c => c.status === 'lead' || c.status === 'qualified').length;
-  const sentCmp = cmp.filter(c => c.status === 'sent').length;
+  // KPI 4종 — backend `/api/admin/stats` counts 만 source. 옛 DB.get('inquiries')
+  // 같은 localStorage 시드 의존 제거 (다른 브라우저 / incognito 일관성 보장).
+  // counts 는 status 별 분리가 없는 단순 row 수 → admin/monitoring 화면에서는
+  // 더 자세한 status 분포를 별도 표시 (본 화면은 4-card 요약만).
+  const [kpiCounts, setKpiCounts] = useState({});
+  const [kpiError, setKpiError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    if (!loggedIn || mustChange || needsEmailVerify) return undefined;
+    (async () => {
+      const r = await api.get('/api/admin/stats');
+      if (!alive) return;
+      if (r && r.ok && r.counts) { setKpiCounts(r.counts); setKpiError(''); }
+      else if (r && (r.status === 401 || r.status === 403)) {
+        setKpiError('KPI 권한 부족 — admin/monitoring 권한 확인.');
+      } else {
+        setKpiError(r?.error || '/api/admin/stats 호출 실패.');
+      }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn, mustChange, needsEmailVerify]);
+  const newInq = Number(kpiCounts.inquiries || 0);
+  const pendingOrd = Number(kpiCounts.orders || 0);
+  const leads = Number(kpiCounts.crm || 0);
+  const sentCmp = Number(kpiCounts.campaigns || 0);
 
   const me = Auth.user() || { role: 'admin', email: '데모', name: '관리자' };
   // Permission map mirrors backend auth.PERMISSIONS — keep in sync.
@@ -440,11 +457,16 @@ export default function AdminGate() {
             </PageActions>
 
             <div className="admin-stats-grid">
-              <div className="admin-stat-card"><span className="admin-stat-number">{newInq}</span><span className="admin-stat-label">신규 상담 문의</span></div>
-              <div className="admin-stat-card"><span className="admin-stat-number">{pendingOrd}</span><span className="admin-stat-label">처리 대기 발주</span></div>
-              <div className="admin-stat-card"><span className="admin-stat-number">{leads}</span><span className="admin-stat-label">활성 리드</span></div>
-              <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">발송된 캠페인</span></div>
+              <div className="admin-stat-card"><span className="admin-stat-number">{newInq}</span><span className="admin-stat-label">누적 문의</span></div>
+              <div className="admin-stat-card"><span className="admin-stat-number">{pendingOrd}</span><span className="admin-stat-label">누적 발주</span></div>
+              <div className="admin-stat-card"><span className="admin-stat-number">{leads}</span><span className="admin-stat-label">CRM 컨택</span></div>
+              <div className="admin-stat-card"><span className="admin-stat-number">{sentCmp}</span><span className="admin-stat-label">캠페인</span></div>
             </div>
+            {kpiError && (
+              <div style={{ background: '#fbe9e7', border: '1px solid #e8a99a', padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#7a1a14' }}>
+                KPI: {kpiError}
+              </div>
+            )}
 
             {/* 개발자 IP 화이트리스트 — 본인/팀 IP 입력 시 모니터링·analytics
                 에서 자동 필터. 도메인 + 운영 단계 후에도 GA4 internal traffic
