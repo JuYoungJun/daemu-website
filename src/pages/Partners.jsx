@@ -119,12 +119,32 @@ function LoginForm({ onLogin }) {
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const submit = (e) => {
+  // PartnerAuth.login 은 async — sync 호출 시 Promise 객체가 들어와 r.ok 가
+  // undefined 라 항상 "비밀번호 불일치" 로 표시되는 회귀 fix.
+  const submit = async (e) => {
     e.preventDefault();
-    const r = PartnerAuth.login({ id, password });
-    if (r.ok) onLogin(r.partner, r.mustChangePassword);
-    else setErr(r.reason === 'not-found' ? '등록되지 않은 계정입니다. 가입 신청 후 본사 승인을 받으세요.' : '비밀번호가 일치하지 않습니다.');
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await PartnerAuth.login({ id, password });
+      if (r && r.ok) {
+        onLogin(r.partner, r.mustChangePassword);
+        return;
+      }
+      const reason = r && r.reason;
+      const msg = reason === 'not-found' ? '등록되지 않은 계정입니다. 가입 신청 후 본사 승인을 받으세요.'
+        : reason === 'throttled' ? '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'
+        : reason === 'db-unavailable' ? '서버가 잠시 응답하지 않습니다. 잠시 후 다시 시도해 주세요.'
+        : '이메일 또는 비밀번호가 일치하지 않습니다.';
+      setErr(msg);
+    } catch (_e) {
+      setErr('서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -138,7 +158,9 @@ function LoginForm({ onLogin }) {
       <div className="partners-login-field"><input type="text" placeholder="아이디 (이메일 / 회사명 / 담당자명 / 연락처)" value={id} onChange={(e) => setId(e.target.value)} required /></div>
       <div className="partners-login-field"><input type="password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
       {err && <p style={{color:'#c0392b',fontSize:12,marginTop:8}}>{err}</p>}
-      <button className="btn partners-login-btn" type="submit">로그인</button>
+      <button className="btn partners-login-btn" type="submit" disabled={busy}>
+        {busy ? '로그인 중…' : '로그인'}
+      </button>
     </form>
   );
 }
