@@ -119,6 +119,10 @@ export const PartnerAuth = {
           must_change_password: mustChange,
           _backend: true,
         };
+        // 옛 캐시된 sync LoginForm 회귀 방어 — 호출자가 await 안 해도 backend
+        // 가 200 받은 시점에 Partners.jsx 의 useEffect onChange 가 발화해
+        // 자동으로 ForcePasswordChange / Portal 화면으로 진입하도록.
+        try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
         return { ok: true, partner, mustChangePassword: mustChange };
       }
       const reason = r && r.status === 401 ? 'bad-credentials'
@@ -168,6 +172,9 @@ export const PartnerAuth = {
           type: u.category || '',
           status: u.status || '',
           active: 'active',
+          // 새로고침 후에도 첫 로그인 강제 변경 화면이 자동으로 뜨도록
+          // login 응답에서 받은 must_change_password 를 그대로 surface.
+          must_change_password: !!u.must_change_password,
           _backend: true,
         };
       }
