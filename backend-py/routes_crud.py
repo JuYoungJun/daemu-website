@@ -447,6 +447,11 @@ def _crud(
         obj = model(**data)
         session.add(obj)
         await session.flush()
+        # SQLAlchemy 2.x async: flush() 후 server-side default 가 적용된 컬럼
+        # (created_at, updated_at, JSON default 등) 은 expired 상태. 직후
+        # model_to_dict 의 attribute 접근이 lazy-load 를 트리거하면 async
+        # session 에서 sync IO 시도 → MissingGreenlet 500. refresh 로 해결.
+        await session.refresh(obj)
         if post_create:
             await post_create(session, obj, payload, request, _u)
         return {"ok": True, "item": model_to_dict(obj)}
@@ -469,6 +474,8 @@ def _crud(
             if k in allowed_fields:
                 setattr(obj, k, v)
         await session.flush()
+        # ON UPDATE CURRENT_TIMESTAMP 인 updated_at 도 server-side 라 동일 이유로 refresh.
+        await session.refresh(obj)
         if post_update:
             await post_update(session, obj, payload, request, _u, prev_values)
         return {"ok": True, "item": model_to_dict(obj)}

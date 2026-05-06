@@ -205,6 +205,8 @@ async def create_product(
         ))
         await session.flush()
 
+    # SQLAlchemy 2.x async + server-side default(created_at 등) lazy-load 회피.
+    await session.refresh(obj)
     return {"ok": True, "item": _model_to_dict(obj)}
 
 
@@ -221,6 +223,7 @@ async def update_product(
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(obj, k, v)
     await session.flush()
+    await session.refresh(obj)
     return {"ok": True, "item": _model_to_dict(obj)}
 
 
