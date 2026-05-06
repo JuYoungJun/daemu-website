@@ -505,59 +505,20 @@ async def _partner_post_update(session, obj, payload, request, _u, prev_values):
             from datetime import datetime as _dt, timezone as _tz
             obj.approved_at = _dt.now(_tz.utc)
             await session.flush()
+        # 통합 helper 사용 — Outbox + mail_status 일관 기록.
         try:
-            await _send_partner_welcome_email(session, obj)
+            res = await _send_partner_mail(session, kind="partner-approved", partner=obj)
             from audit import log_event
-            await log_event(session, request, action="partner.welcome_email_sent",
+            await log_event(session, request,
+                            action=("partner.welcome_email_sent" if res["status"] == "sent" else "partner.welcome_email_failed"),
                             actor_user=_u, target_id=obj.id,
-                            detail={"partner_id": obj.id, "to": obj.email})
+                            detail={"partner_id": obj.id, "to": obj.email,
+                                    "mail_status": res["status"],
+                                    "error": res.get("error", "")})
         except Exception as e:  # noqa: BLE001
             import traceback as _tb
-            print(f"[partner-welcome] send failed for {obj.email}: {e!r}")
+            print(f"[partner-approved] send failed for {obj.email}: {e!r}")
             _tb.print_exc()
-            try:
-                from audit import log_event
-                await log_event(session, request, action="partner.welcome_email_failed",
-                                actor_user=_u, target_id=obj.id,
-                                detail={"partner_id": obj.id, "error": str(e)[:200]})
-            except Exception:
-                pass
-
-
-async def _send_partner_welcome_email(session, partner):
-    """mail_template_lib (또는 mail_templates) 의 'partner_welcome' kind 를
-    사용. 없으면 기본 본문으로 발송."""
-    from main import send_email, FROM_EMAIL
-    # 우선 mail_template_lib 에서 partner_welcome kind 찾기. 없으면 fallback.
-    subject = "[대무] 파트너 가입 승인 안내"
-    body = (
-        f"{partner.company_name or partner.contact_name or '파트너'}님,\n\n"
-        f"DAEMU 베이커리·카페 컨설팅 파트너 가입이 승인되었습니다.\n"
-        f"이제 파트너 포털 (/partner-portal) 에서 발주 및 자료 다운로드를\n"
-        f"이용하실 수 있습니다.\n\n"
-        f"문의: daemu_office@naver.com\n"
-        f"감사합니다.\n"
-    )
-    try:
-        from models import MailTemplateLib
-        q = await session.execute(
-            select(MailTemplateLib).where(MailTemplateLib.kind == "partner_welcome").limit(1)
-        )
-        tpl = q.scalar_one_or_none()
-        if tpl:
-            subject = tpl.subject or subject
-            body_tpl = tpl.body or body
-            body = body_tpl.replace("{{company}}", partner.company_name or "")\
-                           .replace("{{contact}}", partner.contact_name or "")\
-                           .replace("{{email}}", partner.email or "")
-    except Exception:
-        pass
-    await send_email({
-        "from": FROM_EMAIL,
-        "to": [partner.email],
-        "subject": subject,
-        "text": body,
-    })
 
 
 _crud(Partner, "partners",
@@ -584,14 +545,25 @@ async def set_partner_password(
     partner = await session.get(Partner, partner_id)
     if not partner:
         raise HTTPException(404, detail="해당 파트너를 찾을 수 없습니다.")
+    was_pending = partner.status == "대기"
     partner.password_hash = _hash_pw(payload.password)
-    if partner.status == "대기":
+    if was_pending:
         # 신규 시드 — 자동 승인 (운영자가 명시적으로 비밀번호를 설정 = 로그인 가능 의도).
         partner.status = "승인"
         partner.approved_at = datetime.now(timezone.utc)
     await session.flush()
     await session.refresh(partner)
-    return {"ok": True, "partner_id": partner.id, "status": partner.status}
+    # 새로 '승인' 으로 전환된 경우만 안내 메일 발송 — 비밀번호 재발급 (이미 승인 상태) 은 안내 X.
+    mail_result = {"status": "skipped", "error": "", "outbox_id": None}
+    if was_pending:
+        mail_result = await _send_partner_mail(session, kind="partner-approved", partner=partner)
+    return {
+        "ok": True,
+        "partner_id": partner.id,
+        "status": partner.status,
+        "mail_status": mail_result["status"],
+        "mail_error": mail_result.get("error", ""),
+    }
 
 
 # ── Order: 발주 생성/수정 시 SKU 별 재고 차단 ──────────────────────────
@@ -757,6 +729,156 @@ class PartnerApplyIn(BaseModel):
 _partner_apply_limiter = RateLimiter(max_calls=4, window_seconds=600)
 
 
+# ── 파트너 메일 — 접수 회신 / 승인 안내 공통 helper ─────────────────────
+# kind = "partner-application-received" → 신청 직후 자동 회신
+# kind = "partner-approved"             → admin 이 승인/비밀번호 시드 후 안내
+# 비밀번호 평문은 본문에 절대 포함 X — `partner_url` + `email` 로만 안내.
+
+_PARTNER_MAIL_FALLBACK = {
+    "partner-application-received": {
+        "subject": "[DAEMU] 파트너 신청이 접수되었습니다",
+        "body": (
+            "{{company}} 담당자 {{person}} 님,\n\n"
+            "DAEMU 파트너 신청이 정상 접수되었습니다.\n"
+            "관리자 검토 후 승인되면 별도 안내 메일이 발송됩니다 (영업일 1–2일).\n\n"
+            "─ 회사명: {{company}}\n"
+            "─ 담당자: {{person}}\n"
+            "─ 이메일: {{email}}\n"
+            "─ 연락처: {{phone}}\n"
+            "─ 신청 시각: {{submitted_at}}\n"
+            "─ 현재 상태: {{status}}\n\n"
+            "파트너 페이지: {{partner_url}}\n"
+            "사이트: {{site_url}}\n\n"
+            "본 메일은 자동 발송된 안내입니다. 비밀번호 같은 민감 정보는 포함하지 않습니다.\n"
+            "감사합니다.\nDAEMU"
+        ),
+    },
+    "partner-approved": {
+        "subject": "[DAEMU] 파트너 계정이 활성화되었습니다",
+        "body": (
+            "{{company}} 담당자 {{person}} 님,\n\n"
+            "DAEMU 파트너 계정이 승인/활성화되었습니다.\n"
+            "이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.\n\n"
+            "─ 로그인 이메일: {{email}}\n"
+            "─ 비밀번호: 별도 안내드립니다 (보안상 메일에 포함하지 않습니다).\n"
+            "─ 승인 시각: {{approved_at}}\n"
+            "─ 상태: {{status}}\n\n"
+            "파트너 페이지: {{partner_url}}\n"
+            "사이트: {{site_url}}\n\n"
+            "감사합니다.\nDAEMU"
+        ),
+    },
+}
+
+
+async def _send_partner_mail(
+    session: AsyncSession,
+    *,
+    kind: str,
+    partner: "Partner",
+    extra_vars: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """파트너 자동 메일 발송 — Outbox 에 결과 기록 + mail_status 반환.
+
+    반환: {"status": "sent"|"failed"|"simulated"|"skipped",
+           "error": "...", "outbox_id": int|None}
+    DB 트랜잭션 자체는 caller (apply / set-password endpoint) 의 session_scope 가
+    commit. 본 함수는 outbox row 만 add() — 발송 실패해도 상위 트랜잭션 영향 X.
+    """
+    from models import MailTemplateLib, Outbox
+    from main import send_email, email_provider, SMTP_FROM, SENDGRID_FROM
+
+    # 1) DB 템플릿 조회 (mail_template_lib) — 없으면 fallback 사용.
+    subject_tpl = _PARTNER_MAIL_FALLBACK[kind]["subject"]
+    body_tpl = _PARTNER_MAIL_FALLBACK[kind]["body"]
+    try:
+        tres = await session.execute(
+            select(MailTemplateLib).where(MailTemplateLib.kind == kind).limit(1)
+        )
+        tpl = tres.scalar_one_or_none()
+        if tpl and getattr(tpl, "active", True) is not False:
+            subject_tpl = tpl.subject or subject_tpl
+            body_tpl = tpl.body or body_tpl
+    except Exception:  # noqa: BLE001
+        # mail_template_lib 가 없거나 schema 문제여도 fallback 으로 계속.
+        pass
+
+    site_url = os.environ.get("PUBLIC_SITE_URL", "https://juyoungjun.github.io/daemu-website").rstrip("/")
+    partner_url = site_url + "/partners"
+    submitted_at = (partner.created_at.isoformat() if partner.created_at else "")
+    approved_at = (partner.approved_at.isoformat() if getattr(partner, "approved_at", None) else "")
+
+    vars_ = {
+        "company": partner.company_name or "",
+        "name": partner.contact_name or partner.company_name or "",
+        "person": partner.contact_name or "",
+        "email": partner.email or "",
+        "phone": partner.phone or "",
+        "status": partner.status or "",
+        "submitted_at": submitted_at,
+        "approved_at": approved_at,
+        "site_url": site_url,
+        "partner_url": partner_url,
+    }
+    if extra_vars:
+        vars_.update({k: str(v) for k, v in extra_vars.items()})
+
+    subject = _apply_vars(subject_tpl, vars_)
+    body = _apply_vars(body_tpl, vars_)
+    html_body = _wrap_html(body)
+
+    to_email = (partner.email or "").strip()
+    if not to_email:
+        return {"status": "skipped", "error": "no recipient", "outbox_id": None}
+
+    status = "simulated"
+    error = ""
+    rid = None
+    provider_now = email_provider()
+    if provider_now != "none":
+        if provider_now == "sendgrid":
+            from_addr = SENDGRID_FROM or FROM_EMAIL
+        elif provider_now == "smtp":
+            from_addr = SMTP_FROM or FROM_EMAIL
+        else:
+            from_addr = FROM_EMAIL
+        try:
+            result = await send_email({
+                "from": from_addr,
+                "to": [to_email],
+                "reply_to": DEFAULT_REPLY_TO,
+                "subject": subject,
+                "text": body,
+                "html": html_body,
+            })
+            if result.get("ok"):
+                status = "sent"
+                rid = result.get("id")
+            else:
+                status = "failed"
+                error = str(result.get("error", "send failed"))[:200]
+        except Exception as e:  # noqa: BLE001
+            status = "failed"
+            error = (f"{type(e).__name__}: {e!r}")[:200]
+
+    ob = Outbox(
+        type=kind,
+        recipient=to_email,
+        subject=subject[:255],
+        body=body[:8000],
+        status=status,
+        error=error,
+        payload={"trigger": kind, "partner_id": partner.id, "messageId": rid},
+    )
+    session.add(ob)
+    try:
+        await session.flush()
+    except Exception:  # noqa: BLE001
+        # outbox INSERT 실패해도 caller 의 본 트랜잭션 (partner 행 INSERT/UPDATE) 은 유지.
+        pass
+    return {"status": status, "error": error, "outbox_id": getattr(ob, "id", None)}
+
+
 @router.post("/partners/apply", status_code=201)
 async def partner_apply(
     payload: PartnerApplyIn,
@@ -764,7 +886,12 @@ async def partner_apply(
     session: AsyncSession = Depends(get_session),
 ):
     """공개 — 파트너 가입 신청. 인증 필요 X. status='대기' 로 신규 Partner 행
-    추가. admin 이 `/admin/partners` 에서 승인 + 비밀번호 시드 후 로그인 가능."""
+    추가. admin 이 `/admin/partners` 에서 승인 + 비밀번호 시드 후 로그인 가능.
+
+    응답에 `mail_status` 포함 — 신청 접수 자동회신 메일 발송 결과를 명시적으로
+    노출 (sent / failed / simulated / skipped). 메일이 실패해도 신청 row 자체는
+    저장 — 운영자가 outbox 에서 재발송 또는 대안 처리 가능.
+    """
     ip = _client_ip(request)
     if not _partner_apply_limiter.check(ip):
         raise HTTPException(429, detail="신청이 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.")
@@ -776,7 +903,13 @@ async def partner_apply(
     res = await session.execute(select(Partner).where(Partner.email == email))
     existing = res.scalar_one_or_none()
     if existing:
-        return {"ok": True, "already": True, "partner_id": existing.id, "status": existing.status}
+        # 멱등 — 중복 신청 시 메일 재발송 안 함 (남용 방지). admin 화면에서 status 확인.
+        return {
+            "ok": True, "already": True,
+            "partner_id": existing.id, "status": existing.status,
+            "mail_status": "skipped",
+            "message": "이미 등록된 이메일입니다. 관리자 안내를 기다려 주세요.",
+        }
     partner = Partner(
         company_name=str(payload.company_name).strip()[:190],
         contact_name=str(payload.contact_name or "").strip()[:120],
@@ -789,7 +922,16 @@ async def partner_apply(
     session.add(partner)
     await session.flush()
     await session.refresh(partner)
-    return {"ok": True, "partner_id": partner.id, "status": partner.status}
+    # 자동 접수 회신. 실패해도 신청 자체는 유지.
+    mail_result = await _send_partner_mail(session, kind="partner-application-received", partner=partner)
+    return {
+        "ok": True,
+        "partner_id": partner.id,
+        "status": partner.status,
+        "mail_status": mail_result["status"],
+        "mail_error": mail_result.get("error", ""),
+        "message": "파트너 신청이 접수되었습니다.",
+    }
 
 
 @router.post("/newsletter/subscribe", status_code=201)

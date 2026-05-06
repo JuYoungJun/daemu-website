@@ -146,6 +146,7 @@ function LoginForm({ onLogin }) {
 function SignupForm({ onDone }) {
   const [form, setForm] = useState({ company:'', person:'', phone:'', email:'', type:'', message:'' });
   const [submitted, setSubmitted] = useState(false);
+  const [submittedMailStatus, setSubmittedMailStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   // phone 은 자동 dash 포맷, email 은 공백 제거. 기타는 그대로.
@@ -174,6 +175,7 @@ function SignupForm({ onDone }) {
         privacy_consent: true,
       });
       if (r && r.ok) {
+        setSubmittedMailStatus(String(r.mail_status || ''));
         setSubmitted(true);
       } else {
         setErr(r?.error || '신청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.');
@@ -186,15 +188,20 @@ function SignupForm({ onDone }) {
   };
 
   if (submitted) {
+    const mailLine =
+      submittedMailStatus === 'sent' ? '접수 안내 메일이 발송되었습니다.' :
+      submittedMailStatus === 'simulated' ? '접수 안내 메일은 데모 단계라 시뮬레이션 모드로 기록되었습니다.' :
+      submittedMailStatus === 'failed' ? '접수 안내 메일 발송이 일시적으로 지연되고 있습니다 — 신청 자체는 정상 접수되었습니다.' :
+      submittedMailStatus === 'skipped' ? '이미 등록된 이메일이라 안내 메일 발송은 건너뜁니다.' :
+      '';
     return (
       <div>
         <h3>신청 완료</h3>
         <p style={{fontSize:13,color:'#4a4744',lineHeight:1.7,margin:'12px 0 24px'}}>
           가입 신청이 접수되었습니다.<br />
-          본사 검토 후 등록된 이메일/전화로 안내드립니다 (영업일 1-2일).<br /><br />
-          승인되면 자동으로 파트너 계정이 발급되며,<br />
-          초기 비밀번호는 입력하신 <strong>휴대폰 뒷 4자리</strong> 입니다.<br />
-          첫 로그인 시 비밀번호 변경을 안내드립니다.
+          본사 검토 후 등록된 이메일로 안내드립니다 (영업일 1–2일).<br /><br />
+          승인 후 별도 안내드리는 비밀번호로 파트너 페이지에 로그인하실 수 있습니다.<br />
+          {mailLine && <span style={{ display: 'block', marginTop: 10, fontSize: 12, color: '#5a534b' }}>{mailLine}</span>}
         </p>
         <button className="btn" type="button" onClick={onDone}>로그인 화면으로</button>
       </div>
