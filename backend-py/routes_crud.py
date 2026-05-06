@@ -931,6 +931,13 @@ async def partner_apply(
             "mail_status": "skipped",
             "message": "이미 등록된 이메일입니다. 관리자 안내를 기다려 주세요.",
         }
+    # 신청 시점에 *처음 비밀번호 = 휴대폰 끝 4자리* 자동 시드.
+    # 휴대폰 4자리 미만 → 신청 자체는 받되 비밀번호는 비워두고 admin 이 별도 set.
+    # 처음 비밀번호 정책은 partner-approved 메일 본문에 동일하게 안내.
+    # status='대기' 라 login 은 admin 이 '승인' 으로 status 변경 후에만 가능 — 안전.
+    from auth import hash_password as _hash_pw
+    phone_digits = re.sub(r"\D+", "", str(payload.phone or ""))
+    init_pw = phone_digits[-4:] if len(phone_digits) >= 4 else ""
     partner = Partner(
         company_name=str(payload.company_name).strip()[:190],
         contact_name=str(payload.contact_name or "").strip()[:120],
@@ -939,6 +946,7 @@ async def partner_apply(
         category=str(payload.category or "").strip()[:60],
         intro=str(payload.intro or "")[:2000],
         status="대기",
+        password_hash=_hash_pw(init_pw) if init_pw else "",
     )
     session.add(partner)
     await session.flush()
