@@ -888,12 +888,10 @@ function Account({ partner }) {
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  // Snyk NoCryptoTimingAttacks: constant-time string compare so an attacker
-  // can't leak the partner password byte-by-byte via response-time analysis.
-  // (Length-mismatch still leaks length, which is acceptable here — we're
-  //  still on legacy in-browser auth, scheduled for removal during Cafe24
-  //  migration when Partner login moves server-side under FastAPI + bcrypt.)
+  // 백엔드 파트너는 backend bcrypt 가 current_password 검증.
+  // 로컬 demo/legacy 파트너는 plaintext partner.password 비교 (constant-time).
   const constantTimeEqual = (a, b) => {
     a = String(a || '');
     b = String(b || '');
@@ -903,21 +901,41 @@ function Account({ partner }) {
     return diff === 0;
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
+    if (busy) return;
     setMsg('');
-    const expected = partner.password || defaultPasswordHint(partner);
-    if (!constantTimeEqual(pw0, expected)) return setMsg('현재 비밀번호가 일치하지 않습니다.');
-    if (pw1.length < 6) return setMsg('새 비밀번호는 최소 6자 이상이어야 합니다.');
+    if (pw1.length < 8) return setMsg('새 비밀번호는 최소 8자 이상이어야 합니다.');
     if (pw1 !== pw2) return setMsg('새 비밀번호가 일치하지 않습니다.');
     if (pw1 === pw0) return setMsg('현재 비밀번호와 다른 값을 입력해주세요.');
-    const r = PartnerAuth.changePassword(partner.id, pw1);
-    if (r.ok) {
-      setMsg('✓ 비밀번호가 변경되었습니다.');
-      setPw0(''); setPw1(''); setPw2('');
-      setEditing(false);
-    } else {
-      setMsg('변경 실패: ' + r.reason);
+
+    // legacy(localStorage) 파트너만 클라이언트에서 현재 비번 비교.
+    // backend 파트너는 서버가 bcrypt 로 검증 → 401 응답을 message 로 표면화.
+    if (!partner._backend) {
+      const expected = partner.password || defaultPasswordHint(partner);
+      if (!constantTimeEqual(pw0, expected)) return setMsg('현재 비밀번호가 일치하지 않습니다.');
+    }
+
+    setBusy(true);
+    try {
+      const r = await PartnerAuth.changePassword({
+        partnerId: partner.id,
+        currentPassword: pw0,
+        newPassword: pw1,
+      });
+      if (r && r.ok) {
+        setMsg('✓ 비밀번호가 변경되었습니다.');
+        setPw0(''); setPw1(''); setPw2('');
+        setEditing(false);
+      } else if (r && r.reason === 'bad-current') {
+        setMsg('현재 비밀번호가 일치하지 않습니다.');
+      } else if (r && r.reason === 'too-short') {
+        setMsg(r.error || '새 비밀번호는 8자 이상이어야 합니다.');
+      } else {
+        setMsg((r && r.error) || '비밀번호 변경에 실패했습니다.');
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -949,19 +967,19 @@ function Account({ partner }) {
                 style={{width:'100%',padding:10,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
             </div>
             <div>
-              <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:6}}>새 비밀번호 (6자 이상)</label>
-              <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} required minLength={6}
+              <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:6}}>새 비밀번호 (8자 이상)</label>
+              <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} required minLength={8}
                 style={{width:'100%',padding:10,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
             </div>
             <div>
               <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:6}}>새 비밀번호 확인</label>
-              <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={6}
+              <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={8}
                 style={{width:'100%',padding:10,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
             </div>
             {msg && <p style={{fontSize:12,color: msg.startsWith('✓') ? '#2e7d32' : '#c0392b',margin:0}}>{msg}</p>}
             <div style={{display:'flex',gap:10}}>
-              <button type="submit" className="btn">변경 완료</button>
-              <button type="button" onClick={() => { setEditing(false); setMsg(''); setPw0(''); setPw1(''); setPw2(''); }} className="adm-btn-sm" style={smallBtnStyle}>취소</button>
+              <button type="submit" className="btn" disabled={busy}>{busy ? '변경 중…' : '변경 완료'}</button>
+              <button type="button" disabled={busy} onClick={() => { setEditing(false); setMsg(''); setPw0(''); setPw1(''); setPw2(''); }} className="adm-btn-sm" style={smallBtnStyle}>취소</button>
             </div>
           </form>
         )}
