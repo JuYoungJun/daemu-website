@@ -158,31 +158,38 @@ async def create_product(
         cat = "MSC"
     cat_label = payload.category_label or CATEGORIES[cat]["label"]
 
+    # 빈 sku 정규화 — frontend 가 명시적으로 빈 string 보내는 경우도 자동 생성
+    # 분기로 진입. (`if payload.sku` 의 falsy 체크와 동등하지만 명시 코드 강조.)
+    sku_input = (payload.sku or "").strip()
+
     # SKU 자동 할당 또는 사용자 지정
-    if payload.sku:
-        if not is_valid_sku(payload.sku):
+    if sku_input:
+        if not is_valid_sku(sku_input):
             raise HTTPException(400, detail="SKU 형식이 표준에 맞지 않습니다 (DAEMU-CAT-NNNN-LL).")
         # 중복 체크
-        dup = await session.execute(select(Product).where(Product.sku == payload.sku))
+        dup = await session.execute(select(Product).where(Product.sku == sku_input))
         if dup.scalar_one_or_none():
             raise HTTPException(409, detail="이미 존재하는 SKU 입니다.")
-        sku = payload.sku
+        sku = sku_input
     else:
         existing = (await session.execute(select(Product.sku).where(Product.category_code == cat))).all()
         seq = next_seq_for_category([row[0] for row in existing], cat)
         sku = build_sku(cat, seq, payload.option_code)
 
+    # unit 정규화 — backend 는 자유 string. 빈/None default 'EA'. 길이 16 제한.
+    unit_norm = (payload.unit or "EA").strip()[:16] or "EA"
+
     obj = Product(
         sku=sku,
-        name=payload.name,
+        name=(payload.name or "").strip(),
         category_code=cat,
         category_label=cat_label,
         option_code=(payload.option_code or "00")[:2].upper(),
         option_label=payload.option_label,
-        unit=payload.unit,
-        price=payload.price,
-        stock_count=payload.stock_count,
-        low_stock_threshold=payload.low_stock_threshold,
+        unit=unit_norm,
+        price=int(payload.price or 0),
+        stock_count=int(payload.stock_count or 0),
+        low_stock_threshold=int(payload.low_stock_threshold or 10),
         description=payload.description,
         image_url=payload.image_url,
     )

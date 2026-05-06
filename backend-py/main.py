@@ -500,7 +500,12 @@ async def unhandled_exception_handler(req: Request, exc: Exception):
     """F-07: log the traceback with a request ID, return a generic error to
     the client. Phase 2: traceback 안의 inline secret (DB password / JWT /
     Resend key 등) 도 logs 에서 masking — log aggregator 에 노출돼도 안전.
-    클라이언트 응답은 'internal' 만 → stack/exception detail 누설 0."""
+    클라이언트 응답은 'internal' 만 → stack/exception detail 누설 0.
+
+    CORS 헤더 명시 부착 — Starlette `CORSMiddleware` 가 exception handler 응답에
+    자동으로 헤더를 부착하지 않는 환경 (특정 starlette/uvicorn 조합) 대응.
+    헤더 누락 시 browser 가 backend 500 을 'CORS 차단' 으로 잘못 표시 → 운영자
+    가 진짜 원인 (backend internal 500) 파악 어려움."""
     from security_utils import _scrub_inline_secrets
     rid = getattr(req.state, "request_id", "no-id")
     raw_tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -509,10 +514,15 @@ async def unhandled_exception_handler(req: Request, exc: Exception):
         "unhandled exception rid=%s path=%s method=%s\n%s",
         rid, req.url.path, req.method, masked_tb,
     )
-    return JSONResponse(
+    response = JSONResponse(
         {"ok": False, "error": "internal", "request_id": rid},
         status_code=500,
     )
+    origin = req.headers.get("origin", "")
+    if origin and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 # ---------------------------------------------------------------------------

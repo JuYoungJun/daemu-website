@@ -123,16 +123,21 @@ function ProductsTab() {
 
   const onSave = async () => {
     if (!form.name.trim()) { siteAlert('상품명을 입력하세요.'); return; }
-    // backend ProductCreateIn 은 `category_code` 를 요구. form 의 `category` 키
-    // 그대로 spread 하면 backend 가 인식 못 해 `category_label` 기반 fallback →
-    // 모든 신규 상품이 MSC 카테고리로 등록됨. 명시적 매핑으로 의도된 카테고리 보존.
+    // backend ProductCreateIn 이 받는 필드만 명시 전송. 옛 코드는 form 을
+    // spread 해서 legacy `category` 와 빈 `sku` 까지 함께 보냈는데, 빈 `sku`
+    // 가 일부 환경에서 unique index/validator 와 결합해 500 을 낼 수 있어
+    // 명시 매핑 + 비어있을 때 미전송 패턴으로 변경.
     const body = {
-      ...form,
-      category_code: form.category,
       name: form.name.trim(),
+      category_code: form.category,
+      unit: form.unit || 'EA',
       price: Number(form.price) || 0,
       stock_count: Number(form.stock_count) || 0,
     };
+    // sku 가 명시적으로 입력된 경우만 전달 → backend 가 자동 생성하도록 양보.
+    if (form.sku && form.sku.trim()) {
+      body.sku = form.sku.trim();
+    }
     const r = editing
       ? await api.patch(`/api/products/${editing}`, body)
       : await api.post('/api/products', body);

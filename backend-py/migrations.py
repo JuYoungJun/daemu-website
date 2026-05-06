@@ -37,6 +37,39 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
 
     # AdminUser — 2FA 인증 앱 라벨 (Google Authenticator / Authy / 1Password / etc.)
     ("admin_users", "totp_app_label", "VARCHAR(40)", "DEFAULT ''"),
+
+    # Product (inventory) — 옛 시점에 만들어진 `products` 테이블이 ORM 신규
+    # 컬럼과 schema drift 면 INSERT 시 'Unknown column' 으로 500 발생.
+    # `Base.metadata.create_all()` 는 새 테이블만 만들고 컬럼 추가는 안 함.
+    # 아래 idempotent ALTER 로 옛 schema 를 안전하게 보강 (data 손실 0).
+    # 새 인스턴스에서는 create_all 이 이미 만들었기 때문에 모두 skip 됨.
+    ("products", "category_code", "VARCHAR(3)", "DEFAULT 'MSC'"),
+    ("products", "category_label", "VARCHAR(40)", "DEFAULT ''"),
+    ("products", "option_code", "VARCHAR(2)", "DEFAULT '00'"),
+    ("products", "option_label", "VARCHAR(60)", "DEFAULT ''"),
+    ("products", "unit", "VARCHAR(16)", "DEFAULT 'EA'"),
+    ("products", "price", "INT", "DEFAULT 0"),
+    ("products", "stock_count", "INT", "DEFAULT 0"),
+    ("products", "low_stock_threshold", "INT", "DEFAULT 10"),
+    ("products", "description", "TEXT", ""),
+    ("products", "image_url", "VARCHAR(500)", "DEFAULT ''"),
+    ("products", "active", "TINYINT(1)", "DEFAULT 1"),
+
+    # StockHistory — 신규 상품 등록 시 stock_count > 0 면 INSERT 진입.
+    # 옛 schema 누락 컬럼 보강.
+    ("stock_history", "lot_id", "INT", ""),
+    ("stock_history", "reason", "VARCHAR(40)", "DEFAULT ''"),
+    ("stock_history", "ref_type", "VARCHAR(40)", "DEFAULT ''"),
+    ("stock_history", "ref_id", "VARCHAR(60)", "DEFAULT ''"),
+    ("stock_history", "note", "VARCHAR(255)", "DEFAULT ''"),
+
+    # StockLot — LOT 입고 시 INSERT. 옛 schema 누락 컬럼 보강.
+    ("stock_lots", "produced_at", "DATETIME", ""),
+    ("stock_lots", "expires_at", "DATETIME", ""),
+    ("stock_lots", "received_at", "DATETIME", ""),
+    ("stock_lots", "supplier", "VARCHAR(190)", "DEFAULT ''"),
+    ("stock_lots", "note", "VARCHAR(255)", "DEFAULT ''"),
+    ("stock_lots", "quarantined", "TINYINT(1)", "DEFAULT 0"),
 ]
 
 
