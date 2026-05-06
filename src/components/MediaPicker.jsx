@@ -17,10 +17,10 @@
 
 import ReactDOM from 'react-dom/client';
 import { useState, useEffect, useMemo } from 'react';
-import { DB } from '../lib/db.js';
-import { safeUrl, safeMediaUrl } from '../lib/safe.js';
+import { api } from '../lib/api.js';
+import { safeMediaUrl } from '../lib/safe.js';
 
-const STORAGE_KEY = 'media';
+// localStorage 미사용 — backend Aiven `/api/media` 가 source of truth (2026-05).
 
 let _activeRoot = null;
 let _activeNode = null;
@@ -122,19 +122,51 @@ function MediaTileMeta({ name, size }) {
   );
 }
 
+function _mapBackendMedia(it) {
+  const src = it.url || '';
+  const kindFromCt = (it.content_type || '').toLowerCase().startsWith('video/') ? 'video' : 'image';
+  const kindFromUrl = /\.(mp4|webm|mov)(\?|$)/i.test(src) ? 'video' : 'image';
+  return {
+    id: it.id,
+    name: it.name || it.original_name || '',
+    src,
+    size: Number(it.size || 0),
+    kind: kindFromCt || kindFromUrl,
+    public_id: src,
+  };
+}
+
+async function fetchMediaList() {
+  if (!api.isConfigured()) return [];
+  try {
+    const r = await api.get('/api/media?page=1&page_size=500');
+    if (r && r.ok && Array.isArray(r.items)) return r.items.map(_mapBackendMedia);
+  } catch { /* ignore */ }
+  return [];
+}
+
 function MediaPickerDialog({ options, onSelect, onCancel }) {
-  const [items, setItems] = useState(() => DB.get(STORAGE_KEY) || []);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState(options.kind || 'all');
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState('');
 
-  // localStorage가 외부에서 변경되면 자동 동기화
+  // backend Aiven 에서 미디어 목록 로드. localStorage 미사용.
   useEffect(() => {
-    const refresh = () => setItems(DB.get(STORAGE_KEY) || []);
-    window.addEventListener('storage', refresh);
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      const list = await fetchMediaList();
+      if (alive) { setItems(list); setLoading(false); }
+    })();
+    const refresh = async () => {
+      const list = await fetchMediaList();
+      setItems(list);
+    };
     window.addEventListener('daemu-db-change', refresh);
     return () => {
-      window.removeEventListener('storage', refresh);
+      alive = false;
       window.removeEventListener('daemu-db-change', refresh);
     };
   }, []);
@@ -155,19 +187,29 @@ function MediaPickerDialog({ options, onSelect, onCancel }) {
     if (!files || !files.length) return;
     setUploading(true); setErr('');
     try {
+      if (!api.isConfigured()) {
+        throw new Error('백엔드 미연결 — 미디어 업로드 불가.');
+      }
       for (const file of Array.from(files)) {
+        // 1) 파일 업로드 (기존 client helper or backend /api/upload).
         const fn = (kind === 'video') ? window.uploadVideo : window.uploadImage;
         if (!fn) throw new Error('업로드 모듈을 찾을 수 없습니다.');
         const r = await fn(file);
-        DB.add(STORAGE_KEY, {
+        // 2) backend `media_assets` 메타 등록.
+        const m = await api.post('/api/media', {
+          url: r.url,
           name: r.name || file.name,
-          src: r.url,
-          size: r.size || file.size,
-          kind: r.kind || kind,
-          public_id: r.publicUrl || null,
+          original_name: file.name,
+          content_type: r.kind === 'video' ? 'video/mp4' : (file.type || ''),
+          size: r.size || file.size || 0,
+          alt: '',
+          tags: [],
         });
+        if (!m || !m.ok) throw new Error('메타 저장 실패: ' + (m && (m.error || ('HTTP ' + m.status))));
       }
-      setItems(DB.get(STORAGE_KEY) || []);
+      // 3) refetch — backend 에서 다시 불러오기.
+      const list = await fetchMediaList();
+      setItems(list);
     } catch (e) {
       setErr(String(e && e.message ? e.message : e));
     } finally {
@@ -210,21 +252,22 @@ function MediaPickerDialog({ options, onSelect, onCancel }) {
           )}
         </div>
 
+        {loading && <p style={{ fontSize: 12, color: '#8c867d', margin: '0 0 10px' }}>로드 중…</p>}
         {uploading && <p style={{ fontSize: 12, color: '#b87333', margin: '0 0 10px' }}>업로드 중…</p>}
         {err && <p style={{ fontSize: 12, color: '#c0392b', margin: '0 0 10px' }}>{err}</p>}
 
-        {!filtered.length ? (
+        {!loading && !filtered.length ? (
           <div className="adm-doc-empty">
             <strong>등록된 미디어가 없습니다</strong>
             위 + 이미지 / + 영상 버튼으로 업로드한 뒤 선택할 수 있습니다.
           </div>
-        ) : (
+        ) : !loading ? (
           <div className="adm-media-grid" style={{ maxHeight: 480, overflowY: 'auto', padding: 4 }}>
             {filtered.map((d) => (
               <MediaTile key={d.id} item={d} onSelect={onSelect} />
             ))}
           </div>
-        )}
+        ) : null}
 
         <div className="adm-action-row">
           <button type="button" className="adm-btn-sm" onClick={onCancel}>취소</button>

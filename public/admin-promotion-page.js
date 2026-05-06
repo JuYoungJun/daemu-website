@@ -63,14 +63,14 @@ function effectiveStatus(c) {
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.code+" "+(d.desc||"")).toLowerCase().includes(q)) &&
     (!fs || effectiveStatus(d) === fs)
   );
 }
 
 function renderKPI() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   document.getElementById("k-active").textContent = all.filter(d => effectiveStatus(d) === "active").length;
   document.getElementById("k-uses").textContent = all.reduce((a,d) => a + (d.uses||0), 0);
   document.getElementById("k-events").textContent = DB.get(EV_KEY).length;
@@ -119,7 +119,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-code").value = d.code || "";
@@ -180,7 +180,7 @@ function renderThumb(wrap, url) {
 async function save() {
   const code = document.getElementById("f-code").value.trim().toUpperCase();
   if (!code) { alert("쿠폰 코드를 입력하세요"); return; }
-  const dup = DB.get(STORAGE_KEY).find(d => d.code === code && d.id !== editingId);
+  const dup = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(d => d.code === code && d.id !== editingId);
   if (dup) { alert("이미 사용 중인 코드입니다."); return; }
   const payload = {
     code,
@@ -194,46 +194,59 @@ async function save() {
     image: (document.getElementById("f-image") || {}).value || "",
     note: document.getElementById("f-note").value
   };
+  // 정책: backend Aiven 이 source of truth. backend 가 OK 일 때만 미러 갱신.
+  if (!window.daemuMirror) {
+    alert('백엔드 미연결 — 저장할 수 없습니다.');
+    return;
+  }
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, payload);
-    if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/promotions/' + editingId, body: _toBackendCoupon({ ...existing, ...payload }) });
-      if (!r.ok) alert('백엔드 동기화 실패');
-    }
-  } else if (window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/promotions', body: _toBackendCoupon(payload) });
-    if (r.ok && r.item && r.item.id != null) {
-      const all = DB.get(STORAGE_KEY);
-      all.unshift({ ...payload, id: r.item.id, _backend: true, uses: 0 });
-      DB.set(STORAGE_KEY, all);
-    } else {
-      DB.add(STORAGE_KEY, { ...payload, uses: 0 });
-      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/promotions/' + editingId,
+      body: _toBackendCoupon({ ...(existing || {}), ...payload }),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
     }
   } else {
-    DB.add(STORAGE_KEY, { ...payload, uses: 0 });
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/promotions', body: _toBackendCoupon(payload),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   resetForm();
   render();
 }
 
-function bumpUse(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+async function bumpUse(id) {
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   if (d.max && Number(d.uses||0) >= Number(d.max)) { alert("최대 사용 횟수에 도달했습니다."); return; }
-  DB.update(STORAGE_KEY, id, { uses: Number(d.uses||0) + 1 });
+  // backend Aiven `promotions.usage_count` 가 source — 멱등 client_event_id 부착.
+  if (!window.daemuMirror) { alert('백엔드 미연결 — 사용량 증가 불가.'); return; }
+  const eventId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+  const r = await window.daemuMirror({
+    method: 'POST', endpoint: '/api/promotions/consume',
+    body: { promotion_id: d.id, client_event_id: eventId, quantity: 1 },
+    refetchKey: STORAGE_KEY,
+  });
+  if (!r.ok) { alert('사용량 증가 실패: ' + (r.error || ('HTTP ' + (r.status || 0)))); return; }
   render();
 }
 
 async function del(id) {
   if (!confirmDel()) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (existing && existing._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/promotions/' + id });
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/promotions/' + id, refetchKey: STORAGE_KEY });
     if (!r.ok) { alert('백엔드 삭제 실패'); return; }
   }
-  DB.del(STORAGE_KEY, id);
   render();
 }
 

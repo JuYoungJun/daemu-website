@@ -72,13 +72,49 @@ export function validateCoupon(code, subtotal) {
   };
 }
 
-// 발주 제출 시 호출 — 쿠폰 사용량을 +1 증가시킴.
-// idempotent하지 않음 — 같은 쿠폰을 두 번 호출하면 두 번 증가.
-export function consumeCoupon(couponId) {
+// 발주 제출 시 호출 — 쿠폰 사용량을 +1 증가.
+// 정책 (2026-05): backend Aiven `promotions.usage_count` 가 source of truth.
+// 본 함수는 backend `/api/promotions/consume` 호출 후 성공 시에만 localStorage
+// 미러를 갱신. backend 가 멱등(client_event_id) 처리하므로 같은 발주 제출의
+// 재시도가 두 번 카운트되지 않음.
+//
+// 백엔드 미연결 (api 미설정) 인 demo 모드에서는 옛 localStorage-only 동작 유지.
+//
+// async — 호출자는 await 가능. 미 await 시에도 fire-and-forget 으로 동작.
+export async function consumeCoupon(couponId, opts = {}) {
   if (!couponId) return false;
+
+  // backend 호출 (api 모듈은 dynamic import — coupon UX 가 backend 미설정
+  // 환경에서도 즉시 표시되도록 hard import 회피).
+  let backendOk = false;
+  try {
+    const { api } = await import('./api.js');
+    if (api.isConfigured()) {
+      // client_event_id — 같은 발주 제출의 재시도가 backend 에서 +1 만 되도록.
+      const eventId = opts.eventId || (
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10))
+      );
+      const r = await api.post('/api/promotions/consume', {
+        promotion_id: Number(couponId),
+        client_event_id: eventId,
+        quantity: 1,
+      }, { skipAuth: true });
+      backendOk = !!(r && r.ok);
+      if (!backendOk) {
+        // backend 실패 시 호출자에게 false — fake success 안 함.
+        return false;
+      }
+    }
+  } catch {
+    // 네트워크 오류 등 — backend 미설정 fallback path 로 진행.
+  }
+
+  // localStorage 미러 — backend OK 이거나 backend 미설정인 경우에만.
   const list = DB.get('coupons') || [];
   const idx = list.findIndex((c) => c.id === couponId);
-  if (idx < 0) return false;
+  if (idx < 0) return backendOk;  // backend 만 갱신, 로컬 미러 행 없음 → backend 결과 그대로.
   const next = [...list];
   next[idx] = { ...next[idx], uses: Number(next[idx].uses || 0) + 1 };
   DB.set('coupons', next);

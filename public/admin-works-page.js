@@ -95,7 +95,7 @@
     const q = (document.getElementById("q").value || "").toLowerCase();
     const fb = document.getElementById("filter-brand").value;
     const fs = document.getElementById("filter-status").value;
-    return DB.get(STORAGE_KEY).filter(d =>
+    return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
       (!q || (d.brand+" "+d.name+" "+(d.addr||"")).toLowerCase().includes(q)) &&
       (!fb || d.brand === fb) &&
       (!fs || d.status === fs)
@@ -204,7 +204,7 @@
   }
 
   function openEdit(id) {
-    const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+    const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
     if (!d) return;
     editingId = id;
     pendingImages = (d.images || []).map(i => ({...i}));
@@ -290,32 +290,40 @@
     const p = collectPayload();
     if (!p.name) { alert("지점명을 입력하세요"); return; }
     // slug uniqueness check
-    const dup = DB.get(STORAGE_KEY).find(d => d.slug === p.slug && d.id !== editingId);
+    const dup = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(d => d.slug === p.slug && d.id !== editingId);
     if (dup) { alert("이미 사용 중인 슬러그입니다: " + p.slug); return; }
+    // 정책: backend (Aiven MySQL) 가 source of truth. backend 가 OK 일 때만
+    // localStorage 미러 갱신. 실패 시 fake-success / 캐시 잔재 만들지 않음.
     if (editingId !== null) {
-      const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-      DB.update(STORAGE_KEY, editingId, p);
-      if (existing && existing._backend && window.daemuMirror) {
-        const r = await window.daemuMirror({
-          method: 'PATCH', endpoint: '/api/works/' + editingId,
-          body: _toBackendWork({ ...existing, ...p }),
-        });
-        if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+      const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+      if (!window.daemuMirror) {
+        alert('백엔드 미연결 — 저장할 수 없습니다.');
+        return;
       }
-    } else if (window.daemuMirror) {
-      const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/works', body: _toBackendWork(p) });
-      if (r.ok && r.item && r.item.id != null) {
-        const all = DB.get(STORAGE_KEY);
-        all.unshift({ ...p, id: r.item.id, _backend: true });
-        DB.set(STORAGE_KEY, all);
-      } else {
-        DB.add(STORAGE_KEY, p);
-        if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+      const r = await window.daemuMirror({
+        method: 'PATCH', endpoint: '/api/works/' + editingId,
+        body: _toBackendWork({ ...(existing || {}), ...p }),
+        refetchKey: STORAGE_KEY,
+      });
+      if (!r.ok) {
+        alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+        return;
       }
     } else {
-      DB.add(STORAGE_KEY, p);
+      if (!window.daemuMirror) {
+        alert('백엔드 미연결 — 저장할 수 없습니다.');
+        return;
+      }
+      const r = await window.daemuMirror({
+        method: 'POST', endpoint: '/api/works', body: _toBackendWork(p),
+        refetchKey: STORAGE_KEY,
+      });
+      if (!r.ok || !r.item || r.item.id == null) {
+        alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+        return;
+      }
     }
-    window.dispatchEvent(new Event('daemu-db-change'));
+    try { window.dispatchEvent(new Event('daemu-db-change')); } catch (_) { /* ignore */ }
     resetForm();
     render();
     if (window.siteToast) window.siteToast('저장 완료', { tone: 'success' });
@@ -333,13 +341,12 @@
 
   async function del(id) {
     if (!confirm('이 프로젝트를 삭제하시겠습니까?')) return;
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
     if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/works/' + id });
+      const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/works/' + id, refetchKey: STORAGE_KEY });
       if (!r.ok) { alert('백엔드 삭제 실패 — 다시 시도해 주세요.'); return; }
     }
-    DB.del(STORAGE_KEY, id);
-    window.dispatchEvent(new Event('daemu-db-change'));
+    try { window.dispatchEvent(new Event('daemu-db-change')); } catch (_) { /* ignore */ }
     render();
   }
 

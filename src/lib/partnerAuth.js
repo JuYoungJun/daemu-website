@@ -1,32 +1,48 @@
-// Partner accounts live in localStorage keys:
-//  - daemu_partners        : partner records (admin-managed)
-//  - daemu_partner_session : currently logged-in partner id
+// 파트너 인증 — backend Aiven 기반 (`/api/partner-auth/*`).
+//
+// 정책 (2026-05): 파트너 로그인은 backend Aiven `partners` 테이블 + bcrypt
+// password_hash + partner-scoped JWT 로 동작. 어드민 JWT (`daemu_admin_token`) 와
+// 완전히 분리되며, 같은 파트너 계정으로 다른 PC / 다른 브라우저에서 들어오면
+// 동일한 발주 / 본인 정보를 본다.
+//
+// localStorage 사용:
+//   · daemu_partner_token       — backend 가 발급한 JWT (어드민 token 과 분리)
+//   · daemu_partner_session     — 세션 마커 (legacy, 호환)
+//   · daemu_partner_logins      — DEV/DEMO 백엔드 미설정 fallback 시드만 보관
+//
+// 운영(VITE_API_BASE_URL 설정됨)에서는 backend 를 source of truth 로 삼고
+// localStorage 시드는 사용하지 않음. 백엔드 미연결 dev/demo 모드에만 옛
+// 시드 fallback (`testpartner@daemu.kr` / `daemu1234`) 가 동작.
 
 import { DB } from './db.js';
+import { api } from './api.js';
 
-// NOTE: BROWSER STORAGE KEY NAME — identifies the localStorage slot that
-// holds the currently-logged-in partner id. It is NOT a secret. The
-// _STORAGE_KEY suffix is for Snyk CWE-547 pattern matching.
-const PARTNER_SESSION_STORAGE_KEY = 'daemu_partner_session';
-// Back-compat alias.
+// NOTE: 브라우저 storage key 들 — secret 아님.
+const PARTNER_TOKEN_STORAGE_KEY = 'daemu_partner_token';
+const PARTNER_USER_STORAGE_KEY = 'daemu_partner_user';
+const PARTNER_SESSION_STORAGE_KEY = 'daemu_partner_session';  // legacy alias
+const PARTNER_LOGIN_STORAGE_KEY = 'partner_logins';  // dev/demo fallback only
+
 const SESSION_KEY = PARTNER_SESSION_STORAGE_KEY;
 
-// 데모/QA 편의를 위해 첫 방문 시 테스트 파트너 계정을 시드합니다.
-// 본 시드는 두 단계로 동작합니다:
-//   1) 이메일이 일치하는 행이 없으면 새로 추가 (필수 필드 모두 채움)
-//   2) 이미 있으면 password / passwordChanged를 강제로 갱신해 비번 변경
-//      화면이 뜨지 않도록 보장. 이전 빌드에서 시드된 행이
-//      passwordChanged 플래그 없이 들어가 있던 케이스를 매 부팅마다 정상화.
-// 운영 환경에서는 시드된 계정을 admin /admin/partners 에서 비활성화하면 됩니다.
-function ensureTestPartner() {
+function authHeader() {
+  try {
+    const t = localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY);
+    if (!t) return {};
+    return { Authorization: `Bearer ${t}` };
+  } catch { return {}; }
+}
+
+// dev/demo (api 미설정) 모드에서만 사용되는 옛 testpartner 시드.
+// 운영에서는 호출되지 않으며 backend 가 source of truth.
+function ensureTestPartnerLocalDemo() {
   try {
     const TEST_EMAIL = 'testpartner@daemu.kr';
     const TEST_PW = 'daemu1234';
-    const partners = DB.get('partners') || [];
+    const partners = DB.get(PARTNER_LOGIN_STORAGE_KEY) || [];
     const idx = partners.findIndex((p) => (p.email || '').toLowerCase() === TEST_EMAIL);
-
     if (idx < 0) {
-      DB.add('partners', {
+      DB.add(PARTNER_LOGIN_STORAGE_KEY, {
         name: '테스트 파트너',
         person: '테스트 담당자',
         phone: '010-1234-5678',
@@ -34,20 +50,13 @@ function ensureTestPartner() {
         type: '원두 납품',
         role: '발주 전용',
         active: 'active',
-        note: '테스트용 임시 파트너 계정 — 운영 시 /admin/partners 에서 비활성화/삭제하세요.',
         password: TEST_PW,
         passwordChanged: true,
-        // PartnerAuth.login() 의 83번째 줄이 `mustChangePassword !== false`를
-        // 검사하므로 반드시 명시적 false 가 필요. undefined 면 true 로 평가됨.
         mustChangePassword: false,
         passwordUpdatedAt: new Date().toISOString(),
       });
       return;
     }
-
-    // 기존 행의 비번/플래그를 강제 정상화 — 이전 빌드 시드된 잔존 데이터에
-    // passwordChanged / mustChangePassword 플래그가 빠져 있어 매 로그인마다
-    // 변경 화면이 뜨던 문제 해결.
     const existing = partners[idx];
     const needsRepair =
       existing.password !== TEST_PW ||
@@ -55,20 +64,23 @@ function ensureTestPartner() {
       existing.mustChangePassword !== false ||
       existing.active !== 'active';
     if (needsRepair) {
-      DB.update('partners', existing.id, {
+      DB.update(PARTNER_LOGIN_STORAGE_KEY, existing.id, {
         password: TEST_PW,
         passwordChanged: true,
         mustChangePassword: false,
         passwordUpdatedAt: new Date().toISOString(),
         active: 'active',
       });
-      window.dispatchEvent(new Event('daemu-db-change'));
+      try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
     }
-  } catch (e) { /* ignore — DB 미설정 환경 */ }
+  } catch (_) { /* ignore */ }
 }
-ensureTestPartner();
 
-// Default password is phone last 4 digits — fallback "daemu" if no phone.
+// dev/demo fallback 시드는 backend 미설정인 경우에만 활성화.
+if (!api.isConfigured()) {
+  ensureTestPartnerLocalDemo();
+}
+
 function defaultPasswordOf(p) {
   if (!p) return 'daemu';
   if (p.phone) return String(p.phone).replace(/\D/g, '').slice(-4) || 'daemu';
@@ -76,74 +88,144 @@ function defaultPasswordOf(p) {
 }
 
 export const PartnerAuth = {
-  login({ id, password }) {
-    const partners = DB.get('partners');
+  /** Backend partner 로그인. backend 미설정 시에만 옛 localStorage fallback 사용. */
+  async login({ id, password }) {
+    const idTrim = String(id || '').trim();
+    if (!idTrim || !password) return { ok: false, reason: 'missing-credentials' };
+
+    if (api.isConfigured()) {
+      // backend 가 source of truth.
+      const r = await api.post('/api/partner-auth/login', {
+        email: idTrim,
+        password: String(password),
+      }, { skipAuth: true });
+      if (r && r.ok && r.token && r.partner) {
+        try {
+          localStorage.setItem(PARTNER_TOKEN_STORAGE_KEY, r.token);
+          localStorage.setItem(PARTNER_USER_STORAGE_KEY, JSON.stringify(r.partner));
+          localStorage.setItem(SESSION_KEY, String(r.partner.id));
+        } catch { /* ignore */ }
+        // adapter shape — Partners.jsx 가 partner.name / partner.email 등 사용.
+        const partner = {
+          id: r.partner.id,
+          name: r.partner.company_name || r.partner.email || '',
+          person: r.partner.contact_name || '',
+          email: r.partner.email || '',
+          phone: r.partner.phone || '',
+          type: r.partner.category || '',
+          status: r.partner.status || '',
+          active: 'active',
+        };
+        return { ok: true, partner, mustChangePassword: false };
+      }
+      const reason = r && r.status === 401 ? 'bad-credentials'
+        : r && r.status === 429 ? 'throttled'
+        : r && r.status === 503 ? 'db-unavailable'
+        : 'login-failed';
+      return { ok: false, reason, error: r && r.error };
+    }
+
+    // backend 미설정 — 옛 localStorage 시드만 사용 (dev/demo).
+    const partners = DB.get(PARTNER_LOGIN_STORAGE_KEY);
     const match = partners.find((p) => {
       if ((p.active || 'active') !== 'active') return false;
       const candidates = [p.email, p.phone, p.person, p.name].filter(Boolean).map(String);
-      return candidates.includes(String(id || '').trim());
+      return candidates.includes(idTrim);
     });
     if (!match) return { ok: false, reason: 'not-found' };
-
     const expected = match.password || defaultPasswordOf(match);
     if (String(password) !== String(expected)) return { ok: false, reason: 'bad-password' };
-
-    localStorage.setItem(SESSION_KEY, String(match.id));
-    // Determine if this is still the default password (no custom set yet)
+    try { localStorage.setItem(SESSION_KEY, String(match.id)); } catch { /* ignore */ }
     const stillDefault = !match.password || String(match.password) === defaultPasswordOf(match);
     return { ok: true, partner: match, mustChangePassword: stillDefault || match.mustChangePassword !== false };
   },
 
-  logout() { localStorage.removeItem(SESSION_KEY); },
-
-  current() {
-    const id = localStorage.getItem(SESSION_KEY);
-    if (!id) return null;
-    const p = DB.get('partners').find((x) => String(x.id) === String(id));
-    if (!p || (p.active || 'active') !== 'active') {
+  logout() {
+    try {
+      localStorage.removeItem(PARTNER_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(PARTNER_USER_STORAGE_KEY);
       localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return p;
+    } catch { /* ignore */ }
+    // backend 측 logout 은 stateless 라 별도 호출 불필요.
   },
 
-  // Returns true if partner needs to change password before continuing.
+  /** 현재 로그인된 파트너 정보. backend token 우선, 없으면 dev/demo localStorage. */
+  current() {
+    try {
+      const token = localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY);
+      const userStr = localStorage.getItem(PARTNER_USER_STORAGE_KEY);
+      if (token && userStr) {
+        const u = JSON.parse(userStr);
+        return {
+          id: u.id,
+          name: u.company_name || u.email || '',
+          person: u.contact_name || '',
+          email: u.email || '',
+          phone: u.phone || '',
+          type: u.category || '',
+          status: u.status || '',
+          active: 'active',
+          _backend: true,
+        };
+      }
+    } catch { /* ignore */ }
+
+    // backend 토큰 없음 → dev/demo localStorage 시드 fallback.
+    try {
+      const id = localStorage.getItem(SESSION_KEY);
+      if (!id) return null;
+      const p = DB.get(PARTNER_LOGIN_STORAGE_KEY).find((x) => String(x.id) === String(id));
+      if (!p || (p.active || 'active') !== 'active') {
+        try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+        return null;
+      }
+      return p;
+    } catch { return null; }
+  },
+
+  /** backend partner: 비밀번호 변경 화면이 떠야 하는지. backend partner 는 bcrypt 라 false. */
   needsPasswordChange(partner) {
     if (!partner) return false;
+    if (partner._backend) return false;
     if (partner.passwordChanged === true) return false;
-    // No custom password set, or password equals default
     return !partner.password || String(partner.password) === defaultPasswordOf(partner);
   },
 
+  /** dev/demo 시드 partner 한정 — backend partner 의 비밀번호 변경은 별도 endpoint 추가 예정. */
   changePassword(partnerId, newPassword) {
     if (!newPassword || String(newPassword).length < 4) {
       return { ok: false, reason: 'too-short' };
     }
-    DB.update('partners', Number(partnerId), {
+    DB.update(PARTNER_LOGIN_STORAGE_KEY, Number(partnerId), {
       password: String(newPassword),
       passwordChanged: true,
-      passwordUpdatedAt: new Date().toISOString()
+      passwordUpdatedAt: new Date().toISOString(),
     });
-    window.dispatchEvent(new Event('daemu-db-change'));
+    try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
     return { ok: true };
   },
 
   signup(application) {
+    // 신규 파트너 신청 — 어드민이 `/admin/partners` 에서 승인 후 backend
+    // partner-auth 비밀번호를 별도 발급. 본 함수는 dev/demo 시드로만 동작.
     const phone4 = application.phone ? String(application.phone).replace(/\D/g, '').slice(-4) : '';
-    DB.add('partners', {
+    DB.add(PARTNER_LOGIN_STORAGE_KEY, {
       name: application.company || application.name || '',
       person: application.person || '',
       phone: application.phone || '',
       email: application.email || '',
       type: application.type || '',
       role: '발주 전용',
-      active: 'inactive', // pending approval
+      active: 'inactive',
       note: application.message || '',
       password: phone4 || 'daemu',
       passwordChanged: false,
       pendingSignup: true
     });
-  }
+  },
+
+  /** partner-scoped Authorization header — partner-scoped 엔드포인트 호출에 사용. */
+  authHeader,
 };
 
 export function defaultPasswordHint(partner) {

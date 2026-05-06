@@ -52,26 +52,24 @@
       phone: document.getElementById('s-phone').value,
       addr: document.getElementById('s-addr').value,
     };
-    // localStorage 즉시 갱신 (낙관적 업데이트)
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(info)); }
-    catch (_) { /* ignore */ }
-
-    // backend 에 PUT — 실패해도 사용자 화면은 이미 저장된 상태
-    let backendOk = false;
-    try {
-      if (window.api && window.api.isConfigured && window.api.isConfigured()) {
-        const r = await window.api.put('/api/content/' + CONTENT_KEY, { value: info });
-        backendOk = !!(r && r.ok);
-      }
-    } catch (_) { /* fallthrough */ }
-
-    if (backendOk) {
-      if (window.siteToast) window.siteToast('저장되었습니다 — 모든 환경에 반영', { tone: 'success' });
-      else alert('저장되었습니다.');
-    } else {
-      if (window.siteToast) window.siteToast('저장됨 (이 브라우저 캐시 — 백엔드 미연결 또는 일시 오류)', { tone: 'warn' });
-      else alert('저장되었습니다 (이 브라우저 캐시).');
+    // 정책: backend Aiven 이 source of truth. backend OK 일 때만 localStorage 미러 갱신.
+    if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+      alert('백엔드 미연결 — 저장할 수 없습니다.');
+      return;
     }
+    let r;
+    try {
+      r = await window.api.put('/api/content/' + CONTENT_KEY, { value: info });
+    } catch (_) { /* network error */ }
+    if (!r || !r.ok) {
+      const errMsg = (r && (r.error || r.status)) || '네트워크 오류';
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + errMsg + ')');
+      return;
+    }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(info)); }
+    catch (_) { /* ignore — 화면 캐시 갱신 실패는 무시 */ }
+    if (window.siteToast) window.siteToast('저장되었습니다 — 모든 환경에 반영', { tone: 'success' });
+    else alert('저장되었습니다.');
   }
 
   Object.assign(window, { saveSiteInfo });

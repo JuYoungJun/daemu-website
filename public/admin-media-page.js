@@ -1,7 +1,42 @@
 (function() {
   'use strict';
-const STORAGE_KEY = "media";
+// 어드민 미디어 라이브러리 — backend Aiven `media_assets` (`/api/media`) 가
+// source of truth. 업로드 자체는 /api/upload, 메타는 /api/media POST 로 등록.
+// localStorage 직접 read/write 없음 (2026-05).
+
+const STORAGE_KEY = "media";  // window.daemuStore[STORAGE_KEY] 메모리 캐시 키
 let filterKind = "all"; // all | image | video
+
+function _mapBackendMedia(it) {
+  // backend → admin shape. backend 의 url / name / content_type / size / id
+  // 를 옛 admin UI 가 기대하는 src / kind / size 로 변환.
+  const src = it.url || '';
+  const kindFromCt = (it.content_type || '').toLowerCase().startsWith('video/') ? 'video' : 'image';
+  const kindFromUrl = /\.(mp4|webm|mov)(\?|$)/i.test(src) ? 'video' : 'image';
+  return {
+    id: it.id,
+    name: it.name || it.original_name || '',
+    src,
+    size: Number(it.size || 0),
+    kind: kindFromCt || kindFromUrl,
+    public_id: src,
+    content_type: it.content_type || '',
+    alt: it.alt || '',
+    tags: Array.isArray(it.tags) ? it.tags : [],
+    created_at: it.created_at || '',
+  };
+}
+
+async function hydrateFromBackend() {
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/media?page=1&page_size=500',
+    mapItem: _mapBackendMedia,
+  });
+}
+
+function _rows() { return window.daemuRows ? window.daemuRows(STORAGE_KEY) : []; }
 
 function fmtBytes(n) {
   if (!n) return "0 B";
@@ -12,14 +47,13 @@ function fmtBytes(n) {
 
 function kindOf(d) {
   if (d.kind) return d.kind;
-  // Backwards compat — older entries didn't store kind. Infer from src.
   const s = String(d.src || "");
   if (/^data:video|\.mp4|\.webm/i.test(s)) return "video";
   return "image";
 }
 
 function renderStats() {
-  const data = DB.get(STORAGE_KEY);
+  const data = _rows();
   let imgN = 0, vidN = 0, imgBytes = 0, vidBytes = 0;
   data.forEach(d => {
     const k = kindOf(d);
@@ -37,7 +71,7 @@ function renderStats() {
 }
 
 function renderGrid() {
-  const data = DB.get(STORAGE_KEY).filter(d => filterKind === "all" || kindOf(d) === filterKind);
+  const data = _rows().filter(d => filterKind === "all" || kindOf(d) === filterKind);
   const grid = document.getElementById("media-grid");
   if (!grid) return;
   if (!data.length) {
@@ -70,15 +104,30 @@ function render() { renderStats(); renderGrid(); }
 async function uploadFilesAs(files, kind) {
   for (const file of Array.from(files)) {
     try {
+      // 1) 파일 업로드 — 기존 backend `/api/upload` 또는 client-side helper.
       const fn = (kind === "video") ? window.uploadVideo : window.uploadImage;
       const r = await fn(file);
-      DB.add(STORAGE_KEY, {
-        name: r.name || file.name,
-        src: r.url,
-        size: r.size || file.size,
-        kind: r.kind || kind,
-        public_id: r.publicUrl || null,
-      });
+      // 2) backend 메타 등록 — Aiven `media_assets` 행 1건 추가.
+      if (window.api && window.api.isConfigured && window.api.isConfigured()) {
+        const m = await window.api.post('/api/media', {
+          url: r.url,
+          name: r.name || file.name,
+          original_name: file.name,
+          content_type: r.kind === 'video' ? 'video/mp4' : (file.type || ''),
+          size: r.size || file.size || 0,
+          alt: '',
+          tags: [],
+        });
+        if (!m || !m.ok) {
+          alert('미디어 메타 저장 실패: ' + (m && (m.error || ('HTTP ' + m.status))));
+          continue;
+        }
+      } else {
+        alert('백엔드 미연결 — 미디어 메타가 저장되지 않습니다.');
+        continue;
+      }
+      // 3) refetch — store 갱신 → render.
+      if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
       render();
     } catch (err) {
       alert('업로드 실패: ' + (err && err.message ? err.message : err));
@@ -86,13 +135,12 @@ async function uploadFilesAs(files, kind) {
   }
 }
 
-// Legacy alias used by any caller still expecting uploadFiles(files).
 async function uploadFiles(files) { return uploadFilesAs(files, 'image'); }
 
 function setFilter(v) { filterKind = v; renderGrid(); }
 
 function copyUrl(id) {
-  const item = DB.get(STORAGE_KEY).find(d => d.id === id);
+  const item = _rows().find(d => d.id === id);
   if (!item) return;
   const url = item.public_id || item.src;
   if (navigator.clipboard) {
@@ -105,14 +153,24 @@ function copyUrl(id) {
   }
 }
 
-function del(id) {
-  if (confirmDel()) {
-    DB.del(STORAGE_KEY, id);
-    render();
+async function del(id) {
+  if (!confirmDel()) return;
+  if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+    alert('백엔드 미연결 — 삭제할 수 없습니다.');
+    return;
   }
+  const r = await window.api.del('/api/media/' + id);
+  if (!r || (!r.ok && r.status !== 204)) {
+    alert('백엔드 삭제 실패: ' + (r && (r.error || ('HTTP ' + r.status))));
+    return;
+  }
+  if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
+  render();
 }
 
+// 초기 마운트 — render 후 backend hydrate, 완료되면 render 재실행.
 render();
+hydrateFromBackend().then(render);
 
-Object.assign(window, { render, uploadFiles, uploadFilesAs, setFilter, copyUrl, del });
+Object.assign(window, { render, uploadFiles, uploadFilesAs, setFilter, copyUrl, del, hydrateFromBackend });
 })();

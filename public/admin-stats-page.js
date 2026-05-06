@@ -1,70 +1,116 @@
 (function() {
   'use strict';
+// 어드민 통계 페이지 — backend Aiven 의 `/api/admin/stats` 한 번 호출로 KPI 채움.
+// localStorage 다중 read 의존 제거 (2026-05). monitoring read 권한 필요 (admin/developer).
+
 const STAGE_LABELS = {lead:"리드", qualified:"검토중", customer:"전환", lost:"이탈"};
 
-document.getElementById("s1").textContent = DB.get("projects").length;
-document.getElementById("s2").textContent = DB.get("inquiries").length;
-document.getElementById("s3").textContent = DB.get("partners").length;
-document.getElementById("s4").textContent = DB.get("orders").length;
-
-const crm = DB.get("crm");
-document.getElementById("m1").textContent = crm.length;
-document.getElementById("m2").textContent = crm.filter(d => d.status === "customer").length;
-document.getElementById("m3").textContent = DB.get("subscribers").filter(d => d.status === "활성").length;
-document.getElementById("m4").textContent = DB.get("coupons").filter(d => (d.status||"active") === "active").length;
-
-const popups = DB.get("popups");
-const popImps = popups.reduce((a,d) => a + (d.impressions||0), 0);
-const popClicks = popups.reduce((a,d) => a + (d.clicks||0), 0);
-document.getElementById("p1").textContent = popups.filter(d => (d.status||"active") === "active").length;
-document.getElementById("p2").textContent = popImps.toLocaleString('ko');
-document.getElementById("p3").textContent = popClicks.toLocaleString('ko');
-document.getElementById("p4").textContent = (popImps ? Math.round(popClicks/popImps*100) : 0) + "%";
-
-function miniChart(el, data, getStatus) {
-  if (!data.length) { el.innerHTML = '<p class="adm-empty">데이터가 없습니다.</p>'; return; }
-  const counts = {};
-  data.forEach(d => {
-    const s = (typeof getStatus === "function") ? getStatus(d) : d.status;
-    counts[s] = (counts[s]||0) + 1;
-  });
-  el.innerHTML = Object.entries(counts).map(([k,v]) =>
-    `<div class="adm-mini-chart-item">${badge(k)} <b>${v}</b></div>`
-  ).join("");
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
-miniChart(document.getElementById("crm-chart"), crm, d => STAGE_LABELS[d.status] || d.status);
-miniChart(document.getElementById("inq-chart"), DB.get("inquiries"));
-miniChart(document.getElementById("ord-chart"), DB.get("orders"));
+function emptyChart(el) {
+  if (el) el.innerHTML = '<p class="adm-empty">데이터가 없습니다.</p>';
+}
 
-/* Campaign KV */
-const cmp = DB.get("campaigns");
-const sentCmps = cmp.filter(d => d.status === "sent");
-const totalSent = sentCmps.reduce((a,d) => a + (d.recipients||0), 0);
-const totalOpens = sentCmps.reduce((a,d) => a + (d.opens||0), 0);
-const totalClicks = sentCmps.reduce((a,d) => a + (d.clicks||0), 0);
-const openRate = totalSent ? Math.round(totalOpens/totalSent*100) : 0;
-const ctr = totalOpens ? Math.round(totalClicks/totalOpens*100) : 0;
-document.getElementById("cmp-kv").innerHTML = `
-  <div><b>${cmp.length}</b><span>전체 캠페인</span></div>
-  <div><b>${totalSent.toLocaleString('ko')}</b><span>총 발송</span></div>
-  <div><b>${openRate}%</b><span>오픈율</span></div>
-  <div><b>${ctr}%</b><span>클릭률</span></div>
-`;
+async function loadStats() {
+  const setLoading = (label) => {
+    ['s1','s2','s3','s4','m1','m2','m3','m4','p1','p2','p3','p4'].forEach(id => setText(id, label));
+  };
+  setLoading('…');
 
-/* Revenue KV */
-const orders = DB.get("orders");
-const revenue = orders.reduce((a,d) => a + (Number(d.qty||0) * Number(d.price||0)), 0);
-const completed = orders.filter(d => d.status === "출고완료").length;
-const avgOrder = orders.length ? Math.round(revenue/orders.length) : 0;
-const expectedDeals = crm.reduce((a,d) => a + Number(d.value||0), 0);
-document.getElementById("rev-kv").innerHTML = `
-  <div><b>${revenue.toLocaleString('ko')}</b><span>발주 총액 (원)</span></div>
-  <div><b>${completed}</b><span>출고완료 건수</span></div>
-  <div><b>${avgOrder.toLocaleString('ko')}</b><span>평균 주문가 (원)</span></div>
-  <div><b>${expectedDeals.toLocaleString('ko')}</b><span>예상 파이프라인 (원)</span></div>
-`;
+  if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+    setLoading('-');
+    emptyChart(document.getElementById("crm-chart"));
+    emptyChart(document.getElementById("inq-chart"));
+    emptyChart(document.getElementById("ord-chart"));
+    return;
+  }
 
+  let counts = {};
+  try {
+    const r = await window.api.get('/api/admin/stats');
+    if (r && r.ok && r.counts) counts = r.counts;
+    else throw new Error((r && r.error) || ('HTTP ' + (r && r.status)));
+  } catch (err) {
+    setLoading('-');
+    const errBox = document.getElementById('stats-error');
+    if (errBox) errBox.textContent = '통계 로드 실패: ' + (err && err.message ? err.message : err);
+    return;
+  }
 
-Object.assign(window, { miniChart });
+  // 상단 4 박스 — works / inquiries / partners / orders.
+  setText('s1', counts.works || 0);
+  setText('s2', counts.inquiries || 0);
+  setText('s3', counts.partners || 0);
+  setText('s4', counts.orders || 0);
+
+  // 마케팅 — CRM 전체 / customer 단계 / 뉴스레터 active / 프로모션 active.
+  setText('m1', counts.crm || 0);
+  // m2 (CRM customer 단계) 는 backend stats 에 별도로 분리되어 있지 않음 — 어드민 CRM 페이지에서 정확한 분포 확인 가능.
+  setText('m2', '—');
+  setText('m3', counts.newsletter_active || 0);
+  setText('m4', counts.promotions_active || 0);
+
+  // 팝업 — active 개수만 backend 에서 집계. impressions/clicks 는 backend 모델에
+  // 컬럼이 없어 운영 단계에서 별도 분석 endpoint 가 필요. demo 단계에서는 0 표시.
+  setText('p1', counts.popups_active || 0);
+  setText('p2', '—');
+  setText('p3', '—');
+  setText('p4', '—');
+
+  // CRM / 문의 / 발주 mini chart — backend 가 status 분포까지 반환하지 않으므로
+  // 상세 분포는 각 어드민 페이지(/admin/crm, /admin/inquiries, /admin/orders) 에서
+  // 확인하도록 안내. 본 페이지는 총 카운트 표시.
+  const crmEl = document.getElementById("crm-chart");
+  if (crmEl) {
+    crmEl.innerHTML = counts.crm
+      ? `<div class="adm-mini-chart-item"><b>${counts.crm}</b> 건 — 상세 분포는 <a href="${(window.DAEMU_BASE || '/')}admin/crm">CRM 페이지</a> 참고</div>`
+      : '<p class="adm-empty">데이터가 없습니다.</p>';
+  }
+  const inqEl = document.getElementById("inq-chart");
+  if (inqEl) {
+    inqEl.innerHTML = counts.inquiries
+      ? `<div class="adm-mini-chart-item"><b>${counts.inquiries}</b> 건 — 상세 분포는 <a href="${(window.DAEMU_BASE || '/')}admin/inquiries">문의 페이지</a> 참고</div>`
+      : '<p class="adm-empty">데이터가 없습니다.</p>';
+  }
+  const ordEl = document.getElementById("ord-chart");
+  if (ordEl) {
+    ordEl.innerHTML = counts.orders
+      ? `<div class="adm-mini-chart-item"><b>${counts.orders}</b> 건 — 상세 분포는 <a href="${(window.DAEMU_BASE || '/')}admin/orders">발주 페이지</a> 참고</div>`
+      : '<p class="adm-empty">데이터가 없습니다.</p>';
+  }
+
+  // Campaign KV — 캠페인 발송 메트릭 (오픈/클릭) 은 backend 에 별도 컬럼 없음.
+  // 운영 단계에서 추적 픽셀 / link redirect 로 수집 예정. demo 단계에서는 캠페인 총 수만.
+  const cmpKv = document.getElementById("cmp-kv");
+  if (cmpKv) {
+    cmpKv.innerHTML = `
+      <div><b>${counts.campaigns || 0}</b><span>전체 캠페인</span></div>
+      <div><b>—</b><span>총 발송 (운영 후)</span></div>
+      <div><b>—</b><span>오픈율 (운영 후)</span></div>
+      <div><b>—</b><span>클릭률 (운영 후)</span></div>
+    `;
+  }
+
+  // Revenue KV — 발주 총액 / 출고완료 / 평균 주문가 / CRM 예상 파이프라인.
+  // 합계는 backend 에 amount 합산 endpoint 가 별도 추가되기 전까지 단순 카운트만.
+  const revKv = document.getElementById("rev-kv");
+  if (revKv) {
+    revKv.innerHTML = `
+      <div><b>${counts.orders || 0}</b><span>전체 발주 건수</span></div>
+      <div><b>—</b><span>출고완료 건수 (상세는 발주 페이지)</span></div>
+      <div><b>—</b><span>평균 주문가 (운영 후)</span></div>
+      <div><b>—</b><span>예상 파이프라인 (운영 후)</span></div>
+    `;
+  }
+}
+
+// 마운트 시점에 호출. 다른 어드민 페이지에서 backend 갱신 후 daemu-db-change
+// 이벤트로 다시 로드.
+loadStats();
+window.addEventListener('daemu-db-change', () => { loadStats(); });
+
+Object.assign(window, { loadStats });
 })();

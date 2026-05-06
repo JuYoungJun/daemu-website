@@ -224,27 +224,29 @@
     const images = imagesCache
       .filter((i) => referenced.has(i.contentId))
       .map((i) => ({ contentId: i.contentId, filename: i.filename, url: i.url, previewUrl: i.previewUrl }));
-    // 1) localStorage 캐시 즉시 갱신 (낙관적)
-    localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active, category, images }));
-    // 2) backend 에 PUT /api/mail-template/auto-reply
-    let backendOk = false;
-    try {
-      if (window.api && window.api.isConfigured && window.api.isConfigured()) {
-        const r = await window.api.put('/api/mail-template/auto-reply', {
-          kind: 'auto-reply',
-          subject, body,
-          active: active !== 'off',
-          category,
-          images,
-        });
-        backendOk = !!(r && r.ok);
-      }
-    } catch (_) { /* fallthrough */ }
-    if (backendOk) {
-      alert('저장되었습니다 — 모든 환경에 반영.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
-    } else {
-      alert('저장되었습니다 (이 브라우저 캐시).\n백엔드 미연결 또는 일시 오류 — 다른 환경에서는 갱신이 보이지 않을 수 있습니다.');
+    // 정책: backend Aiven 이 source of truth. backend OK 일 때만 localStorage 미러 갱신.
+    if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+      alert('백엔드 미연결 — 저장할 수 없습니다.');
+      return;
     }
+    let r;
+    try {
+      r = await window.api.put('/api/mail-template/auto-reply', {
+        kind: 'auto-reply',
+        subject, body,
+        active: active !== 'off',
+        category,
+        images,
+      });
+    } catch (_) { /* network error */ }
+    if (!r || !r.ok) {
+      const errMsg = (r && (r.error || r.status)) || '네트워크 오류';
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + errMsg + ')');
+      return;
+    }
+    try { localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active, category, images })); }
+    catch (_) { /* ignore — 화면 캐시 갱신 실패는 무시 */ }
+    alert('저장되었습니다 — 모든 환경에 반영.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
   }
 
   function resetMail() {

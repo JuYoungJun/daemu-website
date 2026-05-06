@@ -361,49 +361,89 @@ function Shop({ partner, onSubmitted }) {
     setCouponMsg({ kind: '', text: '' });
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!items.length) { alert('상품을 1개 이상 담아주세요.'); return; }
     const summary = items.length === 1
       ? items[0].name
       : `${items[0].name} 외 ${items.length - 1}종`;
     const totalQty = items.reduce((a, x) => a + x.qty, 0);
-    const avgPrice = totalQty ? Math.round(subtotal / totalQty) : 0;
+    const itemsPayload = items.map(x => ({ sku: x.sku || '', name: x.name, unit: x.unit || '', qty: x.qty, price: x.price }));
 
-    // 쿠폰 사용량 +1 (적용된 경우만)
-    if (appliedCoupon?.coupon?.id) {
-      consumeCoupon(appliedCoupon.coupon.id);
+    // 정책 (2026-05): backend Aiven `orders` 가 source of truth.
+    // partner-scoped JWT 로 인증된 발주만 저장되며, 어드민 `/admin/orders` 가
+    // 즉시 같은 row 를 본다. 백엔드 실패 시 fake-success 표시 안 함.
+    if (api.isConfigured() && partner._backend) {
+      const eventId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+      // partner-scoped Authorization header 로 호출.
+      const r = await api.post('/api/partner/orders', {
+        title: summary,
+        items: itemsPayload,
+        amount: total,
+        note: note || '',
+      }, { skipAuth: true, headers: PartnerAuth.authHeader() });
+      if (!r.ok) {
+        alert('발주 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+        return;
+      }
+      // backend 성공 — 쿠폰 사용량 +1 (backend 멱등 보장).
+      if (appliedCoupon?.coupon?.id) {
+        try { await consumeCoupon(appliedCoupon.coupon.id, { eventId }); } catch { /* ignore */ }
+      }
+      // 로컬 미러 — History 가 즉시 새 발주를 보이도록 (다음 hydrate 가 또 갱신).
+      try {
+        DB.add('orders', {
+          id: r.item?.id,
+          _backend: true,
+          partner: partner.name,
+          partnerId: partner.id,
+          product: summary,
+          qty: totalQty,
+          price: totalQty ? Math.round(subtotal / totalQty) : 0,
+          subtotal, discount, total,
+          coupon: appliedCoupon ? {
+            id: appliedCoupon.coupon.id, code: appliedCoupon.coupon.code,
+            type: appliedCoupon.coupon.type, value: appliedCoupon.coupon.value,
+            amount: appliedCoupon.discount,
+          } : null,
+          items: itemsPayload,
+          note,
+          status: '접수',
+          date: new Date().toLocaleDateString('ko-KR'),
+        });
+      } catch { /* ignore */ }
+      window.dispatchEvent(new Event('daemu-db-change'));
+      const couponLine = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원)` : '';
+      alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개${couponLine}\n결제 예정: ${total.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원\n본사 확인 후 처리 단계로 진행됩니다.`);
+      setCart({}); setNote(''); setAppliedCoupon(null); setCouponInput(''); setCouponMsg({ kind: '', text: '' });
+      onSubmitted && onSubmitted();
+      return;
     }
 
+    // backend 미연결 / 옛 demo seed partner — 옛 동작 유지 (브라우저 단위 데모).
+    if (appliedCoupon?.coupon?.id) {
+      try { await consumeCoupon(appliedCoupon.coupon.id); } catch { /* ignore */ }
+    }
     DB.add('orders', {
       partner: partner.name,
       partnerId: partner.id,
       product: summary,
       qty: totalQty,
-      price: avgPrice,
-      subtotal,
-      discount,
-      total,
+      price: totalQty ? Math.round(subtotal / totalQty) : 0,
+      subtotal, discount, total,
       coupon: appliedCoupon ? {
-        id: appliedCoupon.coupon.id,
-        code: appliedCoupon.coupon.code,
-        type: appliedCoupon.coupon.type,
-        value: appliedCoupon.coupon.value,
+        id: appliedCoupon.coupon.id, code: appliedCoupon.coupon.code,
+        type: appliedCoupon.coupon.type, value: appliedCoupon.coupon.value,
         amount: appliedCoupon.discount,
       } : null,
-      items: items.map(x => ({ sku: x.sku, name: x.name, unit: x.unit, qty: x.qty, price: x.price })),
-      note,
-      status: '접수'
+      items: itemsPayload,
+      note, status: '접수'
     });
     window.dispatchEvent(new Event('daemu-db-change'));
-
-    const couponLine = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원)` : '';
-    alert(`발주가 접수되었습니다.\n총 ${items.length}종 / ${totalQty}개${couponLine}\n결제 예정: ${total.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원\n본사 확인 후 처리 단계로 진행됩니다.`);
-
-    setCart({});
-    setNote('');
-    setAppliedCoupon(null);
-    setCouponInput('');
-    setCouponMsg({ kind: '', text: '' });
+    const couponLine2 = appliedCoupon ? `\n쿠폰: ${appliedCoupon.coupon.code} (-${appliedCoupon.discount.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원)` : '';
+    alert(`발주가 접수되었습니다 (데모 모드 — 브라우저 로컬 저장).\n총 ${items.length}종 / ${totalQty}개${couponLine2}`);
+    setCart({}); setNote(''); setAppliedCoupon(null); setCouponInput(''); setCouponMsg({ kind: '', text: '' });
     onSubmitted && onSubmitted();
   };
 

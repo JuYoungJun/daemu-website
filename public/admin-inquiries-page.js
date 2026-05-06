@@ -3,41 +3,39 @@
 const STORAGE_KEY = "inquiries";
 let editingId = null;
 
-// 백엔드에서 실제 문의를 가져와 localStorage로 미러합니다.
-// Contact 폼은 백엔드 /api/inquiries로 직접 전송되므로,
-// admin 페이지 진입 시 한 번 sync해야 실 데이터가 보입니다.
+// 백엔드 Aiven 가 source of truth — daemuHydrate 헬퍼로 in-memory store 적재.
+// localStorage 직접 write 없음.
+function _mapBackendInquiry(it) {
+  const STATUS_MAP = { 'new': '신규', 'pending': '처리중', 'replied': '답변완료' };
+  return {
+    id: it.id,
+    name: it.name || '',
+    phone: it.phone || '',
+    email: it.email || '',
+    type: it.category || it.type || '',
+    status: STATUS_MAP[it.status] || it.status || '신규',
+    open: it.expected_open || '',
+    brand: it.brand_name || '',
+    region: it.location || '',
+    msg: it.message || '',
+    reply: it.note || '',
+    date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko') : '',
+  };
+}
 async function hydrateFromBackend() {
-  try {
-    if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) return;
-    const r = await window.api.get('/api/inquiries?page=1&page_size=500');
-    if (!r || !r.ok || !Array.isArray(r.items)) return;
-    const STATUS_MAP = { 'new': '신규', 'pending': '처리중', 'replied': '답변완료' };
-    // backend 응답을 admin UI가 기대하는 shape로 매핑
-    const mapped = r.items.map(it => ({
-      id: it.id,
-      name: it.name || '',
-      phone: it.phone || '',
-      email: it.email || '',
-      type: it.category || it.type || '',
-      status: STATUS_MAP[it.status] || it.status || '신규',
-      open: it.expected_open || '',
-      brand: it.brand_name || '',
-      region: it.location || '',
-      msg: it.message || '',
-      reply: it.note || '',
-      date: it.created_at ? new Date(it.created_at).toLocaleDateString('ko') : '',
-      _backend: true,                       // 표식: 백엔드 row
-    }));
-    DB.set(STORAGE_KEY, mapped);
-    window.dispatchEvent(new Event('daemu-db-change'));
-  } catch (e) { /* 백엔드 미연결 — localStorage 데이터 그대로 사용 */ }
+  if (!window.daemuHydrate) return;
+  await window.daemuHydrate({
+    storageKey: STORAGE_KEY,
+    endpoint: '/api/inquiries?page=1&page_size=500',
+    mapItem: _mapBackendInquiry,
+  });
 }
 
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const ft = document.getElementById("filter-type").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.name+" "+(d.email||"")+" "+(d.msg||"")).toLowerCase().includes(q)) &&
     (!fs || d.status === fs) &&
     (!ft || d.type === ft)
@@ -45,7 +43,7 @@ function filtered() {
 }
 
 function render() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   document.getElementById("s-total").textContent = all.length;
   document.getElementById("s-new").textContent = all.filter(d=>d.status==="신규").length;
   document.getElementById("s-pending").textContent = all.filter(d=>d.status==="처리중").length;
@@ -84,7 +82,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -143,33 +141,54 @@ async function save() {
     msg: document.getElementById("f-msg").value,
     reply: document.getElementById("f-reply").value
   };
+  // 정책: backend Aiven 이 source of truth. backend 가 OK 일 때만 store refetch 로 갱신.
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, payload);
-    if (existing && existing._backend) {
-      const ok = await backendPatch(editingId, payload);
-      if (!ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    if (!existing || !existing._backend) {
+      alert('어드민 직접 등록 문의는 운영 단계 백엔드 라우트 추가 후 지원 예정입니다. 공개 Contact 폼으로 들어온 문의만 편집 가능합니다.');
+      return;
     }
+    const ok = await backendPatch(editingId, payload);
+    if (!ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
   } else {
-    DB.add(STORAGE_KEY, payload);
-    if (payload.email && window.sendAutoReply && window.isEmailEnabled && window.isEmailEnabled()) {
-      window.sendAutoReply({ to_email: payload.email, to_name: payload.name, category: payload.type, message: payload.msg })
-        .catch(() => { /* silent */ });
+    // 신규 등록은 backend `/api/inquiries` POST (공개 Contact 폼이 동일 라우트 사용).
+    if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+      alert('백엔드 미연결 — 저장할 수 없습니다.');
+      return;
     }
+    const r = await window.api.post('/api/inquiries', {
+      name: payload.name || '',
+      phone: payload.phone || '',
+      email: payload.email || '',
+      category: payload.type || '',
+      message: payload.msg || '',
+      privacy_consent: true,
+    }, { skipAuth: true });
+    if (!r || !r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r && (r.error || ('HTTP ' + r.status))) + ')');
+      return;
+    }
+    if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
   }
   resetForm();
   render();
 }
 
 async function updateStatus(id, status) {
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
-  DB.update(STORAGE_KEY, id, { status });
-  if (existing && existing._backend) {
-    const ok = await backendPatch(id, { status, reply: existing.reply });
-    if (!ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
+  if (!existing || !existing._backend) { alert('백엔드 행이 아닙니다.'); return; }
+  const ok = await backendPatch(id, { status, reply: existing.reply });
+  if (!ok) {
+    alert('서버 상태 변경에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    return;
   }
+  if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
   if (status === '답변완료' && window.sendAdminReply && window.isEmailEnabled && window.isEmailEnabled()) {
-    const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+    const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
     if (d && d.email && d.reply && d.reply.trim()) {
       if (confirm('회신 메모 내용을 ' + d.email + ' 로 발송할까요?')) {
         window.sendAdminReply({ to_email: d.email, to_name: d.name, subject: '[대무] 문의 회신', body: d.reply })
@@ -183,15 +202,14 @@ async function updateStatus(id, status) {
 
 async function del(id) {
   if (!confirmDel()) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
-  if (existing && existing._backend) {
-    const ok = await backendDelete(id);
-    if (!ok) {
-      alert('백엔드 삭제 실패 — 다시 시도해 주세요.');
-      return;
-    }
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
+  if (!existing || !existing._backend) { alert('백엔드 행이 아닙니다.'); return; }
+  const ok = await backendDelete(id);
+  if (!ok) {
+    alert('백엔드 삭제 실패 — 다시 시도해 주세요.');
+    return;
   }
-  DB.del(STORAGE_KEY, id);
+  if (window.daemuRefetch) await window.daemuRefetch(STORAGE_KEY);
   render();
 }
 

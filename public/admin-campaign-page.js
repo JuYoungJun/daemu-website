@@ -85,7 +85,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fc = document.getElementById("filter-channel").value;
   const fs = document.getElementById("filter-status").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.title||"").toLowerCase().includes(q)) &&
     (!fc || d.channel === fc) &&
     (!fs || d.status === fs)
@@ -93,7 +93,7 @@ function filtered() {
 }
 
 function renderKPI() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   const sent = all.filter(d => d.status === "sent");
   document.getElementById("k-total").textContent = all.length;
   document.getElementById("k-sent").textContent = sent.length;
@@ -163,7 +163,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-title").value = d.title || "";
@@ -221,30 +221,31 @@ async function save() {
     extra.scheduledFor = new Date(Date.now()+24*3600*1000).toLocaleDateString('ko');
   }
   const final = { ...p, status, ...extra };
+  // 정책: backend Aiven 이 source of truth. backend 가 OK 일 때만 미러 갱신.
+  if (!window.daemuMirror) {
+    alert('백엔드 미연결 — 저장할 수 없습니다.');
+    return;
+  }
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, final);
-    if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({
-        method: 'PATCH', endpoint: '/api/campaigns/' + editingId,
-        body: _toBackendCampaign({ ...existing, ...final }),
-      });
-      if (!r.ok) alert('백엔드 동기화 실패');
-    }
-  } else if (window.daemuMirror) {
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
     const r = await window.daemuMirror({
-      method: 'POST', endpoint: '/api/campaigns', body: _toBackendCampaign(final),
+      method: 'PATCH', endpoint: '/api/campaigns/' + editingId,
+      body: _toBackendCampaign({ ...(existing || {}), ...final }),
+      refetchKey: STORAGE_KEY,
     });
-    if (r.ok && r.item && r.item.id != null) {
-      const all = DB.get(STORAGE_KEY);
-      all.unshift({ ...final, id: r.item.id, _backend: true });
-      DB.set(STORAGE_KEY, all);
-    } else {
-      DB.add(STORAGE_KEY, final);
-      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
     }
   } else {
-    DB.add(STORAGE_KEY, final);
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/campaigns', body: _toBackendCampaign(final),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   resetForm();
   render();
@@ -281,7 +282,7 @@ async function dispatchCampaign(p) {
 }
 
 async function sendNow(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   if (!confirm("'"+d.title+"' 캠페인을 즉시 발송합니다. 진행할까요?")) return;
   const stats = await dispatchCampaign({
@@ -293,7 +294,15 @@ async function sendNow(id) {
     segStage: d.segStage,
     segTags: d.segTags
   });
-  DB.update(STORAGE_KEY, id, { status:"sent", opens: stats.opens, clicks: stats.clicks, sentReal: stats.real, sentDate: new Date().toLocaleDateString('ko') });
+  // backend Aiven 갱신 — 발송 결과를 백엔드에 PATCH 후 refetch.
+  if (window.daemuMirror) {
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/campaigns/' + id,
+      body: { status: 'sent' },  // backend campaigns 모델은 opens/clicks 컬럼 별도 — 단순 status 만 갱신
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) { alert('백엔드 상태 갱신 실패: ' + (r.error || ('HTTP ' + (r.status || 0)))); return; }
+  }
   render();
   if (stats.real) alert("발송 완료 (전송 " + (stats.sent||0) + " · 실패 " + (stats.failed||0) + ")");
   else alert("발송 시뮬레이션 완료 (이메일 API 미설정)");
@@ -301,12 +310,11 @@ async function sendNow(id) {
 
 async function del(id) {
   if (!confirmDel()) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (existing && existing._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/campaigns/' + id });
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/campaigns/' + id, refetchKey: STORAGE_KEY });
     if (!r.ok) { alert('백엔드 삭제 실패'); return; }
   }
-  DB.del(STORAGE_KEY, id);
   render();
 }
 

@@ -53,7 +53,7 @@ let drawerId = null;
 
 function getAllTags() {
   const set = new Set();
-  DB.get(STORAGE_KEY).forEach(d => (d.tags||[]).forEach(t => set.add(t)));
+  (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).forEach(d => (d.tags||[]).forEach(t => set.add(t)));
   return Array.from(set).sort();
 }
 
@@ -70,7 +70,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const ft = document.getElementById("filter-tag").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.name+" "+(d.company||"")+" "+(d.email||"")).toLowerCase().includes(q)) &&
     (!fs || d.status === fs) &&
     (!ft || (d.tags||[]).includes(ft))
@@ -80,7 +80,7 @@ function filtered() {
 function stageMeta(key){ return STAGES.find(s => s.key === key) || STAGES[0]; }
 
 function renderPipeline() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   document.getElementById("pipeline").innerHTML = STAGES.map(s => {
     const items = all.filter(d => d.status === s.key);
     return `<div class="adm-pipe-col">
@@ -130,7 +130,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -153,7 +153,7 @@ function resetForm() {
   editingId = null;
 }
 
-function save() {
+async function save() {
   const name = document.getElementById("f-name").value.trim();
   if (!name) { alert("이름을 입력하세요"); return; }
   const tags = document.getElementById("f-tags").value.split(",").map(t => t.trim()).filter(Boolean);
@@ -168,17 +168,56 @@ function save() {
     tags,
     summary: document.getElementById("f-summary").value
   };
-  if (editingId !== null) DB.update(STORAGE_KEY, editingId, payload);
-  else DB.add(STORAGE_KEY, { ...payload, notes: [] });
+  // 정책: backend Aiven 이 source of truth. backend OK 일 때만 미러 갱신.
+  if (!window.daemuMirror) {
+    alert('백엔드 미연결 — 저장할 수 없습니다.');
+    return;
+  }
+  if (editingId !== null) {
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/crm/' + editingId,
+      body: _toBackendCrm({ ...(existing || {}), ...payload }),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
+  } else {
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/crm', body: _toBackendCrm(payload),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
+  }
   resetForm();
   render();
 }
 
-function del(id) { if (confirmDel()) { DB.del(STORAGE_KEY, id); render(); } }
+async function del(id) {
+  if (!confirmDel()) return;
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
+  if (existing && existing._backend) {
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 삭제할 수 없습니다.');
+      return;
+    }
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/crm/' + id, refetchKey: STORAGE_KEY });
+    if (!r.ok) {
+      alert('서버 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
+  }
+  render();
+}
 
 /* Drawer */
 function openDrawer(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   drawerId = id;
   document.getElementById("d-stage").textContent = stageMeta(d.status).en;
@@ -213,29 +252,51 @@ function toggleNoteForm() {
   f.style.display = (f.style.display === "none") ? "block" : "none";
   if (f.style.display === "block") document.getElementById("note-text").focus();
 }
-function addNote() {
+async function addNote() {
   if (!drawerId) return;
   const text = document.getElementById("note-text").value.trim();
   if (!text) return;
-  const d = DB.get(STORAGE_KEY).find(x => x.id === drawerId);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === drawerId);
   if (!d) return;
   const notes = (d.notes || []).concat([{ ts: new Date().toLocaleString('ko'), text }]);
-  DB.update(STORAGE_KEY, drawerId, { notes });
+  // backend Aiven `crm_customers.notes` 갱신 (배열은 JSON 컬럼).
+  if (window.daemuMirror) {
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/crm/' + drawerId,
+      body: { tags: d.tags || [], notes: (d.summary || '') + (text ? '\n[' + new Date().toLocaleString('ko') + '] ' + text : '') },
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) { alert('메모 저장 실패: ' + (r.error || ('HTTP ' + (r.status || 0)))); return; }
+  }
   document.getElementById("note-text").value = "";
   openDrawer(drawerId);
   render();
 }
-function changeStage(status) {
+async function changeStage(status) {
   if (!drawerId) return;
-  DB.update(STORAGE_KEY, drawerId, { status });
+  if (window.daemuMirror) {
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/crm/' + drawerId,
+      body: { status },
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) { alert('단계 변경 실패: ' + (r.error || ('HTTP ' + (r.status || 0)))); return; }
+  }
   openDrawer(drawerId);
   render();
 }
 function editFromDrawer() { const id = drawerId; closeDrawer(); openEdit(id); }
-function delFromDrawer() { const id = drawerId; if (confirmDel()) { closeDrawer(); DB.del(STORAGE_KEY, id); render(); } }
+async function delFromDrawer() {
+  const id = drawerId;
+  if (id == null) return;
+  closeDrawer();
+  // del() 자체가 confirm 다이얼로그 + backend 삭제 + 로컬 미러 갱신 처리.
+  await del(id);
+}
 
 render();
+hydrateFromBackend().then(render);
 
 
-Object.assign(window, { getAllTags, refreshTagFilter, fmtMoney, filtered, stageMeta, renderPipeline, render, openAdd, openEdit, resetForm, save, del, openDrawer, closeDrawer, toggleNoteForm, addNote, changeStage, editFromDrawer, delFromDrawer });
+Object.assign(window, { getAllTags, refreshTagFilter, fmtMoney, filtered, stageMeta, renderPipeline, render, openAdd, openEdit, resetForm, save, del, openDrawer, closeDrawer, toggleNoteForm, addNote, changeStage, editFromDrawer, delFromDrawer, hydrateFromBackend });
 })();

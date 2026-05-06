@@ -44,7 +44,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fr = document.getElementById("filter-role").value;
   const fa = document.getElementById("filter-active").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.name+" "+(d.person||"")).toLowerCase().includes(q)) &&
     (!fr || d.role === fr) &&
     (!fa || (d.active||"active") === fa)
@@ -83,7 +83,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   document.getElementById("f-name").value = d.name || "";
@@ -118,50 +118,65 @@ async function save() {
     active: document.getElementById("f-active").value,
     note: document.getElementById("f-note").value
   };
+  // 정책: backend Aiven 이 source of truth. backend 가 OK 일 때만 미러 갱신.
+  if (!window.daemuMirror) {
+    alert('백엔드 미연결 — 저장할 수 없습니다.');
+    return;
+  }
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, payload);
-    if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/partners/' + editingId, body: _toBackendPartner({ ...existing, ...payload }) });
-      if (!r.ok) alert('백엔드 동기화 실패');
-    }
-  } else if (window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/partners', body: _toBackendPartner(payload) });
-    if (r.ok && r.item && r.item.id != null) {
-      const all = DB.get(STORAGE_KEY);
-      all.unshift({ ...payload, id: r.item.id, _backend: true });
-      DB.set(STORAGE_KEY, all);
-    } else {
-      DB.add(STORAGE_KEY, payload);
-      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/partners/' + editingId,
+      body: _toBackendPartner({ ...(existing || {}), ...payload }),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
     }
   } else {
-    DB.add(STORAGE_KEY, payload);
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/partners', body: _toBackendPartner(payload),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   resetForm();
   render();
 }
 
 async function toggleActive(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   const next = d.active === "inactive" ? "active" : "inactive";
-  DB.update(STORAGE_KEY, id, { active: next });
-  if (d._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/partners/' + id, body: { status: next === 'inactive' ? '비활성' : '승인' } });
-    if (!r.ok) alert('백엔드 동기화 실패');
+  if (d._backend) {
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 상태 변경할 수 없습니다.');
+      return;
+    }
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/partners/' + id,
+      body: { status: next === 'inactive' ? '비활성' : '승인' },
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 상태 변경에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   render();
 }
 
 async function del(id) {
   if (!confirmDel()) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (existing && existing._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/partners/' + id });
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/partners/' + id, refetchKey: STORAGE_KEY });
     if (!r.ok) { alert('백엔드 삭제 실패'); return; }
   }
-  DB.del(STORAGE_KEY, id);
   render();
 }
 render();

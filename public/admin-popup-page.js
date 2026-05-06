@@ -109,7 +109,7 @@ function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
   const fp = document.getElementById("filter-position").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.title||"").toLowerCase().includes(q)) &&
     (!fs || (d.status||"active") === fs) &&
     (!fp || d.position === fp)
@@ -117,7 +117,7 @@ function filtered() {
 }
 
 function renderKPI() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   const active = all.filter(d => (d.status||"active") === "active").length;
   const imps = all.reduce((a,d) => a + (d.impressions||0), 0);
   const clicks = all.reduce((a,d) => a + (d.clicks||0), 0);
@@ -172,7 +172,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   pendingImage = d.image || null;
@@ -221,56 +221,69 @@ function buildPayload() {
 async function save() {
   const p = buildPayload();
   if (!p.title) { alert("제목을 입력하세요"); return; }
+  // 정책: backend Aiven 이 source of truth. backend 가 OK 일 때만 미러 갱신.
+  if (!window.daemuMirror) {
+    alert('백엔드 미연결 — 저장할 수 없습니다.');
+    return;
+  }
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, p);
-    if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/popups/' + editingId, body: _toBackendPopup({ ...existing, ...p }) });
-      if (!r.ok) alert('백엔드 동기화 실패');
-    }
-  } else if (window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'POST', endpoint: '/api/popups', body: _toBackendPopup(p) });
-    if (r.ok && r.item && r.item.id != null) {
-      const all = DB.get(STORAGE_KEY);
-      all.unshift({ ...p, id: r.item.id, _backend: true, impressions: 0, clicks: 0 });
-      DB.set(STORAGE_KEY, all);
-    } else {
-      DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
-      if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    const r = await window.daemuMirror({
+      method: 'PATCH', endpoint: '/api/popups/' + editingId,
+      body: _toBackendPopup({ ...(existing || {}), ...p }),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
     }
   } else {
-    DB.add(STORAGE_KEY, { ...p, impressions: 0, clicks: 0 });
+    const r = await window.daemuMirror({
+      method: 'POST', endpoint: '/api/popups', body: _toBackendPopup(p),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   resetForm();
   render();
 }
 
 async function toggleStatus(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   const next = d.status === "paused" ? "active" : "paused";
-  DB.update(STORAGE_KEY, id, { status: next });
-  if (d._backend && window.daemuMirror) {
-    await window.daemuMirror({ method: 'PATCH', endpoint: '/api/popups/' + id, body: { active: next === 'active' } });
+  if (d._backend) {
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 상태 변경할 수 없습니다.');
+      return;
+    }
+    const r = await window.daemuMirror({ method: 'PATCH', endpoint: '/api/popups/' + id, body: { active: next === 'active' }, refetchKey: STORAGE_KEY });
+    if (!r.ok) {
+      alert('서버 상태 변경에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
+  // backend = source of truth — auto-refetch 가 store 갱신.
   render();
 }
 
 async function del(id) {
   if (!confirmDel("이 팝업을 삭제하시겠습니까?")) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (existing && existing._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/popups/' + id });
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/popups/' + id, refetchKey: STORAGE_KEY });
     if (!r.ok) { alert('백엔드 삭제 실패'); return; }
   }
-  DB.del(STORAGE_KEY, id);
   render();
 }
 
 /* Preview — render the popup overlay using the same public-site CSS classes */
 function previewForm() { showPreview(buildPayload()); }
 function preview(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (d) showPreview(d);
 }
 function showPreview(popup) {

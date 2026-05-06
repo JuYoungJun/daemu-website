@@ -53,9 +53,30 @@ async function hydrateFromBackend() {
 
 function loadPartners() {
   const sel = document.getElementById("f-partner-pick");
-  const partners = DB.get("partners");
-  sel.innerHTML = '<option value="">— 등록된 파트너 선택 —</option>' +
-    partners.map(p => `<option value="${p.name}">${p.name} · ${p.role||""}</option>`).join("");
+  // 파트너 목록은 어드민 partners storeKey 의 hydrate 결과를 우선 사용.
+  // 본 페이지(/admin/orders) 가 마운트된 시점에 partners 가 hydrate 안 돼있을
+  // 수 있으므로 그 경우 backend 직접 fetch (캐시 갱신).
+  const cached = window.daemuRows ? window.daemuRows('partners') : [];
+  const fillFromList = (partners) => {
+    sel.innerHTML = '<option value="">— 등록된 파트너 선택 —</option>' +
+      partners.map(p => `<option value="${p.name || p.company_name || ''}">${p.name || p.company_name || ''} · ${p.role || ''}</option>`).join("");
+  };
+  if (cached && cached.length) {
+    fillFromList(cached);
+    return;
+  }
+  if (window.api && window.api.isConfigured && window.api.isConfigured()) {
+    window.api.get('/api/partners?page=1&page_size=500').then(r => {
+      if (r && r.ok && Array.isArray(r.items)) {
+        const partners = r.items.map(it => ({ name: it.company_name || '', role: it.category || '' }));
+        fillFromList(partners);
+      } else {
+        fillFromList([]);
+      }
+    }).catch(() => fillFromList([]));
+  } else {
+    fillFromList([]);
+  }
 }
 function onPickPartner() {
   const v = document.getElementById("f-partner-pick").value;
@@ -67,14 +88,14 @@ function fmtMoney(n){ return Number(n||0).toLocaleString('ko'); }
 function filtered() {
   const q = (document.getElementById("q").value || "").toLowerCase();
   const fs = document.getElementById("filter-status").value;
-  return DB.get(STORAGE_KEY).filter(d =>
+  return (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).filter(d =>
     (!q || (d.partner+" "+d.product).toLowerCase().includes(q)) &&
     (!fs || d.status === fs)
   );
 }
 
 function render() {
-  const all = DB.get(STORAGE_KEY);
+  const all = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []);
   document.getElementById("s-total").textContent = all.length;
   document.getElementById("s-new").textContent = all.filter(d=>d.status==="접수").length;
   document.getElementById("s-pending").textContent = all.filter(d=>d.status==="처리중").length;
@@ -127,7 +148,7 @@ function openAdd() {
 }
 
 function openEdit(id) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
   editingId = id;
   loadPartners();
@@ -175,24 +196,31 @@ async function save() {
     purchaseOrder: pf ? pf.value : "",
     attachments: pendingAttachments,
   };
+  // 정책: backend (Aiven MySQL) 가 source of truth. backend 가 OK 일 때만
+  // localStorage 미러 갱신. 실패 시 fake-success / 캐시 잔재 만들지 않음.
   if (editingId !== null) {
-    const existing = DB.get(STORAGE_KEY).find(x => x.id === editingId);
-    DB.update(STORAGE_KEY, editingId, payload);
-    if (existing && existing._backend && window.daemuMirror) {
-      const r = await window.daemuMirror({
-        method: 'PATCH',
-        endpoint: '/api/orders/' + editingId,
-        body: _toBackendOrderPayload({ ...existing, ...payload }),
-      });
-      if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+    const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === editingId);
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 저장할 수 없습니다.');
+      return;
     }
+    const r = await window.daemuMirror({
+      method: 'PATCH',
+      endpoint: '/api/orders/' + editingId,
+      body: _toBackendOrderPayload({ ...(existing || {}), ...payload }),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
+    // backend = source of truth — auto-refetch 가 store 갱신 완료. 추가 mirror 불필요.
   } else {
     // 신규 발주 — PO 번호 자동 생성 + 입력된 SKU 가 카탈로그에 있으면 재고 차감.
     if (typeof window.nextPoNumber === 'function') {
       payload.po_no = window.nextPoNumber();
     }
     // product 값에 SKU 형태(예: BAKERY-001) 가 들어있으면 재고 검증 + 차감.
-    // 재고 부족 시 발주 저장 자체를 차단 (발주 후 차감 실패가 아니라 사전 차단).
     if (typeof window.decrementStock === 'function' && qty > 0) {
       const m = /[A-Z][A-Z0-9_-]+-\d{3,}/.exec(String(product || ''));
       if (m && typeof window.getStock === 'function') {
@@ -203,35 +231,28 @@ async function save() {
         }
       }
     }
-    // backend 미러 — server id 우선 사용, 실패 시 client 측 임시 id.
-    if (window.daemuMirror) {
-      const r = await window.daemuMirror({
-        method: 'POST',
-        endpoint: '/api/orders',
-        body: _toBackendOrderPayload(payload),
-      });
-      if (r.ok && r.item && r.item.id != null) {
-        // server id 로 localStorage 추가
-        const all = DB.get(STORAGE_KEY);
-        const row = { ...payload, id: r.item.id, _backend: true,
-          date: r.item.created_at ? new Date(r.item.created_at).toLocaleDateString('ko-KR') : new Date().toLocaleDateString('ko-KR') };
-        all.unshift(row);
-        DB.set(STORAGE_KEY, all);
-        window.dispatchEvent(new Event('daemu-db-change'));
-      } else {
-        // backend 실패 시 localStorage 만 — 다음 hydrate 에서 정정될 수 있음.
-        DB.add(STORAGE_KEY, payload);
-        if (r.status !== 0) alert('백엔드 동기화 실패 — 임시로 화면에만 저장됨.');
-      }
-    } else {
-      DB.add(STORAGE_KEY, payload);
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 저장할 수 없습니다.');
+      return;
     }
+    const r = await window.daemuMirror({
+      method: 'POST',
+      endpoint: '/api/orders',
+      body: _toBackendOrderPayload(payload),
+      refetchKey: STORAGE_KEY,
+    });
+    if (!r.ok || !r.item || r.item.id == null) {
+      alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
+    // backend = source of truth — auto-refetch 가 store 갱신 완료. 화면 즉시 갱신용 dispatch 만.
+    try { window.dispatchEvent(new Event('daemu-db-change')); } catch (_) { /* ignore */ }
     if (typeof window.decrementStock === 'function' && qty > 0) {
       const m = /[A-Z][A-Z0-9_-]+-\d{3,}/.exec(String(product || ''));
       if (m) {
-        const r = window.decrementStock(m[0], qty, 'order:' + (payload.po_no || ''));
-        if (!r.ok && r.error === 'insufficient stock') {
-          alert(`재고 부족 (사후 검증) — ${m[0]} 잔여 ${r.current}, 요청 ${r.requested}. 운영자 확인 필요.`);
+        const sr = window.decrementStock(m[0], qty, 'order:' + (payload.po_no || ''));
+        if (!sr.ok && sr.error === 'insufficient stock') {
+          alert(`재고 부족 (사후 검증) — ${m[0]} 잔여 ${sr.current}, 요청 ${sr.requested}. 운영자 확인 필요.`);
         }
       }
     }
@@ -242,26 +263,33 @@ async function save() {
 }
 
 async function updateStatus(id, status) {
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
-  DB.update(STORAGE_KEY, id, { status });
-  if (existing && existing._backend && window.daemuMirror) {
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
+  if (existing && existing._backend) {
+    if (!window.daemuMirror) {
+      alert('백엔드 미연결 — 상태 변경할 수 없습니다.');
+      return;
+    }
     const r = await window.daemuMirror({
       method: 'PATCH',
       endpoint: '/api/orders/' + id,
       body: _toBackendOrderPayload({ ...existing, status }),
+      refetchKey: STORAGE_KEY,
     });
-    if (!r.ok) alert('백엔드 동기화 실패 — 화면에는 반영했으나 서버에는 저장되지 않았습니다.');
+    if (!r.ok) {
+      alert('서버 상태 변경에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+      return;
+    }
   }
   render();
 }
 async function del(id) {
   if (!confirmDel()) return;
-  const existing = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const existing = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (existing && existing._backend && window.daemuMirror) {
-    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/orders/' + id });
+    const r = await window.daemuMirror({ method: 'DELETE', endpoint: '/api/orders/' + id, refetchKey: STORAGE_KEY });
     if (!r.ok) { alert('백엔드 삭제 실패 — 다시 시도해 주세요.'); return; }
   }
-  DB.del(STORAGE_KEY, id);
+  // backend = source of truth — auto-refetch 가 store 갱신 완료.
   render();
 }
 
@@ -316,9 +344,20 @@ function renderAttachments() {
 
 /* Document send (계약서 / 발주서) */
 async function sendDoc(id, kind) {
-  const d = DB.get(STORAGE_KEY).find(x => x.id === id);
+  const d = (window.daemuRows ? window.daemuRows(STORAGE_KEY) : []).find(x => x.id === id);
   if (!d) return;
-  const partner = DB.get('partners').find(p => p.name === d.partner);
+  // 파트너 이메일 조회 — partners store(=Aiven) 우선, 없으면 backend 직접 fetch.
+  const cachedPartners = window.daemuRows ? window.daemuRows('partners') : [];
+  let partner = cachedPartners.find(p => (p.name || p.company_name) === d.partner);
+  if (!partner && window.api && window.api.isConfigured && window.api.isConfigured()) {
+    const pr = await window.api.get('/api/partners?page=1&page_size=500');
+    if (pr && pr.ok && Array.isArray(pr.items)) {
+      partner = pr.items.map(it => ({
+        name: it.company_name || '', email: it.email || '',
+        person: it.contact_name || '',
+      })).find(p => p.name === d.partner);
+    }
+  }
   const email = partner && partner.email;
   if (!email) { alert('해당 파트너의 이메일이 등록되어 있지 않습니다.'); return; }
 

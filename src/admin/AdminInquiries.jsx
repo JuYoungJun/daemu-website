@@ -1,23 +1,12 @@
-// 상담/문의 관리 — backend (POST /api/inquiries) 와 연동되는 React 페이지.
-//
-// 이전 버전은 RawPage로 public/admin-inquiries-page.js (전역 스크립트)를
-// 동적 로드하면서 window.api/window.DB에 의존했는데:
-//   1) globals.js가 dynamic-import이라 raw script보다 늦게 평가될 수 있음
-//      → window.api가 undefined → backend 호출 자체가 안 됨
-//   2) 빌드 시 VITE_API_BASE_URL이 비어있으면 backend가 "none"으로 인식
-//      → 모든 admin 동작이 localStorage 기반으로만 작동
-// 두 케이스 모두 사용자가 보고한 "수정/삭제 안 됨" 증상의 원인이었습니다.
-//
-// 이 컴포넌트는 lib/api.js를 직접 import하므로 두 케이스 모두에서 안정적이며
-// 백엔드 미연결(api.isConfigured() === false) 상태에서도 localStorage로
-// fallback 동작합니다.
+// 상담/문의 관리 — backend Aiven (`/api/inquiries`) 가 source of truth.
+// 정책 (2026-05): localStorage 직접 read/write 없음. React state 로 backend
+// 응답을 보관하고, 모든 mutation 후 backend 에서 다시 fetch.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import AdminHelp from '../components/AdminHelp.jsx';
 import { api } from '../lib/api.js';
-import { DB } from '../lib/db.js';
 import { sendAdminReply, isEmailEnabled } from '../lib/email.js';
 import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
@@ -57,7 +46,7 @@ function adaptFromBackend(it) {
 const STATUS_PILL_COLOR = { 신규: '#c0392b', 처리중: '#b87333', 답변완료: '#2e7d32' };
 
 export default function AdminInquiries() {
-  const [items, setItems] = useState(() => DB.get(STORAGE_KEY) || []);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
@@ -69,37 +58,21 @@ export default function AdminInquiries() {
   const reload = async () => {
     setLoading(true); setError('');
     try {
-      if (api.isConfigured()) {
-        const r = await api.get('/api/inquiries?page=1&page_size=500');
-        if (r.ok && Array.isArray(r.items)) {
-          const mapped = r.items.map(adaptFromBackend);
-          if (mapped.length > 0) {
-            // 백엔드에 데이터 있음 — 신뢰하고 사용 + 캐시 동기화.
-            DB.set(STORAGE_KEY, mapped);
-            setItems(mapped);
-          } else {
-            // 백엔드는 비어있지만 로컬 캐시에 데이터가 있을 수 있음.
-            // 호스트 cold-start / 일시 응답 지연 / DB 단절 직후 자주 발생.
-            // 사용자가 새로고침할 때 이미 보고 있던 데이터가 사라지는 것을
-            // 막기 위해 로컬 캐시를 fallback 으로 표시.
-            const local = DB.get(STORAGE_KEY) || [];
-            if (local.length > 0) {
-              setItems(local);
-              setError('백엔드 응답이 비어있어 로컬 캐시를 표시합니다. 잠시 후 새로고침하면 최신 데이터가 표시됩니다.');
-            } else {
-              setItems([]);
-            }
-          }
-        } else {
-          setError(r.error || '백엔드에서 문의 목록을 불러올 수 없습니다.');
-          setItems(DB.get(STORAGE_KEY) || []);
-        }
+      if (!api.isConfigured()) {
+        setItems([]);
+        setError('백엔드가 연결되어 있지 않습니다.');
+        return;
+      }
+      const r = await api.get('/api/inquiries?page=1&page_size=500');
+      if (r.ok && Array.isArray(r.items)) {
+        setItems(r.items.map(adaptFromBackend));
       } else {
-        setItems(DB.get(STORAGE_KEY) || []);
+        setError(r.error || '백엔드에서 문의 목록을 불러올 수 없습니다.');
+        setItems([]);
       }
     } catch (e) {
       setError(String(e));
-      setItems(DB.get(STORAGE_KEY) || []);
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -126,32 +99,30 @@ export default function AdminInquiries() {
   const updateStatus = async (id, status) => {
     const target = items.find((x) => x.id === id);
     if (!target) return;
-    setItems((prev) => prev.map((x) => x.id === id ? { ...x, status } : x));
-    DB.update(STORAGE_KEY, id, { status });
-
-    if (target._backend && api.isConfigured()) {
-      const r = await api.patch('/api/inquiries/' + id, {
-        status: STATUS_TO_API[status] || status,
-        replied: status === '답변완료',
-      });
-      if (!r.ok) {
-        siteAlert('백엔드 동기화 실패: ' + (r.error || ''));
-        setItems((prev) => prev.map((x) => x.id === id ? { ...x, status: target.status } : x));
-        DB.update(STORAGE_KEY, id, { status: target.status });
-        return;
-      }
+    if (!target._backend || !api.isConfigured()) {
+      siteAlert('백엔드 행이 아니거나 백엔드 미연결 — 상태 변경 불가.');
+      return;
     }
+    const r = await api.patch('/api/inquiries/' + id, {
+      status: STATUS_TO_API[status] || status,
+      replied: status === '답변완료',
+    });
+    if (!r.ok) {
+      siteAlert('서버 상태 변경에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
+      return;
+    }
+    await reload();
 
     if (status === '답변완료' && target.email && target.reply && target.reply.trim() && isEmailEnabled()) {
       if (await siteConfirm('회신 메모 내용을 ' + target.email + ' 로 발송할까요?')) {
         try {
-          const r = await sendAdminReply({
+          const mr = await sendAdminReply({
             to_email: target.email,
             to_name: target.name,
             subject: '[대무] 문의 회신',
             body: target.reply,
           });
-          siteAlert(r.ok ? '회신 메일 발송 완료' : '메일 발송 실패: ' + (r.error || r.reason || ''));
+          siteAlert(mr.ok ? '회신 메일 발송 완료' : '메일 발송 실패: ' + (mr.error || mr.reason || ''));
         } catch (err) {
           siteAlert('메일 발송 실패: ' + err);
         }
@@ -163,37 +134,49 @@ export default function AdminInquiries() {
     if (!(await siteConfirm('이 문의를 삭제하시겠습니까?'))) return;
     const target = items.find((x) => x.id === id);
     if (!target) return;
-
-    if (target._backend && api.isConfigured()) {
-      const r = await api.del('/api/inquiries/' + id);
-      if (!r.ok && r.status !== 204) {
-        siteAlert('백엔드 삭제 실패: ' + (r.error || ''));
-        return;
-      }
+    if (!target._backend || !api.isConfigured()) {
+      siteAlert('백엔드 행이 아니거나 백엔드 미연결 — 삭제 불가.');
+      return;
     }
-    DB.del(STORAGE_KEY, id);
-    setItems((prev) => prev.filter((x) => x.id !== id));
+    const r = await api.del('/api/inquiries/' + id);
+    if (!r.ok && r.status !== 204) {
+      siteAlert('서버 삭제에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
+      return;
+    }
+    await reload();
   };
 
   const saveEdit = async (form) => {
     if (!form.name?.trim()) { siteAlert('이름을 입력하세요.'); return; }
+    if (!api.isConfigured()) { siteAlert('백엔드가 연결되어 있지 않습니다.'); return; }
     if (form.id) {
       const target = items.find((x) => x.id === form.id);
-      const next = { ...target, ...form };
-      setItems((prev) => prev.map((x) => x.id === form.id ? next : x));
-      DB.update(STORAGE_KEY, form.id, form);
-      if (target?._backend && api.isConfigured()) {
-        const r = await api.patch('/api/inquiries/' + form.id, {
-          status: STATUS_TO_API[form.status] || form.status,
-          note: form.reply,
-          replied: form.status === '답변완료',
-        });
-        if (!r.ok) siteAlert('백엔드 동기화 실패: ' + (r.error || ''));
+      if (!target?._backend) { siteAlert('백엔드 행이 아닙니다.'); return; }
+      const r = await api.patch('/api/inquiries/' + form.id, {
+        status: STATUS_TO_API[form.status] || form.status,
+        note: form.reply,
+        replied: form.status === '답변완료',
+      });
+      if (!r.ok) {
+        siteAlert('서버 저장에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
+        return;
       }
     } else {
-      const newRow = DB.add(STORAGE_KEY, form);
-      setItems((prev) => [newRow, ...prev]);
+      // 어드민 측 직접 신규 등록 — backend `POST /api/inquiries` 공개 라우트 사용.
+      const r = await api.post('/api/inquiries', {
+        name: form.name || '',
+        phone: form.phone || '',
+        email: form.email || '',
+        category: form.type || '',
+        message: form.msg || '',
+        privacy_consent: true,
+      }, { skipAuth: true });
+      if (!r || !r.ok) {
+        siteAlert('서버 저장에 실패했습니다: ' + (r && (r.error || ('HTTP ' + r.status))));
+        return;
+      }
     }
+    await reload();
     setEditing(null);
     setCreating(false);
   };
