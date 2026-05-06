@@ -556,6 +556,34 @@ _crud(Partner, "partners",
       post_update=_partner_post_update)
 
 
+# Partner 비밀번호 시드 — 어드민 전용 별도 엔드포인트.
+# `password_hash` 자체는 `_crud(Partner)` allowed_fields 에 의도적으로 빼두었으므로
+# 외부에서 hash 를 직접 PATCH 할 수 없음. 본 엔드포인트는 plaintext 를 받아
+# bcrypt 로 해시한 후 저장 — 어드민(admin/developer) 권한 필요.
+class PartnerSetPasswordIn(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/partners/{partner_id}/set-password", status_code=200)
+async def set_partner_password(
+    partner_id: int,
+    payload: PartnerSetPasswordIn,
+    session: AsyncSession = Depends(get_session),
+    _u: AdminUser = Depends(require_perm("partners", "write")),
+):
+    from auth import hash_password as _hash_pw
+    partner = await session.get(Partner, partner_id)
+    if not partner:
+        raise HTTPException(404, detail="해당 파트너를 찾을 수 없습니다.")
+    partner.password_hash = _hash_pw(payload.password)
+    if partner.status == "대기":
+        # 신규 시드 — 자동 승인 (운영자가 명시적으로 비밀번호를 설정 = 로그인 가능 의도).
+        partner.status = "승인"
+        partner.approved_at = datetime.now(timezone.utc)
+    await session.flush()
+    return {"ok": True, "partner_id": partner.id, "status": partner.status}
+
+
 # ── Order: 발주 생성/수정 시 SKU 별 재고 차단 ──────────────────────────
 async def _order_pre_create(session, payload, request, _u):
     """발주 items 의 SKU + qty 가 가용 재고를 초과하면 400 차단. items 는
@@ -805,3 +833,162 @@ async def put_content(key: str, payload: ContentBlockIn, session: AsyncSession =
         block.value = payload.value
     await session.flush()
     return {"ok": True, "value": block.value}
+
+
+# ---------------------------------------------------------------------------
+# Promotion consume — increment usage_count when a coupon is redeemed.
+#
+# Public POST: paired with the partner shop / order checkout. Validation:
+#   · code or id 둘 중 하나로 식별
+#   · active=True 여야 함
+#   · usage_limit > 0 일 때 usage_count >= usage_limit 면 410 Gone
+#   · valid_from / valid_to 범위 외면 422
+# 멱등성: client_event_id (UUID) 가 같이 오면 같은 이벤트의 재호출은 +0.
+# 재호출 추적은 outbox(또는 별도 promotion_consume_log) 테이블 없이도 동작.
+# 본 demo 단계에서는 Redis 등 분산 멱등 캐시 없이 단일 DB 트랜잭션 + 재호출
+# 시 같은 client_event_id 라면 무시하는 in-memory dict 로 보강 (best-effort).
+# 운영 단계에서 promotion_consume_log 테이블을 추가해 강한 멱등 가능.
+
+class PromotionConsumeIn(BaseModel):
+    code: str | None = None
+    promotion_id: int | None = None
+    client_event_id: str | None = None  # 멱등성 token (UUID)
+    quantity: int = 1
+
+
+_promotion_consume_seen: set[str] = set()  # 단일 프로세스 내 best-effort 멱등 캐시
+_promotion_consume_seen_max = 5000
+
+
+@router.post("/promotions/consume", status_code=200)
+async def consume_promotion(
+    payload: PromotionConsumeIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Public — 쿠폰 적용 시 usage_count +n.
+    인증 미요구 (파트너 포털이 어드민 토큰 없이 호출). 동일 client_event_id 의
+    재호출은 in-memory dedup 으로 한 번만 +n 처리.
+    """
+    if not payload.code and not payload.promotion_id:
+        raise HTTPException(400, detail="code 또는 promotion_id 가 필요합니다.")
+
+    # in-memory dedup — 동일 프로세스/세션 안에서만 효과. 운영 단계 강화 예정.
+    if payload.client_event_id:
+        evt = str(payload.client_event_id)[:64]
+        if evt in _promotion_consume_seen:
+            # 이미 처리됨 — 현재 상태만 반환.
+            stmt = select(Promotion)
+            if payload.promotion_id:
+                stmt = stmt.where(Promotion.id == payload.promotion_id)
+            else:
+                stmt = stmt.where(Promotion.code == (payload.code or "").strip())
+            res = await session.execute(stmt)
+            promo = res.scalar_one_or_none()
+            if promo:
+                return {"ok": True, "already": True, "promotion": model_to_dict(promo)}
+            return {"ok": True, "already": True}
+
+    stmt = select(Promotion)
+    if payload.promotion_id:
+        stmt = stmt.where(Promotion.id == payload.promotion_id)
+    else:
+        stmt = stmt.where(Promotion.code == (payload.code or "").strip())
+    res = await session.execute(stmt)
+    promo = res.scalar_one_or_none()
+    if not promo:
+        raise HTTPException(404, detail="해당 쿠폰을 찾을 수 없습니다.")
+    if not promo.active:
+        raise HTTPException(409, detail="비활성 처리된 쿠폰입니다.")
+    now = datetime.now(timezone.utc)
+    if promo.valid_from and now < promo.valid_from:
+        raise HTTPException(422, detail="아직 사용 시작일 이전인 쿠폰입니다.")
+    if promo.valid_to and now > promo.valid_to:
+        raise HTTPException(410, detail="만료된 쿠폰입니다.")
+    qty = max(1, int(payload.quantity or 1))
+    if promo.usage_limit and (promo.usage_count + qty) > promo.usage_limit:
+        raise HTTPException(410, detail="사용 한도가 모두 소진된 쿠폰입니다.")
+
+    promo.usage_count = int(promo.usage_count or 0) + qty
+    await session.flush()
+
+    if payload.client_event_id:
+        evt = str(payload.client_event_id)[:64]
+        _promotion_consume_seen.add(evt)
+        if len(_promotion_consume_seen) > _promotion_consume_seen_max:
+            # naive eviction — 가장 오래된 N 개 정리.
+            for _ in range(1000):
+                _promotion_consume_seen.pop()
+
+    return {"ok": True, "promotion": model_to_dict(promo)}
+
+
+# ---------------------------------------------------------------------------
+# 어드민 KPI 집계 — `/admin/stats` 페이지가 backend GET 한 번으로 KPI 위젯
+# 전체를 채울 수 있도록. localStorage 다중 read 의존 제거.
+
+@router.get("/admin/stats")
+async def admin_stats(
+    session: AsyncSession = Depends(get_session),
+    _u: AdminUser = Depends(require_perm("monitoring", "read")),
+):
+    """모든 어드민 데이터셋의 행 수 집계. monitoring read 권한 (admin / developer).
+    각 카운트는 SELECT COUNT 한 번씩 — 무거운 페이지 스캔 없음.
+    """
+    from models import (
+        Inquiry, Partner, Order, Work, MailTemplate, Outbox, SitePopup,
+        CrmCustomer, Campaign, Promotion, ContentBlock, NewsletterSubscriber,
+        PartnerBrand, Announcement, Document, DocumentTemplate, ShortLink,
+        AdminUser as AdminUserModel,
+    )
+
+    async def _count(model):
+        try:
+            r = await session.execute(select(func.count()).select_from(model))
+            return int(r.scalar_one() or 0)
+        except Exception:
+            return 0
+
+    # 일부 옛 schema 의 partner.password_hash 누락 / media_assets 미생성 등
+    # 실패 시 0 반환 — 페이지가 깨지지 않도록.
+    try:
+        from models import MediaAsset  # noqa: WPS433
+        media_count = await _count(MediaAsset)
+    except Exception:
+        media_count = 0
+
+    # Promotion / Campaign 의 active 여부 또는 sent 등 상태별 분리.
+    promo_active = (await session.execute(
+        select(func.count()).select_from(Promotion).where(Promotion.active.is_(True))
+    )).scalar_one()
+    sub_active = (await session.execute(
+        select(func.count()).select_from(NewsletterSubscriber).where(NewsletterSubscriber.status == "active")
+    )).scalar_one()
+    pop_active = (await session.execute(
+        select(func.count()).select_from(SitePopup).where(SitePopup.active.is_(True))
+    )).scalar_one()
+
+    counts = {
+        "works": await _count(Work),
+        "inquiries": await _count(Inquiry),
+        "partners": await _count(Partner),
+        "orders": await _count(Order),
+        "crm": await _count(CrmCustomer),
+        "campaigns": await _count(Campaign),
+        "promotions": await _count(Promotion),
+        "promotions_active": int(promo_active or 0),
+        "popups": await _count(SitePopup),
+        "popups_active": int(pop_active or 0),
+        "mail_templates": await _count(MailTemplate),
+        "outbox": await _count(Outbox),
+        "newsletter_subscribers": await _count(NewsletterSubscriber),
+        "newsletter_active": int(sub_active or 0),
+        "partner_brands": await _count(PartnerBrand),
+        "announcements": await _count(Announcement),
+        "documents": await _count(Document),
+        "document_templates": await _count(DocumentTemplate),
+        "short_links": await _count(ShortLink),
+        "media": media_count,
+        "admin_users": await _count(AdminUserModel),
+    }
+    return {"ok": True, "counts": counts}

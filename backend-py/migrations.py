@@ -38,6 +38,11 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
     # AdminUser — 2FA 인증 앱 라벨 (Google Authenticator / Authy / 1Password / etc.)
     ("admin_users", "totp_app_label", "VARCHAR(40)", "DEFAULT ''"),
 
+    # Partner — backend partner-auth 도입(2026-05). 옛 schema 의 partners 테이블에
+    # password_hash / last_login_at 컬럼이 없을 수 있으므로 idempotent ALTER 로 보강.
+    ("partners", "password_hash", "VARCHAR(255)", "DEFAULT ''"),
+    ("partners", "last_login_at", "DATETIME", ""),
+
     # Product (inventory) — 옛 시점에 만들어진 `products` 테이블이 ORM 신규
     # 컬럼과 schema drift 면 INSERT 시 'Unknown column' 으로 500 발생.
     # `Base.metadata.create_all()` 는 새 테이블만 만들고 컬럼 추가는 안 함.
@@ -86,6 +91,9 @@ PENDING_INDEXES: list[tuple[str, str, str]] = [
     ("documents", "partner_id", "ix_documents_partner_id"),
     ("documents", "order_id", "ix_documents_order_id"),
     ("documents", "work_id", "ix_documents_work_id"),
+    # 미디어 라이브러리 — 라이브러리 그리드가 created_at DESC 정렬.
+    ("media_assets", "created_at", "ix_media_assets_created_at"),
+    ("media_assets", "url", "ix_media_assets_url"),
 ]
 
 

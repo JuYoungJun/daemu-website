@@ -100,7 +100,12 @@ class Inquiry(Base):
 
 
 class Partner(Base):
-    """B2B partner application / account."""
+    """B2B partner application / account.
+
+    파트너 로그인은 자체 backend 인증(`/api/partner-auth/login`) 로 동작 —
+    어드민 JWT 와 분리. JWT 의 `scope` 클레임이 'partner' 일 때만 partner-scoped
+    엔드포인트(`/api/partner/orders` 등) 호출 가능.
+    """
     __tablename__ = "partners"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -113,6 +118,7 @@ class Partner(Base):
     status: Mapped[str] = mapped_column(String(24), default="대기", index=True)
     password_hash: Mapped[str] = mapped_column(String(255), default="")
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     orders: Mapped[list["Order"]] = relationship(back_populates="partner")
@@ -623,4 +629,30 @@ class PartnerBrand(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class MediaAsset(Base):
+    """어드민 미디어 라이브러리 — 업로드된 파일의 메타데이터.
+
+    `/api/upload` 가 실제 파일을 Render disk(또는 미래 외부 storage) 에 저장하면
+    그 파일의 url + 메타정보를 본 테이블에 행 1건 추가. `/admin/media` 는 본
+    테이블을 GET 으로 read 해서 라이브러리 그리드를 그린다.
+
+    옛 동작: 메타가 브라우저 localStorage `daemu_media` 에만 남아 다른 PC 에서
+    같은 라이브러리를 보지 못함. 본 모델로 어드민 같은 계정이 어떤 환경에서
+    들어와도 동일 미디어 라이브러리를 보게 됨.
+    """
+    __tablename__ = "media_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(String(500), index=True)  # 절대/상대 URL
+    name: Mapped[str] = mapped_column(String(190), default="")  # 사용자 표기 이름
+    original_name: Mapped[str] = mapped_column(String(190), default="")  # 업로드 당시 파일명
+    content_type: Mapped[str] = mapped_column(String(120), default="")  # image/png 등
+    size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    alt: Mapped[str] = mapped_column(String(255), default="")  # 접근성 alt
+    tags: Mapped[list | dict | None] = mapped_column(JSON, default=list)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

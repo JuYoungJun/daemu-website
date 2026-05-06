@@ -205,6 +205,9 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "announcements": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
     # 재고 / SKU / LOT / 유통기한 관리.
     "inventory":     {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ},
+    # 미디어 라이브러리 메타데이터 — `/api/media` CRUD.
+    # 업로드 자체는 별도 `/api/upload` 가 file 처리.
+    "media":         {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
 }
 
 

@@ -569,6 +569,21 @@ app.include_router(inventory_router)
 from routes_resource import router as resource_router  # noqa: E402
 app.include_router(resource_router)
 
+# 미디어 라이브러리 메타 — 업로드된 파일의 이름 / 태그 / alt / 크기 등.
+# 실제 파일은 별도 /api/upload 가 처리하고, 메타만 Aiven `media_assets` 에 저장.
+from routes_media import router as media_router  # noqa: E402
+app.include_router(media_router)
+
+# 파트너 인증 — 어드민 JWT 와 분리된 partner-scoped JWT 발급/검증.
+# /partners 공개 페이지의 로그인 흐름이 본 라우터를 사용.
+from routes_partner_auth import router as partner_auth_router  # noqa: E402
+app.include_router(partner_auth_router)
+
+# 파트너 발주 — partner-scoped JWT 로 인증된 파트너만 호출 가능.
+# /partners 공개 페이지의 발주 폼이 본 엔드포인트를 사용해 Aiven `orders` 에 저장.
+from routes_partner_orders import router as partner_orders_router  # noqa: E402
+app.include_router(partner_orders_router)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
