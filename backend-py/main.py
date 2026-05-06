@@ -277,6 +277,34 @@ async def lifespan(_app: FastAPI):
         try:
             async with SessionLocal() as session:
                 await ensure_default_users(session)
+                # mail_template_lib 의 partner 자동회신 / 승인 안내 행 idempotent 시드.
+                # row 가 이미 있으면 건드리지 않음 — 운영자가 admin/mail-templates 에서
+                # 수정한 본문이 보존된다. 시드 이름과 partner mail helper 의 lookup
+                # name 이 동일해야 admin 수정 → 실제 발송 반영이 작동.
+                try:
+                    from sqlalchemy import select as _sa_select
+                    from models import MailTemplateLib
+                    _PARTNER_MAIL_SEED = [
+                        ("partner-application-received", "[DAEMU] 파트너 신청이 접수되었습니다",
+                         "{{company}} 담당자 {{person}} 님,\n\nDAEMU 파트너 신청이 정상 접수되었습니다.\n관리자 검토 후 승인되면 별도 안내 메일이 발송됩니다 (영업일 1–2일).\n\n  · 회사명: {{company}}\n  · 담당자: {{person}}\n  · 이메일: {{email}}\n  · 연락처: {{phone}}\n  · 신청 시각: {{submitted_at}}\n  · 현재 상태: {{status}}\n\n파트너 페이지: {{partner_url}}\n사이트: {{site_url}}\n\n본 메일은 자동 발송된 안내입니다. 비밀번호 같은 민감 정보는 포함하지 않습니다.\n\n감사합니다.\nDAEMU"),
+                        ("partner-approved", "[DAEMU] 파트너 계정이 활성화되었습니다",
+                         "{{company}} 담당자 {{person}} 님,\n\nDAEMU 파트너 계정이 승인/활성화되었습니다.\n이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.\n\n  · 로그인 이메일: {{email}}\n  · 비밀번호: 별도 안내드립니다 (보안상 메일에 포함하지 않습니다)\n  · 승인 시각: {{approved_at}}\n  · 상태: {{status}}\n\n파트너 페이지: {{partner_url}}\n사이트: {{site_url}}\n\n감사합니다.\nDAEMU"),
+                    ]
+                    for name, subject, body in _PARTNER_MAIL_SEED:
+                        existing = (await session.execute(
+                            _sa_select(MailTemplateLib).where(MailTemplateLib.name == name)
+                        )).scalar_one_or_none()
+                        if existing:
+                            continue
+                        session.add(MailTemplateLib(
+                            name=name, category="partner",
+                            subject=subject, body=body,
+                            variables=["company", "person", "email", "phone", "status", "submitted_at", "approved_at", "partner_url", "site_url"],
+                            active=True, created_by="seed:lifespan",
+                        ))
+                    await session.commit()
+                except Exception as _e:  # noqa: BLE001
+                    print(f"[seed] partner mail templates skipped: {_e!r}")
 
                 # ※ DAEMU_RESET_TOTP_EMAIL env 기반 2FA 리셋은 제거됨 (2026-05-01).
                 # 사유: 호스트별로 env 등록/삭제 절차가 달라(Render Dashboard

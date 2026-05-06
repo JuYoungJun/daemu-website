@@ -57,6 +57,61 @@ function nextId(list) {
 // 첫 진입 시 자동 시드되는 기본 템플릿 5종.
 // 이미 같은 이름이 있으면 건드리지 않습니다(idempotent).
 const SEED_TEMPLATES = [
+  // ── 파트너 신청 접수 자동회신 ─────────────────────────────────────
+  // backend `_send_partner_mail(kind="partner-application-received")` 가 같은
+  // name 으로 mail_template_lib row 조회 → 운영자가 본 화면에서 수정 시 실제
+  // 발송에도 즉시 반영. 비밀번호 평문 포함 X.
+  {
+    name: 'partner-application-received',
+    category: 'partner',
+    subject: '[DAEMU] 파트너 신청이 접수되었습니다',
+    body:
+`{{company}} 담당자 {{person}} 님,
+
+DAEMU 파트너 신청이 정상 접수되었습니다.
+관리자 검토 후 승인되면 별도 안내 메일이 발송됩니다 (영업일 1–2일).
+
+  · 회사명: {{company}}
+  · 담당자: {{person}}
+  · 이메일: {{email}}
+  · 연락처: {{phone}}
+  · 신청 시각: {{submitted_at}}
+  · 현재 상태: {{status}}
+
+파트너 페이지: {{partner_url}}
+사이트: {{site_url}}
+
+본 메일은 자동 발송된 안내입니다. 비밀번호 같은 민감 정보는 포함하지 않습니다.
+
+감사합니다.
+DAEMU`,
+    active: true,
+  },
+  // ── 파트너 승인/활성화 안내 ───────────────────────────────────────
+  // backend `_send_partner_mail(kind="partner-approved")` 가 같은 name 으로 조회.
+  // 비밀번호 평문 포함 X — 별도 안내 채널로 전달 (보안).
+  {
+    name: 'partner-approved',
+    category: 'partner',
+    subject: '[DAEMU] 파트너 계정이 활성화되었습니다',
+    body:
+`{{company}} 담당자 {{person}} 님,
+
+DAEMU 파트너 계정이 승인/활성화되었습니다.
+이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.
+
+  · 로그인 이메일: {{email}}
+  · 비밀번호: 별도 안내드립니다 (보안상 메일에 포함하지 않습니다)
+  · 승인 시각: {{approved_at}}
+  · 상태: {{status}}
+
+파트너 페이지: {{partner_url}}
+사이트: {{site_url}}
+
+감사합니다.
+DAEMU`,
+    active: true,
+  },
   {
     name: '신규 파트너 환영',
     category: 'partner',

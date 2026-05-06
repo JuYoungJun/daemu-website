@@ -788,12 +788,15 @@ async def _send_partner_mail(
     from models import MailTemplateLib, Outbox
     from main import send_email, email_provider, SMTP_FROM, SENDGRID_FROM
 
-    # 1) DB 템플릿 조회 (mail_template_lib) — 없으면 fallback 사용.
+    # 1) DB 템플릿 조회 (mail_template_lib.name == kind) — 없으면 fallback 사용.
+    # MailTemplateLib 스키마: id/name/category/subject/body/variables/active/...
+    # name 을 kind 와 동일 문자열로 매칭 — admin/mail-templates 화면이 그 row
+    # 를 수정하면 실제 발송에도 즉시 반영됨.
     subject_tpl = _PARTNER_MAIL_FALLBACK[kind]["subject"]
     body_tpl = _PARTNER_MAIL_FALLBACK[kind]["body"]
     try:
         tres = await session.execute(
-            select(MailTemplateLib).where(MailTemplateLib.kind == kind).limit(1)
+            select(MailTemplateLib).where(MailTemplateLib.name == kind).limit(1)
         )
         tpl = tres.scalar_one_or_none()
         if tpl and getattr(tpl, "active", True) is not False:
