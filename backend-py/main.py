@@ -55,7 +55,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import ensure_default_users, require_perm, router as auth_router, users_router
-from db import Base, SessionLocal, engine, get_session
+from db import Base, SessionLocal, engine, get_session, session_scope
 from models import Outbox  # noqa: F401 — also makes import side-effect register tables
 from routes_crud import router as crud_router
 
@@ -961,6 +961,27 @@ async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
     except Exception as e:  # noqa: BLE001
         smoke_orm["error"] = f"{type(e).__name__}: {str(e)[:400]}"
 
+    # commit-path smoke — get_session() 이 사용하는 session_scope 와 동일하게
+    # add → flush → commit. _crud() POST 와 정확히 같은 lifecycle 모사.
+    # 성공 시 즉시 DELETE 로 clean.
+    smoke_commit = {"attempted": False, "ok": False, "error": ""}
+    try:
+        async with session_scope() as _s2:
+            smoke_commit["attempted"] = True
+            obj2 = Work(slug="__schema_diag_smoke_commit__", title="__schema_diag_smoke_commit__")
+            _s2.add(obj2)
+            await _s2.flush()
+            inserted_id = obj2.id
+        # commit 끝났으면 별도 session 으로 DELETE.
+        async with session_scope() as _s3:
+            await _s3.execute(_sa_text(
+                "DELETE FROM works WHERE slug = '__schema_diag_smoke_commit__'"
+            ))
+        smoke_commit["ok"] = True
+        smoke_commit["inserted_id"] = inserted_id
+    except Exception as e:  # noqa: BLE001
+        smoke_commit["error"] = f"{type(e).__name__}: {str(e)[:600]}"
+
     # MySQL session-level sql_mode 확인 (strict mode 여부 진단).
     sql_mode = ""
     try:
@@ -975,6 +996,7 @@ async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
         "diff": diff,
         "smoke_works_raw_insert": smoke_raw,
         "smoke_works_orm_insert": smoke_orm,
+        "smoke_works_commit": smoke_commit,
         "sql_mode": sql_mode,
         "diag_error": last_error,
     }
