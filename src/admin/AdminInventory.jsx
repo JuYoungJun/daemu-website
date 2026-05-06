@@ -387,7 +387,7 @@ function LotsTab() {
       </div>
 
       <h3 className="admin-section-title">LOT 목록 ({lots.length})</h3>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="SKU 필터" value={filter.sku} onChange={(e) => setFilter(f => ({ ...f, sku: e.target.value }))}
           style={{ ...inputStyle, width: 200 }} />
         <select value={filter.within_days} onChange={(e) => setFilter(f => ({ ...f, within_days: e.target.value }))} style={{ ...inputStyle, width: 160 }}>
@@ -397,6 +397,30 @@ function LotsTab() {
           <option value="14">D-14 임박</option>
           <option value="0">이미 만료</option>
         </select>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="adm-btn-sm" disabled={!lots.length} onClick={() => {
+          const productNameBy = (sku) => (products.find((p) => p.sku === sku)?.name) || '';
+          const rows = lots.map((l) => ({
+            sku: l.sku,
+            product_name: productNameBy(l.sku),
+            lot_number: l.lot_number,
+            quantity: l.quantity || 0,
+            received_at: l.received_at ? l.received_at.slice(0, 10) : '',
+            expires_at: l.expires_at ? l.expires_at.slice(0, 10) : '',
+            supplier: l.supplier || '',
+            quarantined: l.quarantined ? 'Y' : '',
+          }));
+          downloadCSV('daemu-inventory-lots-' + new Date().toISOString().slice(0, 10) + '.csv', rows, [
+            { key: 'sku', label: 'SKU' },
+            { key: 'product_name', label: '상품명' },
+            { key: 'lot_number', label: 'LOT 번호' },
+            { key: 'quantity', label: '수량' },
+            { key: 'received_at', label: '입고일' },
+            { key: 'expires_at', label: '유통기한' },
+            { key: 'supplier', label: '공급사' },
+            { key: 'quarantined', label: '격리' },
+          ]);
+        }}>CSV 내보내기</button>
       </div>
       {loading ? <div style={{ padding: 24, color: '#8c867d' }}>불러오는 중…</div> : !lots.length ? (
         <div className="adm-doc-empty" style={{ padding: '24px 16px' }}>해당 LOT 없음</div>
@@ -405,7 +429,7 @@ function LotsTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #2a2724', background: '#faf8f5' }}>
-                <th style={th}>SKU</th><th style={th}>LOT</th><th style={th}>수량</th>
+                <th style={th}>SKU / 상품</th><th style={th}>LOT</th><th style={th}>수량</th>
                 <th style={th}>유통기한</th><th style={th}>상태</th><th style={th}>입고</th><th style={th}>관리</th>
               </tr>
             </thead>
@@ -415,11 +439,17 @@ function LotsTab() {
                 const isExpired = dleft != null && dleft < 0;
                 const isImminent = dleft != null && dleft >= 0 && dleft <= 3;
                 const isQuarantined = !!l.quarantined;
+                const product = products.find((p) => p.sku === l.sku);
                 return (
                   <tr key={l.id} style={{ borderBottom: '1px solid #e6e3dd', opacity: isQuarantined ? 0.55 : 1 }}>
-                    <td style={td}><code style={{ fontSize: 11 }}>{l.sku}</code></td>
-                    <td style={td}>{l.lot_number}</td>
-                    <td style={td}>{l.quantity || 0}</td>
+                    <td style={td}>
+                      <code style={{ fontSize: 11 }}>{l.sku}</code>
+                      {product?.name && (
+                        <div style={{ fontSize: 11, color: '#5a534b', marginTop: 2 }}>{product.name}</div>
+                      )}
+                    </td>
+                    <td style={td}><code style={{ fontSize: 11 }}>{l.lot_number}</code></td>
+                    <td style={{ ...td, fontWeight: 600 }}>{l.quantity || 0}</td>
                     <td style={{ ...td, fontSize: 11.5, color: isExpired ? '#c0392b' : isImminent ? '#b87333' : '#5a534b' }}>
                       {l.expires_at ? fmtDateOnly(l.expires_at) : '—'}
                       {dleft != null && (
