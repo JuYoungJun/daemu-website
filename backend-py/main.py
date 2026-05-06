@@ -932,21 +932,52 @@ async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
     except Exception as e:  # noqa: BLE001
         last_error = f"{type(e).__name__}: {str(e)[:300]}"
 
-    # 단일 INSERT smoke (Work 최소 row) + 즉시 rollback
-    smoke = {"attempted": False, "ok": False, "error": ""}
+    # 단일 INSERT smoke (Work 최소 row) + 즉시 rollback — raw SQL path
+    smoke_raw = {"attempted": False, "ok": False, "error": ""}
     try:
         async with engine.begin() as _conn:
-            smoke["attempted"] = True
+            smoke_raw["attempted"] = True
             await _conn.execute(_sa_text(
                 "INSERT INTO works (slug, title) VALUES "
                 "('__schema_diag_smoke__', '__schema_diag_smoke__')"
             ))
             await _conn.execute(_sa_text("DELETE FROM works WHERE slug = '__schema_diag_smoke__'"))
-            smoke["ok"] = True
+            smoke_raw["ok"] = True
     except Exception as e:  # noqa: BLE001
-        smoke["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+        smoke_raw["error"] = f"{type(e).__name__}: {str(e)[:400]}"
 
-    return {"ok": True, "diff": diff, "smoke_works_insert": smoke, "diag_error": last_error}
+    # ORM path smoke — Work(slug=..., title=...) 후 session.add + flush + rollback.
+    # _crud(Work) 의 POST 가 정확히 같은 path 사용 — 같은 error 가 나면 ORM 가
+    # Python-default 를 INSERT 에 포함시키지 않는다는 뜻 (drift 가 아닌 정의/dialect 문제).
+    smoke_orm = {"attempted": False, "ok": False, "error": ""}
+    try:
+        async with SessionLocal() as _s:
+            smoke_orm["attempted"] = True
+            obj = Work(slug="__schema_diag_smoke_orm__", title="__schema_diag_smoke_orm__")
+            _s.add(obj)
+            await _s.flush()
+            await _s.rollback()
+            smoke_orm["ok"] = True
+    except Exception as e:  # noqa: BLE001
+        smoke_orm["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+
+    # MySQL session-level sql_mode 확인 (strict mode 여부 진단).
+    sql_mode = ""
+    try:
+        async with engine.connect() as _conn:
+            r = await _conn.execute(_sa_text("SELECT @@SESSION.sql_mode"))
+            sql_mode = (r.scalar() or "")[:300]
+    except Exception as e:  # noqa: BLE001
+        sql_mode = f"err: {type(e).__name__}: {str(e)[:120]}"
+
+    return {
+        "ok": True,
+        "diff": diff,
+        "smoke_works_raw_insert": smoke_raw,
+        "smoke_works_orm_insert": smoke_orm,
+        "sql_mode": sql_mode,
+        "diag_error": last_error,
+    }
 
 
 # ---------------------------------------------------------------------------
