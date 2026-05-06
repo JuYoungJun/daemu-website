@@ -212,10 +212,13 @@ export const PartnerAuth = {
       return { ok: false, reason: 'too-short', error: '새 비밀번호는 8자 이상이어야 합니다.' };
     }
     if (api.isConfigured()) {
+      // skipAuth + 명시적 partner header — 같은 브라우저에 admin token 이
+      // 켜져 있어도 admin JWT 가 가지 않도록 명시 (backend 는 admin scope 토큰을
+      // 403 "partner-scoped token이 필요합니다" 로 거부).
       const r = await api.post('/api/partner-auth/change-password', {
         current_password: String(currentPassword || ''),
         new_password: String(newPassword),
-      });
+      }, { skipAuth: true, headers: authHeader() });
       if (r && r.ok) {
         // 캐시된 partner user 의 must_change_password 도 false 로 갱신.
         try {
