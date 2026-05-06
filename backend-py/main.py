@@ -982,6 +982,35 @@ async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
     except Exception as e:  # noqa: BLE001
         smoke_commit["error"] = f"{type(e).__name__}: {str(e)[:600]}"
 
+    # _crud() POST 의 정확한 path 를 시뮬 — payload dict → allowed_fields filter
+    # → model_to_dict(obj) 직렬화까지. traceback 전부를 캡처.
+    smoke_crud_clone = {"attempted": False, "ok": False, "error": "", "traceback": ""}
+    try:
+        from routes_crud import model_to_dict as _mtd
+        smoke_crud_clone["attempted"] = True
+        payload_simulated = {"slug": "__schema_diag_crud_clone__", "title": "Clone"}
+        allowed_fields = {
+            "slug", "title", "category", "summary", "content_md", "hero_image_url",
+            "gallery", "tags", "location", "year", "size_label", "floor_label",
+            "published", "sort_order",
+        }
+        data = {k: v for k, v in payload_simulated.items() if k in allowed_fields}
+        async with session_scope() as _s4:
+            obj4 = Work(**data)
+            _s4.add(obj4)
+            await _s4.flush()
+            inserted_dict = _mtd(obj4)
+        async with session_scope() as _s5:
+            await _s5.execute(_sa_text(
+                "DELETE FROM works WHERE slug = '__schema_diag_crud_clone__'"
+            ))
+        smoke_crud_clone["ok"] = True
+        smoke_crud_clone["item_keys"] = list(inserted_dict.keys())
+    except Exception as e:  # noqa: BLE001
+        import traceback as _tb
+        smoke_crud_clone["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+        smoke_crud_clone["traceback"] = "\n".join(_tb.format_exc().splitlines()[-15:])
+
     # MySQL session-level sql_mode 확인 (strict mode 여부 진단).
     sql_mode = ""
     try:
@@ -997,6 +1026,7 @@ async def schema_diag(_user = Depends(require_perm("monitoring", "read"))):
         "smoke_works_raw_insert": smoke_raw,
         "smoke_works_orm_insert": smoke_orm,
         "smoke_works_commit": smoke_commit,
+        "smoke_crud_clone": smoke_crud_clone,
         "sql_mode": sql_mode,
         "diag_error": last_error,
     }
