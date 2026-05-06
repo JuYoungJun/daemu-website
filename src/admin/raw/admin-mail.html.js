@@ -2,7 +2,17 @@ export default `<main class="page fade-up">
     <section class="wide">
       <a href="admin.html" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Auto-Reply</h1>
-      <p class="adm-section-desc">Contact 폼 / 상담 신규 등록 시 자동으로 발송되는 회신 메일을 관리합니다.<br>본문에 삽입한 이미지는 <strong>메일 본문 안에 그대로 박혀</strong> 발송됩니다 (파일 첨부 형태가 아님).</p>
+      <p class="adm-section-desc">Contact 폼 / 상담 / 파트너 신청·승인 시 자동 발송되는 회신 메일을 카테고리별로 관리합니다.<br>본문에 삽입한 이미지는 <strong>메일 본문 안에 그대로 박혀</strong> 발송됩니다 (파일 첨부 형태가 아님).</p>
+
+      <div class="adm-section" style="margin-bottom:14px">
+        <label style="font-size:12px;color:#5a534b;letter-spacing:.06em">카테고리 (자동회신 종류)</label>
+        <select id="m-kind" style="margin-top:6px;padding:8px 12px;border:1px solid #d7d4cf;border-radius:0;font-size:13px;min-width:280px">
+          <option value="auto-reply">상담/문의 자동회신 (auto-reply)</option>
+          <option value="partner-application-received">파트너 가입 신청 자동회신 (partner-application-received)</option>
+          <option value="partner-approved">파트너 계정 승인 안내 (partner-approved)</option>
+        </select>
+        <span style="margin-left:10px;font-size:11px;color:#8c867d">카테고리를 바꾸면 해당 메일의 본문이 로드됩니다. 수정 후 “저장”.</span>
+      </div>
 
       <div class="adm-section">
         <div class="adm-section-head">

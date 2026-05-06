@@ -760,7 +760,8 @@ _PARTNER_MAIL_FALLBACK = {
             "DAEMU 파트너 계정이 승인/활성화되었습니다.\n"
             "이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.\n\n"
             "─ 로그인 이메일: {{email}}\n"
-            "─ 비밀번호: 별도 안내드립니다 (보안상 메일에 포함하지 않습니다).\n"
+            "─ 처음 비밀번호: 신청 시 입력하신 휴대폰 번호의 끝 4자리 ({{phone_last4}})\n"
+            "─ 첫 로그인 후 비밀번호 변경을 안내드립니다.\n"
             "─ 승인 시각: {{approved_at}}\n"
             "─ 상태: {{status}}\n\n"
             "파트너 페이지: {{partner_url}}\n"
@@ -785,23 +786,35 @@ async def _send_partner_mail(
     DB 트랜잭션 자체는 caller (apply / set-password endpoint) 의 session_scope 가
     commit. 본 함수는 outbox row 만 add() — 발송 실패해도 상위 트랜잭션 영향 X.
     """
-    from models import MailTemplateLib, Outbox
+    from models import MailTemplate, MailTemplateLib, Outbox
     from main import send_email, email_provider, SMTP_FROM, SENDGRID_FROM
 
-    # 1) DB 템플릿 조회 (mail_template_lib.name == kind) — 없으면 fallback 사용.
-    # MailTemplateLib 스키마: id/name/category/subject/body/variables/active/...
-    # name 을 kind 와 동일 문자열로 매칭 — admin/mail-templates 화면이 그 row
-    # 를 수정하면 실제 발송에도 즉시 반영됨.
+    # 1) DB 템플릿 조회 — 우선순위:
+    #    (a) `mail_templates.kind == kind` → /admin/mail 카테고리 dropdown 이
+    #        편집하는 단일 row. 운영자가 가장 자주 보는 화면이라 우선.
+    #    (b) `mail_template_lib.name == kind` → /admin/mail-templates 라이브러리
+    #        의 partner 카테고리 row.
+    #    (c) hardcoded fallback (`_PARTNER_MAIL_FALLBACK`) — 둘 다 없을 때.
     subject_tpl = _PARTNER_MAIL_FALLBACK[kind]["subject"]
     body_tpl = _PARTNER_MAIL_FALLBACK[kind]["body"]
     try:
-        tres = await session.execute(
-            select(MailTemplateLib).where(MailTemplateLib.name == kind).limit(1)
+        # (a) /admin/mail 의 단일 row.
+        tres1 = await session.execute(
+            select(MailTemplate).where(MailTemplate.kind == kind).limit(1)
         )
-        tpl = tres.scalar_one_or_none()
-        if tpl and getattr(tpl, "active", True) is not False:
-            subject_tpl = tpl.subject or subject_tpl
-            body_tpl = tpl.body or body_tpl
+        tpl1 = tres1.scalar_one_or_none()
+        if tpl1 and getattr(tpl1, "active", True) is not False:
+            subject_tpl = tpl1.subject or subject_tpl
+            body_tpl = tpl1.body or body_tpl
+        else:
+            # (b) /admin/mail-templates 라이브러리 row.
+            tres2 = await session.execute(
+                select(MailTemplateLib).where(MailTemplateLib.name == kind).limit(1)
+            )
+            tpl2 = tres2.scalar_one_or_none()
+            if tpl2 and getattr(tpl2, "active", True) is not False:
+                subject_tpl = tpl2.subject or subject_tpl
+                body_tpl = tpl2.body or body_tpl
     except Exception:  # noqa: BLE001
         # mail_template_lib 가 없거나 schema 문제여도 fallback 으로 계속.
         pass
@@ -810,6 +823,10 @@ async def _send_partner_mail(
     partner_url = site_url + "/partners"
     submitted_at = (partner.created_at.isoformat() if partner.created_at else "")
     approved_at = (partner.approved_at.isoformat() if getattr(partner, "approved_at", None) else "")
+    # 처음 비밀번호 정책: 휴대폰 번호 끝 4자리 (숫자만 추출). frontend partnerAuth
+    # 의 default password 와 동일 — 신청자가 본 메일을 받고 즉시 로그인 가능.
+    phone_digits = re.sub(r"\D+", "", str(partner.phone or ""))
+    phone_last4 = phone_digits[-4:] if len(phone_digits) >= 4 else phone_digits
 
     vars_ = {
         "company": partner.company_name or "",
@@ -817,6 +834,7 @@ async def _send_partner_mail(
         "person": partner.contact_name or "",
         "email": partner.email or "",
         "phone": partner.phone or "",
+        "phone_last4": phone_last4,
         "status": partner.status or "",
         "submitted_at": submitted_at,
         "approved_at": approved_at,
@@ -995,7 +1013,13 @@ async def newsletter_unsubscribe(
 # Mail template — keyed by 'kind', special upsert behavior
 
 class MailTemplateUpsert(BaseModel):
-    kind: str = Field(pattern=r"^(auto-reply|admin-reply|document)$")
+    # `/admin/mail` 화면이 카테고리 dropdown 으로 다음 kind 들을 직접 편집:
+    #   · auto-reply                       — Contact 폼 자동회신 (공개 GET)
+    #   · admin-reply                      — admin 측 1:1 답신
+    #   · document                         — 견적/계약 첨부 메일
+    #   · partner-application-received     — 파트너 가입 신청 자동회신
+    #   · partner-approved                 — 파트너 승인/활성화 안내
+    kind: str = Field(pattern=r"^(auto-reply|admin-reply|document|partner-application-received|partner-approved)$")
     subject: str
     body: str = ""
     html: str | None = None

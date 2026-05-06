@@ -1,15 +1,35 @@
 (function() {
   'use strict';
 
-  const VARS = ['name', 'category', 'message', 'phone', 'email'];
-
-  const defaults = {
-    subject: "[대무] 문의가 접수되었습니다",
-    body: "{{name}} 님,\n\n대무에 문의해 주셔서 감사합니다.\n아래 내용으로 접수되었으며, 1-2 영업일 내 담당자가 회신드리겠습니다.\n\n─ 카테고리: {{category}}\n─ 문의 내용:\n{{message}}\n\n감사합니다.\n대무 (DAEMU)\n061-335-1239\ndaemu_office@naver.com",
-    active: "on",
-    category: "all",
-    images: []
+  // 카테고리(=kind)별 변수 가이드 — 본문 작성 시 자동 완성 dropdown 에 노출.
+  const VARS_BY_KIND = {
+    'auto-reply': ['name', 'category', 'message', 'phone', 'email'],
+    'partner-application-received': ['company', 'person', 'email', 'phone', 'status', 'submitted_at', 'partner_url', 'site_url'],
+    'partner-approved': ['company', 'person', 'email', 'phone', 'phone_last4', 'status', 'approved_at', 'partner_url', 'site_url'],
   };
+  const VARS = VARS_BY_KIND['auto-reply'];
+
+  // 카테고리별 default 본문 — backend / localStorage 모두 비어 있을 때 처음 보이는 값.
+  const DEFAULTS_BY_KIND = {
+    'auto-reply': {
+      subject: "[대무] 문의가 접수되었습니다",
+      body: "{{name}} 님,\n\n대무에 문의해 주셔서 감사합니다.\n아래 내용으로 접수되었으며, 1-2 영업일 내 담당자가 회신드리겠습니다.\n\n─ 카테고리: {{category}}\n─ 문의 내용:\n{{message}}\n\n감사합니다.\n대무 (DAEMU)\n061-335-1239\ndaemu_office@naver.com",
+      active: "on", category: "all", images: [],
+    },
+    'partner-application-received': {
+      subject: "[DAEMU] 파트너 신청이 접수되었습니다",
+      body: "{{company}} 담당자 {{person}} 님,\n\nDAEMU 파트너 신청이 정상 접수되었습니다.\n관리자 검토 후 승인되면 별도 안내 메일이 발송됩니다 (영업일 1–2일).\n\n─ 회사명: {{company}}\n─ 담당자: {{person}}\n─ 이메일: {{email}}\n─ 연락처: {{phone}}\n─ 신청 시각: {{submitted_at}}\n─ 현재 상태: {{status}}\n\n파트너 페이지: {{partner_url}}\n사이트: {{site_url}}\n\n본 메일은 자동 발송된 안내입니다. 비밀번호 같은 민감 정보는 포함하지 않습니다.\n\n감사합니다.\nDAEMU",
+      active: "on", category: "partner", images: [],
+    },
+    'partner-approved': {
+      subject: "[DAEMU] 파트너 계정이 활성화되었습니다",
+      body: "{{company}} 담당자 {{person}} 님,\n\nDAEMU 파트너 계정이 승인/활성화되었습니다.\n이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.\n\n  · 로그인 이메일: {{email}}\n  · 처음 비밀번호: 신청 시 입력하신 휴대폰 번호의 끝 4자리 ({{phone_last4}})\n  · 첫 로그인 후 비밀번호 변경을 안내드립니다.\n  · 승인 시각: {{approved_at}}\n  · 상태: {{status}}\n\n파트너 페이지: {{partner_url}}\n사이트: {{site_url}}\n\n감사합니다.\nDAEMU",
+      active: "on", category: "partner", images: [],
+    },
+  };
+  // 현재 선택된 kind — 카테고리 dropdown 변경 시 갱신. default 'auto-reply'.
+  let currentKind = 'auto-reply';
+  const defaults = DEFAULTS_BY_KIND['auto-reply'];
 
   // images: [{ contentId, filename, content (base64), previewUrl (data:url) }]
   let imagesCache = [];
@@ -135,31 +155,63 @@
   }
 
   function load() {
-    // 1) localStorage 캐시로 즉시 화면 채움 (깜빡임 방지)
-    const local = JSON.parse(localStorage.getItem("daemu_mail") || "null") || defaults;
-    applyTemplate(local);
-    // 2) backend 에서 fresh fetch — 성공 시 캐시 갱신 + DOM 갱신
-    hydrateFromBackend();
+    // 카테고리 dropdown 의 변경 이벤트 — 선택된 kind 의 본문 다시 로드.
+    const sel = document.getElementById('m-kind');
+    if (sel && !sel.dataset.bound) {
+      sel.dataset.bound = '1';
+      sel.addEventListener('change', () => switchKind(sel.value));
+      currentKind = sel.value || 'auto-reply';
+    }
+    // 1) localStorage per-kind 캐시로 즉시 화면 채움 (깜빡임 방지).
+    let local = null;
+    try {
+      const cached = localStorage.getItem('daemu_mail__' + currentKind);
+      if (cached) local = JSON.parse(cached);
+    } catch (_) { /* ignore */ }
+    applyTemplate(local || (DEFAULTS_BY_KIND[currentKind] || defaults));
+    // 2) backend 에서 fresh fetch — 성공 시 캐시 갱신 + DOM 갱신.
+    hydrateFromBackend(currentKind);
   }
 
-  async function hydrateFromBackend() {
+  async function hydrateFromBackend(kind) {
+    const k = kind || currentKind;
+    const fallback = DEFAULTS_BY_KIND[k] || DEFAULTS_BY_KIND['auto-reply'];
     try {
-      if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) return;
-      const r = await window.api.get('/api/mail-template/auto-reply');
-      if (!r || !r.ok || !r.template) return;
-      const t = r.template || {};
-      // backend → frontend shape 매핑. backend 는 { kind, subject, body, active(bool), category, images }.
-      const mapped = {
-        subject: t.subject || defaults.subject,
-        body: t.body || defaults.body,
+      if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
+        applyTemplate(fallback);
+        return;
+      }
+      const r = await window.api.get('/api/mail-template/' + encodeURIComponent(k));
+      const t = r && r.ok ? (r.template || null) : null;
+      const mapped = t ? {
+        subject: t.subject || fallback.subject,
+        body: t.body || fallback.body,
         active: t.active === false ? 'off' : 'on',
-        category: t.category || defaults.category,
+        category: t.category || fallback.category,
         images: Array.isArray(t.images) ? t.images : [],
-      };
-      try { localStorage.setItem('daemu_mail', JSON.stringify(mapped)); }
+      } : fallback;
+      try { localStorage.setItem('daemu_mail__' + k, JSON.stringify(mapped)); }
       catch (_) { /* ignore */ }
       applyTemplate(mapped);
-    } catch (_) { /* offline — localStorage 캐시로 진행 */ }
+    } catch (_) {
+      applyTemplate(fallback);
+    }
+  }
+
+  // 카테고리 dropdown 변경 시 호출 — 선택된 kind 의 본문/제목을 다시 로드.
+  async function switchKind(nextKind) {
+    if (!nextKind) return;
+    currentKind = nextKind;
+    // 변수 dropdown 갱신 (있으면).
+    try {
+      const list = VARS_BY_KIND[currentKind] || VARS_BY_KIND['auto-reply'];
+      const sel = document.getElementById('m-var-insert');
+      if (sel) {
+        sel.innerHTML = '<option value="">변수 삽입…</option>' +
+          list.map(v => `<option value="${v}">{{${v}}}</option>`).join('');
+      }
+    } catch (_) { /* ignore */ }
+    await hydrateFromBackend(currentKind);
   }
 
   // Update HTML preview iframe
@@ -230,9 +282,10 @@
       return;
     }
     let r;
+    const kindToSave = currentKind || 'auto-reply';
     try {
-      r = await window.api.put('/api/mail-template/auto-reply', {
-        kind: 'auto-reply',
+      r = await window.api.put('/api/mail-template/' + encodeURIComponent(kindToSave), {
+        kind: kindToSave,
         subject, body,
         active: active !== 'off',
         category,
@@ -244,7 +297,7 @@
       alert('서버 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + errMsg + ')');
       return;
     }
-    try { localStorage.setItem('daemu_mail', JSON.stringify({ subject, body, active, category, images })); }
+    try { localStorage.setItem('daemu_mail__' + kindToSave, JSON.stringify({ subject, body, active, category, images })); }
     catch (_) { /* ignore — 화면 캐시 갱신 실패는 무시 */ }
     alert('저장되었습니다 — 모든 환경에 반영.\n이후 신규 문의 발송부터 새 템플릿이 적용됩니다.');
   }
