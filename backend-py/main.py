@@ -317,6 +317,34 @@ async def lifespan(_app: FastAPI):
                 except Exception as _e:  # noqa: BLE001
                     print(f"[seed] partner mail templates skipped: {_e!r}")
 
+                # status='대기' + password_hash='' 인 옛 partner row 들에 대해
+                # 휴대폰 끝 4자리로 password_hash 한 번만 시드. fix 이전에 신청한
+                # row 들이 admin "활성화" 후 휴대폰 끝 4자리로 즉시 로그인 가능
+                # 하도록. 이미 password_hash 가 있으면 절대 건드리지 않음 (운영자
+                # 가 이미 set 한 비밀번호 보존).
+                try:
+                    import re as _re
+                    from sqlalchemy import select as _sa_select
+                    from models import Partner
+                    from auth import hash_password as _hash_pw
+                    pending = (await session.execute(
+                        _sa_select(Partner).where(
+                            Partner.status == "대기",
+                            (Partner.password_hash == None) | (Partner.password_hash == ""),  # noqa: E711
+                        )
+                    )).scalars().all()
+                    fixed = 0
+                    for p in pending:
+                        digits = _re.sub(r"\D+", "", str(p.phone or ""))
+                        if len(digits) >= 4:
+                            p.password_hash = _hash_pw(digits[-4:])
+                            fixed += 1
+                    if fixed:
+                        await session.commit()
+                        print(f"[seed] partner phone-last4 password backfill: {fixed} row(s)")
+                except Exception as _e:  # noqa: BLE001
+                    print(f"[seed] partner password backfill skipped: {_e!r}")
+
                 # ※ DAEMU_RESET_TOTP_EMAIL env 기반 2FA 리셋은 제거됨 (2026-05-01).
                 # 사유: 호스트별로 env 등록/삭제 절차가 달라(Render Dashboard
                 # vs Cafe24 systemd EnvironmentFile + restart) 운영자 실수 +
