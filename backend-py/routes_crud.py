@@ -836,6 +836,42 @@ async def put_content(key: str, payload: ContentBlockIn, session: AsyncSession =
 
 
 # ---------------------------------------------------------------------------
+# 공개 read 엔드포인트 — 어드민 인증 없이 사용자 페이지에서 호출.
+# `_crud(Work)` / `_crud(SitePopup)` / `_crud(PartnerBrand)` 의 GET 은
+# admin-scoped 라, 공개 사이트가 호출 시 401 이 됨. 본 별도 라우트가 published /
+# active 필터된 read-only 응답을 제공.
+
+@router.get("/works/public")
+async def list_public_works(session: AsyncSession = Depends(get_session)):
+    """공개 사이트의 `/work` / `/work/{slug}` 가 호출. published=True 만 반환."""
+    res = await session.execute(
+        select(Work).where(Work.published == True).order_by(Work.sort_order, desc(Work.created_at))  # noqa: E712
+    )
+    rows = res.scalars().all()
+    return {"ok": True, "items": [model_to_dict(r) for r in rows]}
+
+
+@router.get("/popups/visible")
+async def list_visible_popups(session: AsyncSession = Depends(get_session)):
+    """공개 사이트의 `useSitePopups` 가 호출. active=True 만 반환."""
+    res = await session.execute(
+        select(SitePopup).where(SitePopup.active == True).order_by(desc(SitePopup.created_at))  # noqa: E712
+    )
+    rows = res.scalars().all()
+    return {"ok": True, "items": [model_to_dict(r) for r in rows]}
+
+
+@router.get("/partner-brands/visible")
+async def list_visible_partner_brands(session: AsyncSession = Depends(get_session)):
+    """공개 사이트의 `Home` 페이지 '함께하는 파트너사' 섹션이 호출. active=True 만."""
+    res = await session.execute(
+        select(PartnerBrand).where(PartnerBrand.active == True).order_by(PartnerBrand.sort_order, PartnerBrand.id)  # noqa: E712
+    )
+    rows = res.scalars().all()
+    return {"ok": True, "items": [model_to_dict(r) for r in rows]}
+
+
+# ---------------------------------------------------------------------------
 # Promotion consume — increment usage_count when a coupon is redeemed.
 #
 # Public POST: paired with the partner shop / order checkout. Validation:

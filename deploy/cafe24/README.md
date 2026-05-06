@@ -1,5 +1,10 @@
 # Cafe24 VPS 배포 — 30분 가이드
 
+> 📌 **본 가이드는 *추후 Cafe24 이전 시점*에만 사용됩니다.**
+> 현재 운영 데모 (GitHub Pages + Render + Aiven) 는 본 디렉토리의 `.env`,
+> `setup.sh`, `deploy.sh`, systemd unit 을 *전혀 사용하지 않습니다*. backend
+> 환경변수는 모두 Render Dashboard → Environment Variables 에서 관리.
+>
 > Cafe24 클라우드 서버(Ubuntu 22.04 LTS) 구매 후 처음 ssh 접속한 시점부터 첫 배포까지.
 > 서버: 1Core / 1GB / SSD 50GB (월 ~9,900원) 기준. 트래픽 늘면 콘솔에서 한 클릭 업그레이드.
 
