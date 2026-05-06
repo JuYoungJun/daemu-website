@@ -18,7 +18,7 @@ export default function AdminMedia() {
   return (
     <AdminShell>
       <PageActions>
-        <RawPageCsvButton storageKey="media" filename="daemu-media" columns={MEDIA_CSV_COLUMNS} />
+        <RawPageCsvButton storageKey="media" apiPath="/api/media?page_size=500" filename="daemu-media" columns={MEDIA_CSV_COLUMNS} />
         <GuideButton GuideComponent={MediaGuide} />
       </PageActions>
       <AdminHelp title="미디어 관리 사용 안내" items={[
