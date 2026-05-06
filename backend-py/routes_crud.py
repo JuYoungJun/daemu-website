@@ -304,6 +304,7 @@ async def create_inquiry(
     inq = Inquiry(**data, privacy_consent_at=datetime.now(timezone.utc))
     session.add(inq)
     await session.flush()
+    await session.refresh(inq)
     inquiry_dict = model_to_dict(inq)
     # Capture values BEFORE returning — the inq instance becomes detached.
     auto_args = dict(
@@ -378,6 +379,7 @@ async def update_inquiry(inquiry_id: int, payload: InquiryUpdate, session: Async
         if obj.status == "신규":
             obj.status = "답변완료"
     await session.flush()
+    await session.refresh(obj)
     return {"ok": True, "inquiry": model_to_dict(obj)}
 
 
@@ -588,6 +590,7 @@ async def set_partner_password(
         partner.status = "승인"
         partner.approved_at = datetime.now(timezone.utc)
     await session.flush()
+    await session.refresh(partner)
     return {"ok": True, "partner_id": partner.id, "status": partner.status}
 
 

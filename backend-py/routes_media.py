@@ -120,6 +120,8 @@ async def create_media(
     )
     session.add(asset)
     await session.flush()
+    # SQLAlchemy 2.x async + server-side default(created_at) lazy-load 회피.
+    await session.refresh(asset)
     return {"ok": True, "item": _model_to_dict(asset)}
 
 
@@ -140,6 +142,7 @@ async def update_media(
     if payload.tags is not None:
         asset.tags = list(payload.tags)
     await session.flush()
+    await session.refresh(asset)
     return {"ok": True, "item": _model_to_dict(asset)}
 
 

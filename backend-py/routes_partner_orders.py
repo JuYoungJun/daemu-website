@@ -109,6 +109,7 @@ async def create_partner_order(
     )
     session.add(order)
     await session.flush()
+    await session.refresh(order)
     return {"ok": True, "item": _order_to_dict(order)}
 
 
@@ -134,4 +135,5 @@ async def cancel_partner_order(
     if payload.reason:
         order.note = (order.note or "") + f"\n[취소 사유] {payload.reason.strip()[:500]}"
     await session.flush()
+    await session.refresh(order)
     return {"ok": True, "item": _order_to_dict(order)}
