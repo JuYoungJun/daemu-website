@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DB } from '../lib/db.js';
+import { api } from '../lib/api.js';
 import { safeUrl, safeMediaUrl } from '../lib/safe.js';
 
 // Drives the site-popup overlay on public pages.
@@ -41,45 +41,79 @@ function sanitisePopup(raw) {
   });
 }
 
+// 공개 사이트 팝업은 backend Aiven `site_popups` 가 source of truth.
+// 본 hook 은 `/api/popups/visible` (active=True) 만 fetch.
+// "보지 않기" 같은 사용자 클라이언트 환경 dismiss 정보만 localStorage 에 보관 —
+// 서비스 데이터 아님 (브라우저 단위 UX 상태).
+//
+// backend popup 모델 매핑: page_key/active/scheduled_start/scheduled_end/title/body/
+//                          image_url/cta_label/cta_href/placement/frequency.
+
+function _mapBackendPopup(it) {
+  return {
+    id: Number(it.id) || 0,
+    title: it.title || '',
+    body: it.body || '',
+    image: it.image_url || '',
+    ctaText: it.cta_label || '',
+    ctaUrl: it.cta_href || '',
+    position: it.placement || 'center',
+    frequency: it.frequency || 'always',
+    delay: 0,
+    status: it.active === false ? 'paused' : 'active',
+    from: it.scheduled_start || '',
+    to: it.scheduled_end || '',
+    page_key: it.page_key || 'all',
+  };
+}
+
 export function useSitePopups(pageKey) {
   const [popup, setPopup] = useState(null);
 
   useEffect(() => {
     if (!pageKey || pageKey === 'admin') return;
-    const popups = DB.get('popups');
-    if (!popups.length) return;
+    let alive = true;
+    let timer = null;
+    (async () => {
+      // backend 미연결이면 popup 미표시 (정책 — localStorage 시드 사용 금지).
+      if (!api.isConfigured()) return;
+      let items = [];
+      try {
+        const r = await api.get('/api/popups/visible');
+        if (r && r.ok && Array.isArray(r.items)) items = r.items.map(_mapBackendPopup);
+      } catch { /* network error — silent */ }
+      if (!alive || !items.length) return;
 
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const eligible = items.filter((p) => {
+        if (p.status !== 'active') return false;
+        if (p.from && new Date(p.from) > now) return false;
+        if (p.to && new Date(String(p.to).slice(0, 10) + 'T23:59:59') < now) return false;
+        const target = p.page_key || 'all';
+        if (target !== 'all' && target !== pageKey) return false;
+        const dismissed = localStorage.getItem('daemu_popup_dismissed_' + p.id);
+        if (dismissed) {
+          if (p.frequency === 'once') return false;
+          if (p.frequency === 'daily' && dismissed === today) return false;
+        }
+        return true;
+      });
+      if (!eligible.length) return;
 
-    const eligible = popups.filter((p) => {
-      if (p.status !== 'active') return false;
-      if (p.from && new Date(p.from) > now) return false;
-      if (p.to && new Date(p.to + 'T23:59:59') < now) return false;
-      const targets = p.targetPages || ['all'];
-      if (!targets.includes('all') && !targets.includes(pageKey)) return false;
-      const dismissed = localStorage.getItem('daemu_popup_dismissed_' + p.id);
-      if (dismissed) {
-        if (p.frequency === 'once') return false;
-        if (p.frequency === 'daily' && dismissed === today) return false;
-      }
-      return true;
-    });
-    if (!eligible.length) { setPopup(null); return; }
-
-    const sanitised = sanitisePopup(eligible[0]);
-    if (!sanitised) return;
-    bumpMetric(sanitised.id, 'impressions');
-
-    const delayMs = sanitised.delay * 1000;
-    const timer = setTimeout(() => setPopup(sanitised), Math.max(800, delayMs));
-    return () => { clearTimeout(timer); setPopup(null); };
+      const sanitised = sanitisePopup(eligible[0]);
+      if (!sanitised) return;
+      const delayMs = sanitised.delay * 1000;
+      timer = setTimeout(() => { if (alive) setPopup(sanitised); }, Math.max(800, delayMs));
+    })();
+    return () => { alive = false; if (timer) clearTimeout(timer); setPopup(null); };
   }, [pageKey]);
 
   return popup;
 }
 
 // Called from the close handler of the React-rendered popup.
+// localStorage 사용은 사용자 단위 dismiss UX 상태 한정 (서비스 데이터 X).
 export function dismissPopup(p, withSkipChecked) {
   if (!p) return;
   const today = new Date().toISOString().slice(0, 10);
@@ -90,13 +124,6 @@ export function dismissPopup(p, withSkipChecked) {
   }
 }
 
-export function bumpMetric(id, key) {
-  try {
-    const popups = JSON.parse(localStorage.getItem('daemu_popups')) || [];
-    const i = popups.findIndex((x) => x.id === id);
-    if (i >= 0) {
-      popups[i][key] = (popups[i][key] || 0) + 1;
-      localStorage.setItem('daemu_popups', JSON.stringify(popups));
-    }
-  } catch (e) { /* ignore */ }
-}
+// impressions / clicks 집계는 backend 모델에 컬럼이 없어 운영 단계에서
+// 별도 분석 endpoint 도입 예정. demo 단계는 측정 안 함.
+export function bumpMetric(_id, _key) { /* noop */ }

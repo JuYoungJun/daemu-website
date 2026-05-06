@@ -171,6 +171,12 @@ export default function AdminMonitoring() {
   const [probeResults, setProbeResults] = useState({});  // { key: { status, latency, error, ts } }
   const [probeRunning, setProbeRunning] = useState(false);
   const [probeLastRun, setProbeLastRun] = useState(null);
+  // 어드민 KPI — backend /api/admin/stats 단일 호출. localStorage 의 daemu_*
+  // 서비스 데이터를 source-of-truth 로 쓰던 옛 KPI/콘텐츠 헬스 계산을 모두
+  // 이 state 로 대체.
+  const [statsCounts, setStatsCounts] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(null);
 
   useEffect(() => {
     installRuntimeListeners();
@@ -209,6 +215,39 @@ export default function AdminMonitoring() {
     probe();
     // 실시간급 — 15초 주기 (이전 60초). 사용자 요청.
     const id = setInterval(probe, 15_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  // 어드민 KPI 카운트 — backend /api/admin/stats 단일 호출 (60초 주기).
+  // 인증 / 권한 / 백엔드 미연결 시 친절한 한국어 에러 표시. localStorage
+  // fallback 은 일부러 제거 — 서비스 데이터의 source-of-truth 는 Aiven MySQL.
+  useEffect(() => {
+    let alive = true;
+    const fetchStats = async () => {
+      if (!api.isConfigured()) {
+        if (alive) {
+          setStatsLoading(false);
+          setStatsCounts(null);
+          setStatsError('백엔드 연결이 설정되지 않았습니다 (VITE_API_BASE_URL 미설정).');
+        }
+        return;
+      }
+      const r = await api.get('/api/admin/stats');
+      if (!alive) return;
+      setStatsLoading(false);
+      if (r && r.ok && r.counts) {
+        setStatsCounts(r.counts);
+        setStatsError(null);
+      } else {
+        setStatsCounts(null);
+        const msg = r?.status === 401 || r?.status === 403
+          ? '어드민 KPI 를 불러오려면 로그인 또는 monitoring 권한이 필요합니다.'
+          : (r?.error || '/api/admin/stats 호출 실패 — 잠시 후 다시 시도해 주세요.');
+        setStatsError(msg);
+      }
+    };
+    fetchStats();
+    const id = setInterval(fetchStats, 60_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
 
@@ -371,54 +410,39 @@ export default function AdminMonitoring() {
     return { totalBytes: total, count, top: byKey.slice(0, 8) };
   }, []);
 
-  // 2) 문의 응답 시간 KPI — 신규 → 답변완료 평균 일수 (last 30일).
+  // 2) 문의 KPI — backend /api/admin/stats 의 counts.inquiries 사용.
+  // 30일 응답 시간 / status 분포 같은 row-level 시계열은 별도 backend
+  // endpoint 가 생기면 추가 (현재는 총량만 — localStorage source-of-truth 제거).
   const inquiryKpi = useMemo(() => {
-    try {
-      const list = JSON.parse(localStorage.getItem('daemu_inquiries') || '[]');
-      if (!Array.isArray(list) || !list.length) return null;
-      const now = Date.now();
-      const thirtyDaysAgo = now - 30 * 86400 * 1000;
-      const recent = list.filter((d) => {
-        const t = d.date ? new Date(d.date).getTime() : 0;
-        return Number.isFinite(t) && t >= thirtyDaysAgo;
-      });
-      const replied = recent.filter((d) => d.status === '답변완료');
-      const newCount = recent.filter((d) => d.status === '신규').length;
-      const pendingCount = recent.filter((d) => d.status === '처리중').length;
-      const replyRate = recent.length ? Math.round((replied.length / recent.length) * 100) : 0;
-      return {
-        total30d: recent.length,
-        new: newCount,
-        pending: pendingCount,
-        replied: replied.length,
-        replyRate,
-      };
-    } catch { return null; }
-  }, []);
+    if (!statsCounts) return null;
+    return {
+      total: Number(statsCounts.inquiries || 0),
+      newsletterTotal: Number(statsCounts.newsletter_subscribers || 0),
+      newsletterActive: Number(statsCounts.newsletter_active || 0),
+    };
+  }, [statsCounts]);
 
-  // 3) 콘텐츠 건강도 — 빈 양식·미디어 누락 등.
+  // 3) 콘텐츠 건강도 — backend counts 기반. 활성/비활성 비율, 비어 있는
+  // 데이터셋을 표시. 히어로 누락 같은 row-level 검사는 향후 backend KPI
+  // endpoint 추가 시 복원 (지금은 source-of-truth 인 backend counts 만 사용).
   const contentHealth = useMemo(() => {
+    if (!statsCounts) return [];
     const issues = [];
-    try {
-      const works = JSON.parse(localStorage.getItem('daemu_works') || '[]');
-      const noHero = works.filter((w) => !w.hero && (!w.images || !w.images.length)).length;
-      if (noHero) issues.push({ key: 'works.noHero', label: '히어로 이미지 없는 작업사례', count: noHero });
-      const products = JSON.parse(localStorage.getItem('daemu_products') || '[]');
-      const noImage = products.flatMap((c) => c.items || []).filter((p) => !p.image).length;
-      if (noImage) issues.push({ key: 'products.noImage', label: '이미지 없는 상품', count: noImage });
-      const partners = JSON.parse(localStorage.getItem('daemu_partner_brands') || '[]');
-      const noLogo = partners.filter((b) => b.active && !b.logo).length;
-      if (noLogo) issues.push({ key: 'brands.noLogo', label: '로고 없는 활성 파트너사', count: noLogo });
-      const popups = JSON.parse(localStorage.getItem('daemu_popups') || '[]');
-      const expiredActive = popups.filter((p) => {
-        if (p.status !== 'active') return false;
-        if (!p.to) return false;
-        return new Date(p.to + 'T23:59:59').getTime() < Date.now();
-      }).length;
-      if (expiredActive) issues.push({ key: 'popups.expired', label: '만료됐지만 활성 상태인 팝업', count: expiredActive });
-    } catch { /* ignore */ }
+    const total = (k) => Number(statsCounts[k] || 0);
+    const active = (k) => Number(statsCounts[`${k}_active`] || 0);
+
+    if (total('works') === 0) issues.push({ key: 'works.empty', label: '작업사례 데이터 없음', count: 0 });
+    if (total('partner_brands') === 0) issues.push({ key: 'brands.empty', label: '파트너 브랜드 데이터 없음', count: 0 });
+
+    const popInactive = total('popups') - active('popups');
+    if (popInactive > 0) issues.push({ key: 'popups.inactive', label: '비활성 팝업', count: popInactive });
+    const promoInactive = total('promotions') - active('promotions');
+    if (promoInactive > 0) issues.push({ key: 'promotions.inactive', label: '비활성 프로모션', count: promoInactive });
+    const subsInactive = total('newsletter_subscribers') - active('newsletter');
+    if (subsInactive > 0) issues.push({ key: 'newsletter.inactive', label: '비활성 뉴스레터 구독자', count: subsInactive });
+
     return issues;
-  }, []);
+  }, [statsCounts]);
 
   // 4) 최근 활동 타임라인 — outbox + analytics 의 마지막 20건 통합.
   const activityTimeline = useMemo(() => {
@@ -796,20 +820,33 @@ export default function AdminMonitoring() {
             </>
           )}
 
-          {/* 문의 KPI — 응답 시간/응답률 */}
-          {inquiryKpi && (
-            <>
-              <h3 className="admin-section-title">문의 응답 KPI (최근 30일)</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
-                <Card label="접수 30d" value={String(inquiryKpi.total30d)} color="#1f5e7c" />
-                <Card label="신규" value={String(inquiryKpi.new)}
-                  color={inquiryKpi.new > 5 ? '#c0392b' : '#6f6b68'} />
-                <Card label="처리중" value={String(inquiryKpi.pending)} color="#b87333" />
-                <Card label="답변완료" value={String(inquiryKpi.replied)} color="#2e7d32" />
-                <Card label="응답률" value={inquiryKpi.replyRate + '%'}
-                  color={inquiryKpi.replyRate >= 80 ? '#2e7d32' : inquiryKpi.replyRate >= 50 ? '#b87333' : '#c0392b'} />
-              </div>
-            </>
+          {/* 어드민 KPI — backend /api/admin/stats */}
+          <h3 className="admin-section-title">어드민 KPI (Aiven 실시간)</h3>
+          {statsLoading && (
+            <div style={{ background: '#f4f1ea', border: '1px solid #d7d4cf', padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#6f6b68' }}>
+              어드민 KPI 로드 중…
+            </div>
+          )}
+          {!statsLoading && statsError && (
+            <div style={{ background: '#fbe9e7', border: '1px solid #e8a99a', padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#7a1a14' }}>
+              <strong>어드민 KPI 를 불러올 수 없습니다.</strong>
+              <div style={{ marginTop: 4, color: '#5a4a2a' }}>{statsError}</div>
+            </div>
+          )}
+          {!statsLoading && !statsError && inquiryKpi && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+              <Card label="누적 문의" value={String(inquiryKpi.total)} color="#1f5e7c" />
+              <Card label="뉴스레터 구독자" value={String(inquiryKpi.newsletterTotal)} color="#5a534b" />
+              <Card label="활성 구독자" value={String(inquiryKpi.newsletterActive)}
+                color={inquiryKpi.newsletterActive >= inquiryKpi.newsletterTotal && inquiryKpi.newsletterTotal > 0 ? '#2e7d32' : '#b87333'} />
+              <Card label="작업사례" value={String(statsCounts?.works ?? 0)} color="#5a534b" />
+              <Card label="활성 팝업"
+                value={`${statsCounts?.popups_active ?? 0}/${statsCounts?.popups ?? 0}`}
+                color="#6f6b68" />
+              <Card label="활성 프로모션"
+                value={`${statsCounts?.promotions_active ?? 0}/${statsCounts?.promotions ?? 0}`}
+                color="#6f6b68" />
+            </div>
           )}
 
           {/* 재고 현황 */}
@@ -850,8 +887,8 @@ export default function AdminMonitoring() {
             </div>
           )}
 
-          {/* 콘텐츠 건강도 */}
-          {contentHealth.length > 0 && (
+          {/* 콘텐츠 건강도 — backend counts 기반 (활성/비활성 비율) */}
+          {!statsLoading && !statsError && contentHealth.length > 0 && (
             <>
               <h3 className="admin-section-title">콘텐츠 건강도</h3>
               <div style={{ background: '#fff8ec', border: '1px solid #f0e3c4', padding: '12px 16px', marginBottom: 14, fontSize: 13 }}>
@@ -861,7 +898,7 @@ export default function AdminMonitoring() {
                     <strong style={{ color: '#b87333' }}>{c.count}건</strong>
                   </div>
                 ))}
-                <div style={{ fontSize: 11, color: '#8c867d', marginTop: 6 }}>각 항목 어드민 페이지에서 보강하면 사이트 완성도가 올라갑니다.</div>
+                <div style={{ fontSize: 11, color: '#8c867d', marginTop: 6 }}>각 어드민 페이지에서 비활성 / 비어 있는 항목을 정리해 사이트 완성도를 올리세요.</div>
               </div>
             </>
           )}

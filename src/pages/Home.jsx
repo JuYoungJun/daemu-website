@@ -6,19 +6,26 @@ import { breadcrumbLd, faqLd } from '../lib/seo.js';
 import PromotionBanner from '../components/PromotionBanner.jsx';
 import { PartnerBrandLogoImg, PartnerBrandLink } from '../components/PartnerBrandLogo.jsx';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
+import { api } from '../lib/api.js';
 
-const PARTNER_STORAGE_KEY = 'daemu_partner_brands';
-
-function loadPartnerBrands() {
+// 공개 사이트의 "함께하는 파트너사" — backend Aiven `partner_brands` 가 source.
+// `/api/partner-brands/visible` 가 active=True 만 sort_order ASC 반환.
+async function loadPartnerBrandsFromBackend() {
+  if (!api.isConfigured()) return [];
   try {
-    const raw = JSON.parse(localStorage.getItem(PARTNER_STORAGE_KEY) || '[]');
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter((b) => b && b.active !== false && b.name)
-      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-  } catch {
-    return [];
-  }
+    const r = await api.get('/api/partner-brands/visible');
+    if (r && r.ok && Array.isArray(r.items)) {
+      return r.items.map(it => ({
+        id: it.id,
+        name: it.name || '',
+        logo: it.logo || '',
+        url: it.url || '',
+        active: it.active !== false,
+        order: Number(it.sort_order) || 0,
+      }));
+    }
+  } catch { /* network error — silent */ }
+  return [];
 }
 // R-02: Organization/LocalBusiness/WebSite live in index.html as the static
 // @graph — single source of truth. Don't re-inject them on Home.
@@ -34,13 +41,17 @@ const HOME_FAQS = [
 
 export default function Home() {
   useExternalScript('/home.js', []);
-  const [partnerBrands, setPartnerBrands] = useState(() => loadPartnerBrands());
+  const [partnerBrands, setPartnerBrands] = useState([]);
   useEffect(() => {
-    const refresh = () => setPartnerBrands(loadPartnerBrands());
-    window.addEventListener('storage', refresh);
+    let alive = true;
+    const refresh = async () => {
+      const list = await loadPartnerBrandsFromBackend();
+      if (alive) setPartnerBrands(list);
+    };
+    refresh();
     window.addEventListener('daemu-db-change', refresh);
     return () => {
-      window.removeEventListener('storage', refresh);
+      alive = false;
       window.removeEventListener('daemu-db-change', refresh);
     };
   }, []);
