@@ -59,6 +59,15 @@
 
 ## 3. 환경 변수 (이름만, 값 X)
 
+> **현재 Render/Aiven 데모는 `.env` 파일이 필요 없습니다.**
+> backend env 는 모두 **Render Dashboard → Environment Variables** 에서
+> 관리하고, GitHub Pages frontend 는 build-time variable (GitHub Actions
+> Variables) 만 사용합니다. 로컬 개발 (`ENV=dev`) 시에만 선택적으로
+> `backend-py/.env` 를 두면 `load_dotenv()` 가 자동 merge 합니다 — 운영에
+> 영향 없음. `deploy/cafe24/.env.example` 은 **추후 Cafe24 이전 시점의
+> systemd EnvironmentFile 템플릿**으로만 사용됩니다 (실제 `.env` 파일
+> 자체는 git 에 커밋하지 않으며 Cafe24 서버에서만 작성).
+
 backend (Render `daemu-py` 서비스 또는 Cafe24 systemd EnvironmentFile):
 
 | 변수 | 역할 |
@@ -306,6 +315,212 @@ cd /srv/daemu/backend-py
 - **partner auth** — backend `/api/partner-auth/*` 도입(2026-05). 기존 `partners` 테이블 행에 `password_hash` 컬럼 추가됨. 운영 시작 전 운영자가 어드민 `/admin/users` 또는 backend CLI 로 `testpartner@daemu.kr` 의 비밀번호 시드 필요.
 - **`/admin/mail-templates` 일괄 발송** — 백엔드 라우트 미존재. 운영 단계 전 발송 도메인 인증과 함께 정리.
 - **localStorage 잔재** — 옛 admin RawPage 의 `daemu_<storageKey>` localStorage 키들이 사용자 브라우저에 남아 있을 수 있음. 새 아키텍처에서는 읽지 않으므로 무해. 사용자가 cache clear 하면 정리됨.
+
+## 11. 기존 데이터 (Existing Data) Aiven 이관
+
+데모 단계에서 옛 admin RawPage 가 localStorage 에 행을 쌓던 시기의 데이터가 사용자 PC 브라우저에 남아 있을 수 있습니다. backend = source of truth 로 전환된 이후 그 데이터를 Aiven 에 가져오려면 다음 절차를 따르세요.
+
+### 11.1 사전 점검
+
+1. **Aiven 현재 행 수 audit** (DB write 전 baseline 파악):
+   ```
+   export DAEMU_API_BASE=https://daemu-py.onrender.com
+   export DAEMU_ADMIN_EMAIL=admin@daemu.kr
+   export DAEMU_ADMIN_PASSWORD=...   # 별도 안전 채널
+   node /tmp/daemu-qa/audit-aiven-data.mjs
+   ```
+   `/api/admin/stats` 가 반환하는 counts 가 import 전 baseline.
+
+2. **MySQL 백업** (`§5` 참고) — import 전에 dump 1회. 잘못되면 복원 가능.
+
+### 11.2 옛 brower localStorage export
+
+옛 데이터가 남아 있는 브라우저 (예: 데모 시연하던 PC 의 같은 브라우저 프로필) 에서:
+
+1. 운영자가 `/tmp/daemu-qa/export-localstorage.html` 을 그 PC 로 전송 (USB / 메신저 첨부 / 동기화 폴더).
+2. 해당 PC 에서 본 HTML 파일을 더블클릭 → 브라우저로 열림.
+3. 단, **localStorage 는 origin 단위** 라 `file://` 로 연 페이지는 GitHub Pages 의 `https://juyoungjun.github.io` localStorage 를 못 봄. 따라서:
+   - 옛 데이터가 있는 PC 에서 `https://juyoungjun.github.io/daemu-website/` 를 열고
+   - DevTools (F12) → Console 탭 열고
+   - 본 export HTML 의 `<script>` 블록만 복사해서 Console 에 붙여넣고 실행
+   - 또는 Console 에 직접 한 줄로:
+     ```js
+     (() => { const KEYS = ['daemu_works','daemu_inquiries','daemu_partners','daemu_orders','daemu_popups','daemu_promotions','daemu_coupons','daemu_campaigns','daemu_crm','daemu_subscribers','daemu_media','daemu_projects','daemu_products','daemu_partner_brands','daemu_siteinfo']; const out = { exportedAt: new Date().toISOString(), schema: 'daemu-localstorage-v1', data: {} }; for (const k of KEYS) { const v = localStorage.getItem(k); if (v != null) { try { out.data[k] = JSON.parse(v); } catch { out.data[k] = v; } } } const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' })); a.download = 'daemu-export-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '.json'; a.click(); console.log('export rows:', Object.fromEntries(Object.entries(out.data).map(([k, v]) => [k, Array.isArray(v) ? v.length : 1]))); })();
+     ```
+4. 다운로드된 `daemu-export-YYYYMMDD.json` 파일을 운영자 본인 PC 로 안전 채널 (Bitwarden Send / 메신저 / 동기화 폴더) 로 가져옴.
+
+본 export 는 **auth 토큰 / 비밀번호 / 쿠키 / 세션 마커를 절대 포함하지 않습니다** — 알려진 서비스 데이터 키 (`daemu_works`, `daemu_inquiries`, `daemu_partners`, `daemu_orders`, `daemu_popups`, `daemu_promotions`, `daemu_coupons`, `daemu_campaigns`, `daemu_crm`, `daemu_subscribers`, `daemu_media`, `daemu_projects`, `daemu_products`, `daemu_partner_brands`, `daemu_siteinfo`) 만 추출.
+
+### 11.3 멱등 import
+
+```
+node /tmp/daemu-qa/import-local-data-to-aiven.mjs ~/Downloads/daemu-export-YYYYMMDD.json
+```
+
+스크립트 동작:
+- admin 로그인 → JWT 획득.
+- 각 데이터셋 (works/popups/promotions/partners/crm/subscribers/media) 별로:
+  1. `GET /api/<resource>?page_size=500` 으로 기존 행 조회.
+  2. dedup 키 (slug / title / code / email / url) 가 일치하는 행 있으면 **skip**.
+  3. 없으면 `POST /api/<resource>` 로 신규 행 추가.
+- delete / overwrite / update 일체 없음.
+- 완료 후 `GET /api/admin/stats` 로 새 counts 출력.
+
+### 11.4 멱등 키 / 매핑
+
+| Dataset | localStorage key | backend endpoint | dedup key |
+|---|---|---|---|
+| works (admin shape) | `daemu_works`, `daemu_projects` | `POST /api/works` | `slug` |
+| popups | `daemu_popups` | `POST /api/popups` | `title` |
+| promotions / coupons | `daemu_promotions`, `daemu_coupons` | `POST /api/promotions` | `code` |
+| partners | `daemu_partners` | `POST /api/partners` | `email` |
+| crm | `daemu_crm` | `POST /api/crm` | `email` |
+| newsletter subscribers | `daemu_subscribers` | `POST /api/newsletter` | `email` |
+| media | `daemu_media` | `POST /api/media` | `url` |
+
+### 11.5 미디어 메타데이터 복구 한계
+
+옛 미디어 메타 (`daemu_media`) 의 `src` 가 다음 형태일 수 있음:
+
+- `data:image/...;base64,...` → 브라우저 메모리 인라인. **Aiven 으로 가져갈 수 없음** (실제 파일이 외부에 없음). 옛 화면에서는 보였지만, 서버가 해당 base64 를 file 로 가지고 있지 않은 한 다른 PC 에서는 보이지 않음. 운영 단계 전 외부 storage (S3/R2/Cafe24) 로 재업로드 필요.
+- `https://juyoungjun.github.io/daemu-website/assets/...` → GitHub Pages 정적 자산. 그대로 import 가능.
+- `https://daemu-py.onrender.com/uploads/...` → Render disk 휘발성. 재배포 후 사라졌으면 import 해도 broken link.
+- `data:video/...` → 동일하게 인라인. 외부 storage 이전 후 URL 갱신 필요.
+
+import 스크립트는 url 그대로 저장만 하며, 깨진 링크 복구는 하지 않음. 운영 단계에서 외부 storage 로 일괄 업로드 후 `media_assets.url` 을 재매핑 권장.
+
+### 11.6 가져갈 수 없는 데이터
+
+- **인증 / 세션 마커** (`daemu_admin_token`, `daemu_partner_token`) — 의도적 제외. 로그인은 backend 에서 발급.
+- **사용자 화면 dismiss UX 상태** (`daemu_popup_dismissed_*`) — 사용자별 / 브라우저별 임시 상태.
+- **dev/demo 시드 partner 로그인** (`daemu_partner_logins`) — backend partner-auth 시드 (`/tmp/daemu-qa/seed-test-partner.mjs`) 로 별도 처리.
+- **배포 캐시** — 옛 chunk hash 등 운영 데이터 아님.
+- 옛 admin 페이지의 **`daemu_*` localStorage 가 비어 있는 브라우저** — export 결과가 빈 객체. 이 경우 사용자가 이전에 시연한 적 없는 PC.
+
+### 11.7 import 후 검증
+
+```
+node /tmp/daemu-qa/audit-aiven-data.mjs
+```
+
+import 전 / 후 counts 비교 → 추가된 행 수 확인. 어드민 UI 에서 / 다른 브라우저로 같은 계정 로그인해서 동일하게 보이면 정상.
+
+### 11.8 추가 demo data seed (옛 데이터 부족 시)
+
+```
+node /tmp/daemu-qa/seed-demo-data.mjs
+```
+
+works 6 / popup 1 / promotion 1 / announcement 1 멱등 추가 (slug/title/code/title 중복 시 skip).
+
+### 11.9 testpartner 비밀번호 시드
+
+```
+export DAEMU_TEST_PARTNER_PASSWORD=<운영자 결정 8자+>
+node /tmp/daemu-qa/seed-test-partner.mjs
+```
+
+`POST /api/partners/{id}/set-password` (admin → partner 비밀번호 시드 endpoint) 호출 → backend 가 passlib bcrypt 로 hash 후 저장.
+
+## 12. 메일 도달성 (DMARC / SendGrid Domain Authentication)
+
+### 12.1 왜 필요한가
+백엔드는 SendGrid Web API 로 메일을 발송한다 (`backend-py/main.py` `send_via_sendgrid`).
+SendGrid 가 자동으로 붙이는 DKIM 서명 도메인은 기본 `d=sendgrid.net`. 만약 `SENDGRID_FROM` 을
+`xxx@gmail.com` 같은 public mailbox 도메인으로 두면:
+
+- header `From:` 도메인 = `gmail.com`
+- DKIM `d=` = `sendgrid.net`
+- → 두 도메인이 일치하지 않으므로 **DMARC alignment 실패** → Gmail / Naver 등이 “스팸” 또는
+  “도용 발송 의심” 으로 자동 분류 (사용자가 받은 raw 헤더에서 `dmarc=fail` 로 확인됨).
+
+해결 = SendGrid Domain Authentication 으로 자체 도메인 (예: `mail.daemu.kr`) 의 DKIM/SPF
+DNS 레코드를 셋업한 뒤 `SENDGRID_FROM` 을 그 도메인 메일박스로 바꾸는 것.
+
+### 12.2 백엔드의 가드 (자동)
+`backend-py/main.py` 가 SendGrid 호출 전에 `SENDGRID_FROM` 도메인을 검사:
+
+- gmail.com / naver.com / daum.net / hanmail.net / kakao.com / nate.com / outlook.com /
+  hotmail.com / yahoo.com / icloud.com 등 public mailbox 도메인이면:
+  - `ENV=prod` → 발송 차단 (`{"ok": false, "error": "SendGrid sender domain blocked: ..."}`).
+  - `ENV` 가 prod 가 아니면 startup 후 첫 발송 시 stderr 경고 한 줄.
+- 자체 도메인 (예: `daemu.kr`, `mail.daemu.kr`) 이면 통과.
+
+→ 운영자가 실수로 gmail 주소를 set 해도 PROD 에서는 자동 거부되므로 spam 폭주 위험을 막는다.
+
+### 12.3 SendGrid Domain Authentication 절차
+SendGrid 대시보드 (`https://app.sendgrid.com`) 로그인 후:
+
+1. `Settings → Sender Authentication → Domain Authentication → Authenticate Your Domain`.
+2. DNS host 선택 (가비아 / Cloudflare / Cafe24 DNS 등).
+3. `Use a custom return path?` Yes 권장 — alignment 가 가장 깔끔.
+4. Domain 입력: `daemu.kr` (또는 mail subdomain 으로 격리하고 싶으면 `mail.daemu.kr`).
+5. 다음 페이지에서 SendGrid 가 CNAME 3개를 보여줌:
+   ```
+   em####.daemu.kr             CNAME → uXXXXXXX.wlYYY.sendgrid.net
+   sYYY._domainkey.daemu.kr    CNAME → sYYY.domainkey.uXXXXXXX.wlYYY.sendgrid.net
+   sZZZ._domainkey.daemu.kr    CNAME → sZZZ.domainkey.uXXXXXXX.wlYYY.sendgrid.net
+   ```
+6. 운영 도메인 DNS 콘솔에서 위 CNAME 3개 추가 (TTL 600 권장 — 빠른 검증).
+7. SendGrid 페이지로 돌아와 `Verify` 클릭 — 5–30 분 후 PASS 표시.
+
+검증 후 같은 화면에 “Link Branding”, “DKIM” 항목이 모두 ✅ 로 바뀌는지 확인.
+
+### 12.4 SPF / DMARC 추가 DNS 레코드
+Domain Authentication 으로 DKIM 은 끝났지만 SPF / DMARC 도 같이 셋업하는 것이 권장:
+
+```
+# SPF (TXT, host = @ 또는 daemu.kr)
+v=spf1 include:sendgrid.net ~all
+
+# DMARC (TXT, host = _dmarc.daemu.kr)
+v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@daemu.kr; adkim=s; aspf=s
+```
+
+처음에는 `p=none` 으로 두고 일주일간 SendGrid 통계 + DMARC 리포트 확인 후 `quarantine`,
+충분히 안정되면 `reject` 로 단계적으로 강화.
+
+### 12.5 Render / Cafe24 환경 변수 갱신
+DNS PASS 확인 후:
+
+```
+SENDGRID_FROM=hello@mail.daemu.kr        # 또는 noreply@daemu.kr
+SENDGRID_FROM_NAME=DAEMU
+SENDGRID_API_KEY=SG.xxxxxx               # 그대로
+EMAIL_PROVIDER=sendgrid                  # 강제 sendgrid (auto 도 OK)
+ENV=prod                                 # 가드가 발동되도록
+```
+
+저장 → 서비스 재시작 → /admin/mail 에서 테스트 발송.
+
+### 12.6 Gmail 에서 DMARC PASS 확인
+1. 자기 gmail 로 테스트 메일 발송.
+2. Gmail 우측 상단 ⋮ → `메일 원본 보기 (Show original)`.
+3. 헤더 상단 박스에서 다음을 확인:
+   - `SPF: PASS with IP …`
+   - `DKIM: 'PASS' with domain mail.daemu.kr` (또는 daemu.kr)
+   - `DMARC: 'PASS'`
+4. DKIM domain 이 `sendgrid.net` 이 아니라 자체 도메인이면 alignment 성공.
+
+### 12.7 본문 inline-image 자리표시자 (`[[img:cid:...]]`) 정리
+어드민 메일 편집기는 inline 이미지를 HTML 본문에는 `<img>` 로, plain text 본문에는
+`[[img:cid:abc123]]` 같은 자리표시자로 남긴다. SendGrid / Resend / SMTP 모두 plain 본문을
+그대로 받기 때문에 수신자에게 마커가 노출되는 이슈가 있었음.
+
+→ `send_email()` dispatcher 가 모든 provider 호출 직전에 `[[img:cid:…]]` 패턴을 정규식으로
+제거. 운영자가 별도 처리할 필요 없음. 향후 새 marker 패턴이 생기면 `_CID_PLACEHOLDER_RE`
+업데이트 필요.
+
+### 12.8 `{{변수}}` 가 본문에 그대로 보이는 경우
+드물게 자동회신 본문에 `{{message}}` 같은 placeholder 가 그대로 보였다는 보고는 보통
+**테스트용 메시지 본문 자체가 `{{message}}` 라는 문자열을 포함**한 케이스 (admin/mail 페이지의
+TEST 송신 payload 가 그렇게 작성돼 있음). 실제 자동회신은
+`backend-py/routes_crud.py::_apply_vars()` 가 `\{\{\s*([\w-]+)\s*\}\}` regex 로 치환.
+
+확인 절차:
+1. /admin/mail 의 “자동회신 템플릿” 본문에 `{{name}}`, `{{category}}`, `{{message}}` 가
+   placeholder 로 들어 있는지 확인 — 정상.
+2. 테스트 발송 시 실제 입력된 `message` 필드 값이 텍스트 그대로 송신됨 (이중 치환 X).
 
 ---
 
