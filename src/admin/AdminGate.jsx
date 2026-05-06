@@ -95,6 +95,30 @@ export default function AdminGate() {
 
   useEffect(() => { document.title = 'Admin — DAEMU'; }, []);
 
+  // KPI 4종 — backend `/api/admin/stats` counts. 옛 DB.get('inquiries') 같은
+  // localStorage 시드 의존 제거 (다른 브라우저 / incognito 일관성).
+  // ⚠ React Hook Rule: 본 hook 들은 *조건 return 보다 *반드시 위*에 있어야
+  // 함. 옛 위치 (render 직전) 는 미로그인/hydrating/email-verify/mustChange
+  // 분기 시 hook 미호출 → React error #310. 분기 자체는 effect 내부에서.
+  const [kpiCounts, setKpiCounts] = useState({});
+  const [kpiError, setKpiError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    // 분기 — early-skip 은 effect 안에서. hook 자체는 항상 호출됨.
+    if (!loggedIn || mustChange || needsEmailVerify) return undefined;
+    (async () => {
+      const r = await api.get('/api/admin/stats');
+      if (!alive) return;
+      if (r && r.ok && r.counts) { setKpiCounts(r.counts); setKpiError(''); }
+      else if (r && (r.status === 401 || r.status === 403)) {
+        setKpiError('KPI 권한 부족 — admin/monitoring 권한 확인.');
+      } else {
+        setKpiError(r?.error || '/api/admin/stats 호출 실패.');
+      }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn, mustChange, needsEmailVerify]);
+
   // Refresh /api/auth/me on mount so the forced-change flag stays accurate
   // even if it changed on another device or via admin reset.
   //
@@ -361,27 +385,8 @@ export default function AdminGate() {
     );
   }
 
-  // KPI 4종 — backend `/api/admin/stats` counts 만 source. 옛 DB.get('inquiries')
-  // 같은 localStorage 시드 의존 제거 (다른 브라우저 / incognito 일관성 보장).
-  // counts 는 status 별 분리가 없는 단순 row 수 → admin/monitoring 화면에서는
-  // 더 자세한 status 분포를 별도 표시 (본 화면은 4-card 요약만).
-  const [kpiCounts, setKpiCounts] = useState({});
-  const [kpiError, setKpiError] = useState('');
-  useEffect(() => {
-    let alive = true;
-    if (!loggedIn || mustChange || needsEmailVerify) return undefined;
-    (async () => {
-      const r = await api.get('/api/admin/stats');
-      if (!alive) return;
-      if (r && r.ok && r.counts) { setKpiCounts(r.counts); setKpiError(''); }
-      else if (r && (r.status === 401 || r.status === 403)) {
-        setKpiError('KPI 권한 부족 — admin/monitoring 권한 확인.');
-      } else {
-        setKpiError(r?.error || '/api/admin/stats 호출 실패.');
-      }
-    })();
-    return () => { alive = false; };
-  }, [loggedIn, mustChange, needsEmailVerify]);
+  // KPI 변수 — 위 top-level 의 useState 가 채워준 kpiCounts 사용. hooks 는
+  // 이미 component top 에서 호출되므로 본 위치는 *순수 derived value* 만 계산.
   const newInq = Number(kpiCounts.inquiries || 0);
   const pendingOrd = Number(kpiCounts.orders || 0);
   const leads = Number(kpiCounts.crm || 0);
