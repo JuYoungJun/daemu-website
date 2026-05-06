@@ -522,6 +522,133 @@ TEST 송신 payload 가 그렇게 작성돼 있음). 실제 자동회신은
    placeholder 로 들어 있는지 확인 — 정상.
 2. 테스트 발송 시 실제 입력된 `message` 필드 값이 텍스트 그대로 송신됨 (이중 치환 X).
 
+## 13. Render + Aiven 진단 워크플로
+
+> 본 절은 **현재 Render/Aiven 데모를 운영하면서 backend logs / DB schema** 를 직접
+> 확인할 때 사용하는 진단 절차입니다. 진단은 **읽기 전용**이 원칙이고, 직접 DB
+> write / DDL 수정은 별도 명시 승인 후에만 진행합니다.
+
+### 13.1 Render CLI
+
+설치 (macOS Apple Silicon 기준):
+
+```
+brew tap render-oss/render
+brew install render
+render --version          # ex) render v2.16.0
+```
+
+로그인 (브라우저 OAuth):
+
+```
+render login
+# default 브라우저가 열림 → GitHub / Google 로 로그인 → CLI 가 token 저장.
+# token 은 ~/.render/config.* 에 저장됨 — git 에 절대 커밋 X.
+render whoami
+```
+
+자주 쓰는 명령:
+
+```
+render workspace list                 # workspace 식별
+render workspace set <workspace-id>   # 작업 workspace 고정 (선택)
+render services                       # service 목록
+render services list --output json    # service ID 포함 (daemu-py 의 srv-... 식별)
+render deploys list <service-id>      # 최근 deploy 이력
+render deploys get <deploy-id>        # 특정 deploy 상태
+render logs <service-id> --tail       # 라이브 로그 tail (Ctrl-C 종료)
+render logs <service-id> --start 5m   # 최근 5분 logs
+render logs <service-id> --text "request_id=05462feae3ae"   # 특정 request_id 검색
+```
+
+수동 배포 (commit hash 지정 가능 — 명시 승인 후만):
+
+```
+render deploys create <service-id>            # latest commit re-deploy
+render deploys create <service-id> --commit <sha>
+```
+
+### 13.2 request_id traceback 워크플로
+
+backend `main.py` 의 `attach_request_id` middleware 가 모든 응답에
+`X-Request-ID` 를 부착하고 unhandled exception 시점에 logs 에 같은 ID 로 traceback
+을 적재합니다. 클라이언트가 받은 `{"ok":false,"error":"internal","request_id":"<rid>"}` 를
+그대로 logs 검색에 넣으면 정확한 stack trace 1건이 나옵니다.
+
+```
+render logs <service-id> --text "rid=<request_id>" --start 10m
+```
+
+### 13.3 Aiven CLI
+
+설치 (Python 패키지, macOS Apple Silicon 에서 PEP 668 우회):
+
+```
+brew install pipx           # 한 번만
+pipx ensurepath
+pipx install aiven-client
+avn --version              # ex) aiven-client 4.13.0
+```
+
+로그인 (이메일/비밀번호 또는 토큰):
+
+```
+avn user login <my-aiven-email>     # password prompt
+# 또는
+avn user create-token --description "daemu diagnostics"
+avn user logout                     # 진단 끝나면 logout 권장
+```
+
+자주 쓰는 read-only 명령 (목록 / 상태 / 백업):
+
+```
+avn project list
+avn service list --project <project-name>
+avn service get --project <project> <mysql-service>
+avn service backup-list --project <project> <mysql-service>
+avn service current-queries --project <project> <mysql-service>
+avn service connection-info --project <project> <mysql-service>
+# connection-info 는 비밀번호를 출력 — `--json | jq '.[]|del(.password)'` 같은 식
+# 으로 redact 후 공유.
+```
+
+### 13.4 read-only MySQL 진단 SQL
+
+Aiven console 의 SQL workbench 또는 Render backend 의 `/api/admin/__schema_diag`
+같은 임시 endpoint 안에서 사용. **`SHOW TABLES`, `information_schema.*` 외 destructive
+SQL (DROP/DELETE/TRUNCATE/ALTER/UPDATE/INSERT/CREATE INDEX) 은 명시 승인 후에만.**
+
+```
+SHOW TABLES;
+
+SELECT table_name, table_rows
+  FROM information_schema.tables
+ WHERE table_schema = DATABASE()
+ ORDER BY table_name;
+
+SELECT table_name, column_name, data_type, is_nullable, column_default
+  FROM information_schema.columns
+ WHERE table_schema = DATABASE()
+ ORDER BY table_name, ordinal_position;
+
+SELECT table_name, index_name, column_name, non_unique
+  FROM information_schema.statistics
+ WHERE table_schema = DATABASE()
+ ORDER BY table_name, index_name, seq_in_index;
+```
+
+### 13.5 보안 / 운영 가드
+
+- **token / password / API key 절대 git 커밋 X**. `~/.render/`, `~/.config/aiven/`,
+  `~/.avn/` 같은 CLI config 도 커밋 금지 (이미 `.gitignore` 의 `.env` 패턴과 함께
+  보호되지만 신규 파일이 생기면 직접 확인).
+- 진단 logs 에 password / DB URL credentials 가 보이면 stdout 에 다시 출력하지
+  말고 `| sed`/`| jq del()` 로 마스킹 후 공유.
+- 직접 DB write / DDL 변경은 운영자 +1 명의 명시 승인 + 작업 직전 `avn service
+  backup-list` 로 백업 시점 확인 후만 진행.
+- `.env` 파일은 *추후 Cafe24 이전 시점*의 systemd EnvironmentFile 템플릿 (§3 헤더
+  박스 참조). 현재 Render/Aiven 데모에는 필요 없습니다.
+
 ---
 
 본 문서는 운영자 인수인계 + Cafe24 이전 시점에 그대로 활용할 수 있도록 작성되었습니다. 실제 secret 은 별도 안전 저장소에서 관리하세요.
