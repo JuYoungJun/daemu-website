@@ -232,16 +232,27 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  // 처음 비밀번호 = 휴대폰 끝 4자리 — backend partner-auth/change-password 가
+  // current_password 검증을 하므로, 첫 변경은 휴대폰 끝 4자리를 자동으로 사용.
+  const initialPassword = defaultPasswordHint(partner);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
+    if (busy) return;
     setErr('');
-    if (pw1.length < 6) return setErr('비밀번호는 최소 6자 이상이어야 합니다.');
+    if (pw1.length < 8) return setErr('새 비밀번호는 8자 이상이어야 합니다.');
     if (pw1 !== pw2) return setErr('비밀번호가 일치하지 않습니다.');
-    if (pw1 === defaultPasswordHint(partner)) return setErr('초기 비밀번호와 다른 값을 사용해주세요.');
-    const r = PartnerAuth.changePassword(partner.id, pw1);
+    if (pw1 === initialPassword) return setErr('초기 비밀번호와 다른 값을 사용해 주세요.');
+    setBusy(true);
+    const r = await PartnerAuth.changePassword({
+      partnerId: partner.id,
+      currentPassword: initialPassword,
+      newPassword: pw1,
+    });
+    setBusy(false);
     if (r.ok) onDone();
-    else setErr('변경 실패: ' + (r.reason || ''));
+    else setErr(r.error || ('변경 실패: ' + (r.reason || '')));
   };
 
   return (
@@ -258,17 +269,19 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
 
         <form onSubmit={submit} style={{maxWidth:380,margin:'0 auto',padding:'0 24px'}}>
           <div style={{marginBottom:14}}>
-            <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:8}}>새 비밀번호 (6자 이상)</label>
-            <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} required minLength={6} autoFocus
+            <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:8}}>새 비밀번호 (8자 이상, 영문+숫자+특수문자 중 2종)</label>
+            <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} required minLength={8} autoFocus
               style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
           </div>
           <div style={{marginBottom:14}}>
             <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:8}}>새 비밀번호 확인</label>
-            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={6}
+            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={8}
               style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
           </div>
           {err && <p style={{color:'#c0392b',fontSize:12,marginBottom:12}}>{err}</p>}
-          <button className="btn" type="submit" style={{width:'100%',marginTop:8}}>비밀번호 변경 완료</button>
+          <button className="btn" type="submit" style={{width:'100%',marginTop:8}} disabled={busy}>
+            {busy ? '변경 중…' : '비밀번호 변경 완료'}
+          </button>
           <button type="button" onClick={onLogout} style={{display:'block',margin:'18px auto 0',background:'none',border:'none',color:'#8c867d',fontSize:12,textDecoration:'underline',cursor:'pointer'}}>다음에 변경하기 (로그아웃)</button>
         </form>
       </section>

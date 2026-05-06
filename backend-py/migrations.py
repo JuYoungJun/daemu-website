@@ -42,6 +42,10 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
     # password_hash / last_login_at 컬럼이 없을 수 있으므로 idempotent ALTER 로 보강.
     ("partners", "password_hash", "VARCHAR(255)", "DEFAULT ''"),
     ("partners", "last_login_at", "DATETIME", ""),
+    # 첫 로그인 시 강제 비밀번호 변경 플래그. 가입 신청 직후 시드된 휴대폰
+    # 끝 4자리는 일회용 — 사용자가 로그인 시 ForcePasswordChange 화면으로
+    # 분기 후 강한 비밀번호로 변경.
+    ("partners", "must_change_password", "TINYINT(1)", "DEFAULT 1"),
 
     # Product (inventory) — 옛 시점에 만들어진 `products` 테이블이 ORM 신규
     # 컬럼과 schema drift 면 INSERT 시 'Unknown column' 으로 500 발생.

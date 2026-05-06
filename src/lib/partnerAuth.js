@@ -106,6 +106,7 @@ export const PartnerAuth = {
           localStorage.setItem(SESSION_KEY, String(r.partner.id));
         } catch { /* ignore */ }
         // adapter shape — Partners.jsx 가 partner.name / partner.email 등 사용.
+        const mustChange = !!r.partner.must_change_password;
         const partner = {
           id: r.partner.id,
           name: r.partner.company_name || r.partner.email || '',
@@ -115,8 +116,10 @@ export const PartnerAuth = {
           type: r.partner.category || '',
           status: r.partner.status || '',
           active: 'active',
+          must_change_password: mustChange,
+          _backend: true,
         };
-        return { ok: true, partner, mustChangePassword: false };
+        return { ok: true, partner, mustChangePassword: mustChange };
       }
       const reason = r && r.status === 401 ? 'bad-credentials'
         : r && r.status === 429 ? 'throttled'
@@ -183,19 +186,49 @@ export const PartnerAuth = {
     } catch { return null; }
   },
 
-  /** backend partner: 비밀번호 변경 화면이 떠야 하는지. backend partner 는 bcrypt 라 false. */
+  /** 비밀번호 변경 화면이 떠야 하는지.
+   *  · backend partner — login 응답 / /me 의 must_change_password 사용.
+   *  · dev/demo 시드 — 옛 passwordChanged 플래그 + default phone-last4 비교. */
   needsPasswordChange(partner) {
     if (!partner) return false;
-    if (partner._backend) return false;
+    if (partner._backend) return !!partner.must_change_password;
     if (partner.passwordChanged === true) return false;
     return !partner.password || String(partner.password) === defaultPasswordOf(partner);
   },
 
-  /** dev/demo 시드 partner 한정 — backend partner 의 비밀번호 변경은 별도 endpoint 추가 예정. */
-  changePassword(partnerId, newPassword) {
-    if (!newPassword || String(newPassword).length < 4) {
-      return { ok: false, reason: 'too-short' };
+  /** 본인 비밀번호 변경.
+   *  backend partner: POST /api/partner-auth/change-password (partner JWT 필요).
+   *  dev/demo: 옛 localStorage 시드 직접 갱신.
+   */
+  async changePassword({ partnerId, currentPassword, newPassword }) {
+    if (!newPassword || String(newPassword).length < 8) {
+      return { ok: false, reason: 'too-short', error: '새 비밀번호는 8자 이상이어야 합니다.' };
     }
+    if (api.isConfigured()) {
+      const r = await api.post('/api/partner-auth/change-password', {
+        current_password: String(currentPassword || ''),
+        new_password: String(newPassword),
+      });
+      if (r && r.ok) {
+        // 캐시된 partner user 의 must_change_password 도 false 로 갱신.
+        try {
+          const raw = localStorage.getItem(PARTNER_USER_STORAGE_KEY);
+          if (raw) {
+            const u = JSON.parse(raw);
+            u.must_change_password = false;
+            localStorage.setItem(PARTNER_USER_STORAGE_KEY, JSON.stringify(u));
+          }
+        } catch { /* ignore */ }
+        try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
+        return { ok: true };
+      }
+      return {
+        ok: false,
+        reason: r && r.status === 401 ? 'bad-current' : 'change-failed',
+        error: (r && r.error) || '비밀번호 변경에 실패했습니다.',
+      };
+    }
+    // dev/demo fallback
     DB.update(PARTNER_LOGIN_STORAGE_KEY, Number(partnerId), {
       password: String(newPassword),
       passwordChanged: true,

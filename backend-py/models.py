@@ -117,6 +117,10 @@ class Partner(Base):
     intro: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(24), default="대기", index=True)
     password_hash: Mapped[str] = mapped_column(String(255), default="")
+    # 처음 비밀번호(=휴대폰 끝 4자리) 사용 중인지. 가입 신청 시 True 로 시드,
+    # /api/partner-auth/change-password 호출 시 False. login 응답에 그대로 노출 →
+    # frontend 가 ForcePasswordChange 화면 분기.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

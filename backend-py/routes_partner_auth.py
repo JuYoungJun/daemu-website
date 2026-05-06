@@ -107,11 +107,17 @@ class PartnerOut(BaseModel):
     category: str
     status: str
     last_login_at: datetime | None = None
+    must_change_password: bool = False
 
 
 class PartnerLoginOut(BaseModel):
     token: str
     partner: PartnerOut
+
+
+class PartnerChangePasswordIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +172,7 @@ async def partner_login(
             category=partner.category,
             status=partner.status,
             last_login_at=partner.last_login_at,
+            must_change_password=bool(getattr(partner, "must_change_password", False)),
         ),
     )
 
@@ -181,7 +188,32 @@ async def partner_me(partner: Partner = Depends(require_partner_token)):
         category=partner.category,
         status=partner.status,
         last_login_at=partner.last_login_at,
+        must_change_password=bool(getattr(partner, "must_change_password", False)),
     )
+
+
+@router.post("/change-password")
+async def partner_change_password(
+    payload: PartnerChangePasswordIn,
+    partner: Partner = Depends(require_partner_token),
+    session: AsyncSession = Depends(get_session),
+):
+    """파트너 본인이 자기 비밀번호 변경. ForcePasswordChange 화면 + 일반 변경 모두.
+    current_password 검증 → bcrypt 해시 갱신 → must_change_password=False.
+    """
+    if not partner.password_hash or not verify_password(payload.current_password, partner.password_hash):
+        raise HTTPException(401, detail="현재 비밀번호가 일치하지 않습니다.")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(400, detail="새 비밀번호는 기존 비밀번호와 달라야 합니다.")
+    partner.password_hash = hash_password(payload.new_password)
+    partner.must_change_password = False
+    await session.flush()
+    await session.refresh(partner)
+    return {
+        "ok": True,
+        "partner_id": partner.id,
+        "must_change_password": partner.must_change_password,
+    }
 
 
 @router.post("/logout", status_code=200)

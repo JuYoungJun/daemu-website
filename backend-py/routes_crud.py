@@ -547,6 +547,10 @@ async def set_partner_password(
         raise HTTPException(404, detail="해당 파트너를 찾을 수 없습니다.")
     was_pending = partner.status == "대기"
     partner.password_hash = _hash_pw(payload.password)
+    # admin 이 직접 set-password 한 경우는 운영자가 신청자에게 별도 안내한
+    # 비밀번호이므로 강제 변경 플래그를 False 로 (휴대폰 끝 4자리 → 강한 비밀번호
+    # 로 이미 한 단계 진행됐다는 의미).
+    partner.must_change_password = False
     if was_pending:
         # 신규 시드 — 자동 승인 (운영자가 명시적으로 비밀번호를 설정 = 로그인 가능 의도).
         partner.status = "승인"
@@ -947,6 +951,8 @@ async def partner_apply(
         intro=str(payload.intro or "")[:2000],
         status="대기",
         password_hash=_hash_pw(init_pw) if init_pw else "",
+        # 휴대폰 끝 4자리 일회용 비밀번호 — 첫 로그인 시 강제 변경 (frontend 가 분기).
+        must_change_password=True,
     )
     session.add(partner)
     await session.flush()
