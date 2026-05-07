@@ -36,6 +36,11 @@ function _friendlyFetchError(err) {
   return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 }
 
+// Render free-tier cold-start, 일시적 네트워크 단절, 백엔드 hang 등으로 fetch
+// 가 응답을 영영 못 받으면 await 호출자가 무한 hang. AbortController + setTimeout
+// 으로 상한 시간 보장. opts.timeoutMs 로 호출별 override 가능 (업로드 등).
+const DEFAULT_TIMEOUT_MS = 30000;
+
 async function request(method, path, body, opts = {}) {
   if (!BASE) {
     // 보안 (코드 리뷰 F-3.3, High): production build 에서는 simulated 동작
@@ -56,12 +61,16 @@ async function request(method, path, body, opts = {}) {
     ...(opts.skipAuth ? {} : authHeader()),
     ...(opts.headers || {}),
   };
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
+  const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { /* ignore */ } }, timeoutMs) : null;
   try {
     const res = await fetch(BASE + path, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       credentials: opts.credentials || 'omit',
+      signal: ctrl ? ctrl.signal : undefined,
     });
     const text = await res.text();
     let json = null;
@@ -88,6 +97,8 @@ async function request(method, path, body, opts = {}) {
   } catch (err) {
     if (method !== 'GET') logOutbox(path, body, 'error', { error: String(err) });
     return { ok: false, error: _friendlyFetchError(err), errorDetail: String(err) };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -102,16 +113,22 @@ export const api = {
 
   async get(path, opts = {}) {
     if (!BASE) return { ok: false, simulated: true };
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { /* ignore */ } }, timeoutMs) : null;
     try {
       const res = await fetch(BASE + path, {
         headers: opts.skipAuth ? {} : authHeader(),
+        signal: ctrl ? ctrl.signal : undefined,
       });
       const text = await res.text();
       let json = null;
       try { json = text ? JSON.parse(text) : null; } catch { /* JSON 아님 */ }
       return { ok: res.ok, status: res.status, ...((json && typeof json === 'object') ? json : {}) };
     } catch (err) {
-      return { ok: false, error: String(err) };
+      return { ok: false, error: _friendlyFetchError(err), errorDetail: String(err) };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   },
 };

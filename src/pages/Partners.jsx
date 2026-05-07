@@ -267,14 +267,24 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
     if (pw1 !== pw2) return setErr('비밀번호가 일치하지 않습니다.');
     if (pw1 === initialPassword) return setErr('초기 비밀번호와 다른 값을 사용해 주세요.');
     setBusy(true);
-    const r = await PartnerAuth.changePassword({
-      partnerId: partner.id,
-      currentPassword: initialPassword,
-      newPassword: pw1,
-    });
-    setBusy(false);
-    if (r.ok) onDone();
-    else setErr(r.error || ('변경 실패: ' + (r.reason || '')));
+    // try/finally — fetch timeout/abort/예외 어느 경로로 끝나도 setBusy(false)
+    // 가 보장되어 "변경 중…" 영구 hang 이 발생하지 않게 함.
+    try {
+      const r = await PartnerAuth.changePassword({
+        partnerId: partner.id,
+        currentPassword: initialPassword,
+        newPassword: pw1,
+      });
+      if (r && r.ok) {
+        onDone();
+        return;
+      }
+      setErr((r && r.error) || ('변경 실패: ' + ((r && r.reason) || '')));
+    } catch (e2) {
+      setErr(String(e2 && e2.message ? e2.message : e2) || '변경 중 오류가 발생했습니다.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

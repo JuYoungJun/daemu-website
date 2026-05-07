@@ -219,8 +219,10 @@ export const PartnerAuth = {
         current_password: String(currentPassword || ''),
         new_password: String(newPassword),
       }, { skipAuth: true, headers: authHeader() });
-      if (r && r.ok) {
-        // 캐시된 partner user 의 must_change_password 도 false 로 갱신.
+      // backend 정상 응답: { ok: true, partner_id, must_change_password: false }
+      // ok: true 인데 must_change_password 가 여전히 true 로 오면 정합성 깨짐 →
+      // 화면이 ForcePasswordChange 로 다시 빠지므로 명시적으로 실패 처리.
+      if (r && r.ok && r.must_change_password === false) {
         try {
           const raw = localStorage.getItem(PARTNER_USER_STORAGE_KEY);
           if (raw) {
@@ -234,7 +236,9 @@ export const PartnerAuth = {
       }
       return {
         ok: false,
-        reason: r && r.status === 401 ? 'bad-current' : 'change-failed',
+        reason: r && r.status === 401 ? 'bad-current'
+          : r && r.status === 400 ? 'invalid-new'
+          : 'change-failed',
         error: (r && r.error) || '비밀번호 변경에 실패했습니다.',
       };
     }
