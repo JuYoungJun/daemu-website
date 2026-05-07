@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import AdminUser, DocumentTemplate
+from models import AdminUser, DocumentTemplate, MailTemplateLib
 
 
 # ---------------------------------------------------------------------------
@@ -665,3 +665,223 @@ async def ensure_default_templates(session: AsyncSession) -> None:
     if added:
         await session.commit()
         print(f"[seeds] {added} default contract templates inserted")
+
+
+# ---------------------------------------------------------------------------
+# Mail template library — `/admin/mail-templates` 라이브러리 default seed.
+# 이전엔 frontend AdminMailTemplates.jsx 의 SEED_TEMPLATES 가 localStorage
+# 에 시드 — backend persistence 마이그레이션(459cb91) 이후 mail_template_lib
+# 가 비어 있어 사용자가 "기본 템플릿이 사라졌다" 보고. 본 함수가 startup 시
+# idempotent 보강 — 같은 name 이 이미 있으면 건드리지 않음.
+
+_SEED_MAIL_TEMPLATES: list[dict] = [
+    {
+        "name": "partner-application-received",
+        "category": "partner",
+        "subject": "[DAEMU] 파트너 신청이 접수되었습니다",
+        "body": (
+            "{{company}} 담당자 {{person}} 님,\n\n"
+            "DAEMU 파트너 신청이 정상 접수되었습니다.\n"
+            "관리자 검토 후 승인되면 별도 안내 메일이 발송됩니다 (영업일 1–2일).\n\n"
+            "  · 회사명: {{company}}\n"
+            "  · 담당자: {{person}}\n"
+            "  · 이메일: {{email}}\n"
+            "  · 연락처: {{phone}}\n"
+            "  · 신청 시각: {{submitted_at}}\n"
+            "  · 현재 상태: {{status}}\n\n"
+            "파트너 페이지: {{partner_url}}\n"
+            "사이트: {{site_url}}\n\n"
+            "본 메일은 자동 발송된 안내입니다. 비밀번호 같은 민감 정보는 포함하지 않습니다.\n\n"
+            "감사합니다.\nDAEMU"
+        ),
+    },
+    {
+        "name": "partner-approved",
+        "category": "partner",
+        "subject": "[DAEMU] 파트너 계정이 활성화되었습니다",
+        "body": (
+            "{{company}} 담당자 {{person}} 님,\n\n"
+            "DAEMU 파트너 계정이 승인/활성화되었습니다.\n"
+            "이제 파트너 포털에 로그인해 발주, 자료 다운로드 등을 이용하실 수 있습니다.\n\n"
+            "  · 로그인 이메일: {{email}}\n"
+            "  · 처음 비밀번호: 신청 시 입력하신 휴대폰 번호의 끝 4자리 ({{phone_last4}})\n"
+            "  · 첫 로그인 후 비밀번호 변경을 안내드립니다.\n"
+            "  · 승인 시각: {{approved_at}}\n"
+            "  · 상태: {{status}}\n\n"
+            "파트너 페이지: {{partner_url}}\n"
+            "사이트: {{site_url}}\n\n"
+            "감사합니다.\nDAEMU"
+        ),
+    },
+    {
+        "name": "신규 파트너 환영",
+        "category": "partner",
+        "subject": "[대무] {{이름}}님, 파트너 등록을 환영합니다",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "대무 파트너로 등록해 주셔서 감사합니다.\n"
+            "지금부터 발주 포털을 통해 다음 기능을 사용하실 수 있습니다:\n\n"
+            "  · 표준 카탈로그 발주\n"
+            "  · 발주 진행 상태 실시간 확인\n"
+            "  · 계약서·발주서 e-Sign 서명 및 사본 다운로드\n\n"
+            "문의 사항은 본 메일에 회신해 주세요.\n\n"
+            "대무 (DAEMU)\ndaemu_office@naver.com · 061-335-1239"
+        ),
+    },
+    {
+        "name": "발주 처리 안내",
+        "category": "reply",
+        "subject": "[대무] {{발주번호}} 발주가 접수되었습니다",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "요청하신 발주 {{발주번호}} 가 정상 접수되었습니다.\n\n"
+            "  · 접수일: {{접수일}}\n"
+            "  · 예정 출고: {{출고예정일}}\n"
+            "  · 합계: {{합계금액}}\n\n"
+            "진행 상태는 파트너 포털에서 실시간 확인 가능합니다.\n"
+            "변경 또는 취소가 필요하시면 출고 1영업일 전까지 연락 주세요.\n\n"
+            "대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "뉴스레터 — 시즌 메뉴",
+        "category": "newsletter",
+        "subject": "[대무] {{이름}}님께 보내는 이번 시즌 추천 메뉴",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "대무가 새로 큐레이션한 이번 시즌 메뉴를 소개드립니다.\n\n"
+            "  · 봄 시그니처 — 딸기 크렘 다누아즈\n"
+            "  · 한정 베이커리 — 무화과 크림 브리오슈\n"
+            "  · 시즌 음료 — 로즈 라떼\n\n"
+            "자세한 레시피 노트와 도입 사례는 [메뉴 상세 보기]({{상세링크}}) 에서 확인하실 수 있습니다.\n\n"
+            "수신을 원치 않으시면 본 메일 하단의 수신거부 링크를 이용해 주세요.\n\n"
+            "대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "미팅 일정 안내",
+        "category": "general",
+        "subject": "[대무] {{이름}}님과의 미팅 일정 확인",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "요청하신 미팅 일정을 아래와 같이 조정했습니다.\n\n"
+            "  · 일시: {{일시}}\n"
+            "  · 장소: {{장소}}\n"
+            "  · 참석자: {{참석자}}\n"
+            "  · 안건: {{안건}}\n\n"
+            "변경이 필요하시면 1영업일 전까지 회신 부탁드립니다.\n\n대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "이벤트/공지 안내",
+        "category": "event",
+        "subject": "[대무] {{이벤트명}} 안내",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "{{이벤트명}} 을 다음과 같이 진행합니다.\n\n"
+            "  · 일정: {{시작일}} ~ {{종료일}}\n"
+            "  · 대상: {{대상}}\n"
+            "  · 혜택: {{혜택}}\n\n"
+            "자세한 내용은 아래에서 확인하실 수 있습니다.\n{{상세링크}}\n\n대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "발주 마감 시간 안내 (정기)",
+        "category": "partner",
+        "subject": "[대무] {{이름}}님, 발주 마감 시간 안내",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "대무 발주 운영 시간을 안내드립니다.\n\n"
+            "  · 평일 발주 마감: 매일 {{마감시간}} (이후 접수분은 다음 영업일 처리)\n"
+            "  · 주말·공휴일: 발주 접수 불가 → 다음 영업일 자동 처리\n"
+            "  · 긴급 발주: {{긴급연락처}} 로 직접 연락 부탁드립니다\n\n"
+            "마감 후 접수된 건은 자동으로 다음 영업일에 처리되어 출고일이 1일 미뤄질 수 있습니다.\n양해 부탁드립니다.\n\n대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "공휴일·연휴 발주 휴무 안내",
+        "category": "partner",
+        "subject": "[대무] {{이름}}님, {{휴무명}} 발주 휴무 안내",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "{{휴무명}} 으로 인해 다음 기간 동안 발주 접수가 중단됩니다.\n\n"
+            "  · 휴무 기간: {{시작일}} ~ {{종료일}}\n"
+            "  · 정상 운영 재개: {{재개일}}\n"
+            "  · 마지막 출고일: {{마지막출고일}}\n"
+            "  · 첫 출고 재개일: {{첫출고일}}\n\n"
+            "휴무 전 미리 발주가 필요하신 분은 {{사전마감일}} 까지 접수 부탁드립니다.\n"
+            "긴급 사항은 {{긴급연락처}} 로 연락 부탁드립니다.\n\n대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "택배사 사정 — 배송 지연 안내",
+        "category": "reply",
+        "subject": "[대무] {{이름}}님 발주 {{발주번호}} — 택배사 사정으로 배송 지연",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "{{발주번호}} 발주 건의 배송이 택배사 사정으로 지연되고 있어 안내드립니다.\n\n"
+            "  · 사유: {{지연사유}}\n"
+            "  · 영향 지역: {{영향지역}}\n"
+            "  · 예상 지연 기간: {{예상지연}}\n"
+            "  · 변경된 도착 예상일: {{변경도착예정일}}\n\n"
+            "택배사 운영이 정상화되는 즉시 출고가 진행됩니다.\n"
+            "긴급한 상품의 경우 {{긴급연락처}} 로 연락 부탁드리며, 가능한 범위 내에서 대안을 안내드리겠습니다.\n\n"
+            "대무 (DAEMU)\ndaemu_office@naver.com · 061-335-1239"
+        ),
+    },
+    {
+        "name": "발주 일시 중단 — 시스템·재고",
+        "category": "partner",
+        "subject": "[대무] {{이름}}님, 발주 일시 중단 안내 ({{사유}})",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "{{사유}} 으로 인해 발주 접수가 일시 중단됩니다.\n\n"
+            "  · 중단 기간: {{시작일}} ~ {{종료일}}\n"
+            "  · 영향 상품: {{영향상품}}\n"
+            "  · 복구 예정 시점: {{복구예정}}\n"
+            "  · 정상 처리 재개일: {{재개일}}\n\n"
+            "이 기간 중 접수된 발주는 시스템상 처리가 지연될 수 있어 정상화 후 일괄 처리됩니다.\n"
+            "이미 진행 중인 발주는 정상 출고됩니다.\n\n"
+            "불편을 드려 죄송하며, 빠른 정상화를 위해 노력하겠습니다.\n\n대무 (DAEMU)"
+        ),
+    },
+    {
+        "name": "발주 정상 재개 안내",
+        "category": "partner",
+        "subject": "[대무] {{이름}}님, 발주 정상 재개 — {{재개일}}",
+        "body": (
+            "안녕하세요 {{이름}}님,\n\n"
+            "{{사유}} 으로 일시 중단되었던 발주가 정상 재개됨을 안내드립니다.\n\n"
+            "  · 재개일: {{재개일}}\n"
+            "  · 첫 정상 출고일: {{첫출고일}}\n\n"
+            "중단 기간 동안 미처리된 발주분은 {{재처리일}} 부터 순차적으로 처리됩니다.\n"
+            "지속된 협조에 감사드리며, 빠른 정상 운영으로 보답하겠습니다.\n\n대무 (DAEMU)"
+        ),
+    },
+]
+
+
+async def ensure_default_mail_templates(session: AsyncSession) -> None:
+    """`/admin/mail-templates` 라이브러리 default seed.
+
+    Idempotent — `mail_template_lib.name` 이 같은 row 가 있으면 건드리지 않음.
+    옛 localStorage 시드와 동일한 12종을 backend 단일 진실원으로 보강.
+    """
+    res = await session.execute(select(MailTemplateLib.name))
+    existing_names = {row[0] for row in res.all()}
+    added = 0
+    for t in _SEED_MAIL_TEMPLATES:
+        if t["name"] in existing_names:
+            continue
+        session.add(MailTemplateLib(
+            name=t["name"],
+            category=t.get("category", "general"),
+            subject=t["subject"],
+            body=t["body"],
+            variables=[],
+            active=True,
+        ))
+        added += 1
+    if added:
+        await session.commit()
+        print(f"[seeds] {added} default mail templates inserted")

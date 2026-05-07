@@ -386,6 +386,53 @@ export default function AdminMailTemplates() {
   const [filter, setFilter] = useState('');
   const [activePreview, setActivePreview] = useState(null);
 
+  // 분류별 일괄 추가 수신자 그룹의 backend cache. mount 시 backend 4개 list
+  // 를 fetch 해 in-memory 에 보관. extract(recipientCache) 가 그룹별 emails
+  // 추출. 옛 localStorage `DB.get(...)` 의존 제거 — backend Aiven = 단일 진실원.
+  // fail 시 setError 만 갱신 → fake 0 표시 차단.
+  const [recipientCache, setRecipientCache] = useState({
+    crm: [], partners: [], subscribers: [], inquiries: [],
+  });
+  const [recipientCacheError, setRecipientCacheError] = useState('');
+
+  const reloadRecipientCache = async () => {
+    if (!api.isConfigured()) {
+      setRecipientCacheError('백엔드 미연결 — 수신자 그룹은 비어 있습니다.');
+      return;
+    }
+    try {
+      const [crm, partners, subscribers, inquiries] = await Promise.all([
+        api.get('/api/crm?page_size=500'),
+        api.get('/api/partners?page_size=500'),
+        api.get('/api/newsletter?page_size=500'),
+        api.get('/api/inquiries?page_size=500'),
+      ]);
+      const next = {
+        crm: crm?.ok && Array.isArray(crm.items) ? crm.items : null,
+        partners: partners?.ok && Array.isArray(partners.items) ? partners.items : null,
+        subscribers: subscribers?.ok && Array.isArray(subscribers.items) ? subscribers.items : null,
+        inquiries: inquiries?.ok && Array.isArray(inquiries.items) ? inquiries.items : null,
+      };
+      const failedKeys = Object.entries(next).filter(([, v]) => v === null).map(([k]) => k);
+      // 실패한 영역만 직전 값 유지 (fake 0 방지) + 부분 에러 안내.
+      setRecipientCache((prev) => ({
+        crm: next.crm ?? prev.crm,
+        partners: next.partners ?? prev.partners,
+        subscribers: next.subscribers ?? prev.subscribers,
+        inquiries: next.inquiries ?? prev.inquiries,
+      }));
+      if (failedKeys.length === 4) {
+        setRecipientCacheError('수신자 그룹을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      } else if (failedKeys.length) {
+        setRecipientCacheError('일부 수신자 그룹을 불러오지 못했습니다 (' + failedKeys.join(', ') + ').');
+      } else {
+        setRecipientCacheError('');
+      }
+    } catch (e) {
+      setRecipientCacheError('수신자 그룹을 불러오지 못했습니다: ' + (e?.message || String(e)));
+    }
+  };
+
   // backend 단일 진실원에서 template list 를 hydrate.
   // 실패 시 옛 localStorage 시드 fallback (dev / 백엔드 미연결 한정).
   const reloadFromBackend = async () => {
@@ -403,7 +450,8 @@ export default function AdminMailTemplates() {
   useEffect(() => {
     let alive = true;
     reloadFromBackend();
-    const onChange = () => { if (alive) reloadFromBackend(); };
+    reloadRecipientCache();
+    const onChange = () => { if (alive) { reloadFromBackend(); reloadRecipientCache(); } };
     window.addEventListener('daemu-db-change', onChange);
     const onVis = () => {
       if (alive && typeof document !== 'undefined' && !document.hidden) reloadFromBackend();
@@ -412,6 +460,7 @@ export default function AdminMailTemplates() {
     const id = setInterval(() => {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         reloadFromBackend();
+        reloadRecipientCache();
       }
     }, 60_000);
     return () => {
@@ -1135,48 +1184,59 @@ function getDataSource(key) {
   return DATA_SOURCES.find((s) => s.key === key) || DATA_SOURCES[0];
 }
 
-// "직접 입력" 모드에서 한 번에 분류된 이메일 그룹을 textarea 에 부어넣는
-// 단축 버튼 정의. 어드민 사용자(admin_users 테이블) 는 별도 저장소라
-// 절대 포함되지 않습니다.
+// "직접 입력" 모드 분류별 일괄 추가 — 옛 localStorage `DB.get(...)` 의존
+// 제거. 이제 컴포넌트가 mount 시 backend Aiven 의 4개 list (crm, partners,
+// newsletter, inquiries) 를 fetch 해 cache 에 두고, 각 그룹의 extract(cache)
+// 로 이메일 추출. 어드민 사용자(admin_users 테이블) 는 별도 저장소라 포함 0.
+//
+// extract 는 *backend snake_case* row 를 받음:
+//   crm: { id, name, email, phone, status, ... }            (status: lead | qualified | customer | lost)
+//   partners: { id, company_name, contact_name, email, status, ... }  (status: 대기 | 승인 | 비활성)
+//   subscribers: { id, email, status, ... }                  (status: active | unsubscribed)
+//   inquiries: { id, name, email, status, replied, created_at, ... }  (status: 신규 | 처리중 | 답변완료)
 const QUICK_ADD_GROUPS = [
   {
-    key: 'crm_active', label: 'CRM 활성 고객', desc: 'lead·qualified·customer',
-    fetch: () => (DB.get('crm') || [])
+    key: 'crm_active', label: 'CRM 활성 고객', desc: 'lead · qualified · customer',
+    extract: (cache) => (cache.crm || [])
       .filter((r) => ['lead', 'qualified', 'customer'].includes(r.status))
       .map((r) => r.email).filter(Boolean),
   },
   {
-    key: 'crm_customer', label: 'CRM 전환 고객만', desc: 'status=customer',
-    fetch: () => (DB.get('crm') || [])
+    key: 'crm_customer', label: 'CRM 전환 고객만', desc: 'status = customer',
+    extract: (cache) => (cache.crm || [])
       .filter((r) => r.status === 'customer')
       .map((r) => r.email).filter(Boolean),
   },
   {
-    key: 'partners_active', label: '활성 파트너', desc: 'active=true',
-    fetch: () => (DB.get('partners') || [])
-      .filter((r) => r.active !== false)
+    key: 'partners_active', label: '활성 파트너', desc: '승인된 partner',
+    extract: (cache) => (cache.partners || [])
+      .filter((r) => {
+        const s = r.status || '';
+        return s === '승인' || s === 'active' || s === 'approved' || s === '활성';
+      })
       .map((r) => r.email).filter(Boolean),
   },
   {
-    key: 'subscribers', label: '뉴스레터 구독자', desc: 'status≠unsubscribed',
-    fetch: () => (DB.get('subscribers') || [])
+    key: 'subscribers', label: '뉴스레터 구독자', desc: 'status ≠ unsubscribed',
+    extract: (cache) => (cache.subscribers || [])
       .filter((r) => r.status !== 'unsubscribed')
       .map((r) => r.email).filter(Boolean),
   },
   {
-    key: 'inquiries_replied', label: '답변완료 문의자', desc: 'status=답변완료',
-    fetch: () => (DB.get('inquiries') || [])
-      .filter((r) => r.status === '답변완료')
+    key: 'inquiries_replied', label: '답변완료 문의자', desc: 'status = 답변완료',
+    extract: (cache) => (cache.inquiries || [])
+      .filter((r) => r.status === '답변완료' || r.replied === true)
       .map((r) => r.email).filter(Boolean),
   },
   {
     key: 'inquiries_recent30', label: '최근 30일 문의자', desc: '접수일 30일 이내',
-    fetch: () => {
+    extract: (cache) => {
       const cutoff = Date.now() - 30 * 86400 * 1000;
-      return (DB.get('inquiries') || [])
+      return (cache.inquiries || [])
         .filter((r) => {
-          if (!r.date) return false;
-          const t = new Date(r.date).getTime();
+          const ts = r.created_at || r.date;
+          if (!ts) return false;
+          const t = new Date(ts).getTime();
           return Number.isFinite(t) && t >= cutoff;
         })
         .map((r) => r.email).filter(Boolean);
@@ -1366,26 +1426,32 @@ function BulkSendPanel({ templates }) {
               <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d', marginBottom: 8 }}>
                 분류별 일괄 추가
               </div>
+              {recipientCacheError && (
+                <div style={{ fontSize: 11.5, color: '#b04a3b', background: '#fbe9e7', border: '1px solid #e8a99a', padding: '6px 10px', marginBottom: 8 }}>
+                  {recipientCacheError}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {QUICK_ADD_GROUPS.map((g) => {
-                  const count = g.fetch().filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)).length;
+                  const emails = g.extract(recipientCache).filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+                  const count = emails.length;
                   return (
                     <button key={g.key} type="button" className="adm-btn-sm"
                       disabled={!count}
                       title={g.desc}
                       onClick={() => {
-                        const emails = g.fetch().filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
-                        if (!emails.length) {
+                        const fresh = g.extract(recipientCache).filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+                        if (!fresh.length) {
                           siteAlert(`${g.label} 에 등록된 이메일이 없습니다.`);
                           return;
                         }
                         const existing = manualRaw
                           .split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
                         const seen = new Set(existing.map((e) => e.toLowerCase()));
-                        const toAdd = emails.filter((e) => !seen.has(e.toLowerCase()));
+                        const toAdd = fresh.filter((e) => !seen.has(e.toLowerCase()));
                         const next = [...existing, ...toAdd].join('\n');
                         setManualRaw(next);
-                        siteToast(`${g.label}: ${toAdd.length}명 추가${emails.length - toAdd.length ? ` (중복 ${emails.length - toAdd.length}명 제외)` : ''}`,
+                        siteToast(`${g.label}: ${toAdd.length}명 추가${fresh.length - toAdd.length ? ` (중복 ${fresh.length - toAdd.length}명 제외)` : ''}`,
                           { tone: 'success' });
                       }}>
                       + {g.label}

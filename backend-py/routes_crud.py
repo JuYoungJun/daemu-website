@@ -121,15 +121,67 @@ def _apply_vars(text: str | None, vars_: dict[str, Any]) -> str:
     return pattern.sub(lambda m: str(vars_.get(m.group(1), "")), str(text))
 
 
-def _wrap_html(inner_text: str) -> str:
-    """Wrap a plain-text body into the DAEMU email envelope."""
-    safe = _esc(inner_text).replace("\n", "<br>")
+# Mail body 의 inline image placeholder. AdminMail 편집기가 [[img:cid...]] 형태로
+# 본문에 삽입 — frontend send 경로(`src/lib/email.js bodyToHtml`)는 image URL 로
+# 변환해서 보내지만, backend 가 자체 발송하는 경로(`_send_partner_mail` /
+# auto-reply 등)는 변환을 안 해서 recipient 가 raw `[[img:cid...]]` 텍스트를
+# 그대로 받던 incident. 본 helper 가 동일 변환을 backend python 으로 포팅.
+_IMG_CID_RE = re.compile(r"\[\[img:([\w-]+)\]\]")
+
+
+def _strip_image_placeholders(text: str | None) -> str:
+    """text/plain 본문에서 [[img:cid...]] 마커를 *제거*. recipient 가 plain
+    text 클라이언트로 메일을 열어도 raw 마커가 보이지 않게 한다."""
+    if not text:
+        return ""
+    return _IMG_CID_RE.sub("", str(text))
+
+
+def _build_html_with_images(inner_text: str | None, images: list | None) -> str:
+    """text 안의 [[img:cid...]] 마커를 images 메타에서 url 매핑해 <img> 로 변환.
+    매핑 실패한 cid 는 *제거* (recipient 가 raw 마커 안 보게). 그 외 텍스트는
+    HTML escape + 줄바꿈을 <br> 로.
+    """
+    by_cid: dict[str, dict] = {}
+    for img in images or []:
+        if not isinstance(img, dict):
+            continue
+        cid = img.get("contentId") or img.get("content_id")
+        if cid:
+            by_cid[str(cid)] = img
+    parts = _IMG_CID_RE.split(str(inner_text or ""))
+    # split 결과: [text, cid, text, cid, ..., text] — 짝수 인덱스가 일반 텍스트.
+    rendered: list[str] = []
+    for idx, chunk in enumerate(parts):
+        if idx % 2 == 0:
+            rendered.append(_esc(chunk).replace("\n", "<br>"))
+        else:
+            img = by_cid.get(chunk)
+            url = img.get("url") if isinstance(img, dict) else None
+            if url:
+                alt = _esc(img.get("filename") or "")
+                rendered.append(
+                    f'<div style="margin:14px 0">'
+                    f'<img src="{_esc(url)}" alt="{alt}" '
+                    f'style="max-width:100%;height:auto;display:block;border-radius:2px">'
+                    f'</div>'
+                )
+            # url 없음 → silent drop (raw 마커 노출 차단)
+    return "".join(rendered)
+
+
+def _wrap_html(inner_text: str, images: list | None = None) -> str:
+    """plain-text body 를 DAEMU email envelope 로 wrap. images 가 주어지면
+    inline [[img:cid...]] 마커도 url 매핑해 <img> 로 변환. images 없으면
+    매핑 실패 처리 (마커 제거).
+    """
+    body_html = _build_html_with_images(inner_text, images)
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f6f4f0;font-family:'Noto Sans KR','Apple SD Gothic Neo',sans-serif;color:#222;line-height:1.7">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f6f4f0">
 <tr><td align="center" style="padding:24px 12px">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#fff;border:1px solid #d7d4cf">
-    <tr><td style="padding:32px 28px 28px 28px;font-size:14px;line-height:1.7;color:#222">{safe}</td></tr>
+    <tr><td style="padding:32px 28px 28px 28px;font-size:14px;line-height:1.7;color:#222">{body_html}</td></tr>
     <tr><td style="padding:18px 28px;border-top:1px solid #e6e3dd;font-size:11px;letter-spacing:.06em;color:#8c867d">
       <strong style="color:#111">대무 (DAEMU)</strong> · 061-335-1239 · daemu_office@naver.com<br>
       전라남도 나주시 황동 3길 8
@@ -189,8 +241,13 @@ async def _send_auto_reply_inline(
     vars_ = {"name": to_name, "category": category, "message": message,
              "email": to_email, "phone": ""}
     subject = _apply_vars(subject_tpl, vars_)
-    body = _apply_vars(body_tpl, vars_)
-    html_body = _wrap_html(body)
+    raw_body = _apply_vars(body_tpl, vars_)
+    # MailTemplate.images JSON 의 inline image 메타. text 측에는 placeholder
+    # 제거, html 측에는 url 매핑된 <img> 삽입. recipient 가 raw [[img:cid...]]
+    # 마커를 절대 보지 않게 보장.
+    images = list(getattr(tpl, "images", None) or [])
+    body = _strip_image_placeholders(raw_body)
+    html_body = _wrap_html(raw_body, images=images)
 
     # Use the unified send_email() from main.py — provider 선택은 main.py
     # 의 email_provider() 가 EMAIL_PROVIDER / SENDGRID_API_KEY /
@@ -893,8 +950,17 @@ async def _send_partner_mail(
         vars_.update({k: str(v) for k, v in extra_vars.items()})
 
     subject = _apply_vars(subject_tpl, vars_)
-    body = _apply_vars(body_tpl, vars_)
-    html_body = _wrap_html(body)
+    raw_body = _apply_vars(body_tpl, vars_)
+    # MailTemplate.images / MailTemplateLib (현재 images 컬럼 없음 — None 처리).
+    # text 측 placeholder 제거 + html 측 url 매핑. raw 마커가 recipient 메일에
+    # 노출되지 않게 보장.
+    tpl_images: list = []
+    try:
+        tpl_images = list(getattr(tpl1, "images", None) or [])
+    except Exception:
+        tpl_images = []
+    body = _strip_image_placeholders(raw_body)
+    html_body = _wrap_html(raw_body, images=tpl_images)
 
     to_email = (partner.email or "").strip()
     if not to_email:

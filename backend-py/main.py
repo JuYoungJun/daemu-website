@@ -354,10 +354,15 @@ async def lifespan(_app: FastAPI):
                 #   2) 비상 CLI: backend-py/manage.py reset-2fa --email <email>
                 #      (host shell 에서 1회 실행, 코드/env 안 건드림).
 
-                # 표준 계약서/발주서 템플릿 자동 시드 (idempotent)
+                # 표준 계약서/발주서 + 메일 라이브러리 템플릿 자동 시드 (idempotent)
                 try:
-                    from seeds import ensure_default_templates, ensure_demo_superadmin
+                    from seeds import (
+                        ensure_default_templates,
+                        ensure_default_mail_templates,
+                        ensure_demo_superadmin,
+                    )
                     await ensure_default_templates(session)
+                    await ensure_default_mail_templates(session)
                     await ensure_demo_superadmin(session)
                 except Exception as e:  # noqa: BLE001
                     print(f"[seeds] auto-seed failed: {e!r}")
