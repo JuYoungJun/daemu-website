@@ -97,7 +97,7 @@ export default function PartnerPromotions() {
 
       {/* backend 공지 / 프로모션 (admin /admin/announcements 등록) — 가장 위 노출 */}
       {liveAnnouncements.length > 0 && (
-        <div style={{ marginBottom: (liveEvents.length || liveCoupons.length || livePromos.length) ? 18 : 0 }}>
+        <div style={{ marginBottom: livePromos.length ? 18 : 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12 }}>
             {liveAnnouncements.slice(0, 6).map((a) => {
               const accent = a.kind === 'urgent' ? '#c64a3b' : (a.kind === 'promo' ? '#b87333' : '#1f5e7c');
