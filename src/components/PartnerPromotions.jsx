@@ -54,9 +54,13 @@ export default function PartnerPromotions() {
   // events / coupons 는 옛 demo 시드 — backend 모델 미존재. UI 잔존.
   const [events, setEvents] = useState(() => DB.get('events') || []);
   const [coupons, setCoupons] = useState(() => DB.get('coupons') || []);
-  // promotions 만 backend Aiven source of truth. 옛 DB.get('promotions') 는
-  // 다른 브라우저/디바이스에서 보이지 않던 한계 → /api/promotions/visible 로 대체.
+  // promotions + announcements: backend Aiven source of truth.
+  // 옛 DB.get('promotions') 의 localStorage 단독 의존 제거 → /api/promotions/visible
+  // /api/announcements/visible?target=partner_portal 도 같이 fetch — 어드민이
+  // /admin/announcements 에서 등록한 공지가 partner portal 안에서만 노출
+  // (사용자 정책: 공개 사이트 노출 금지).
   const [promotions, setPromotions] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
@@ -66,26 +70,33 @@ export default function PartnerPromotions() {
       setEvents(DB.get('events') || []);
       setCoupons(DB.get('coupons') || []);
     };
-    const fetchPromotions = async () => {
+    const fetchBackend = async () => {
       if (!alive) return;
-      if (!api.isConfigured()) { setPromotions([]); return; }
-      const r = await api.get('/api/promotions/visible');
+      if (!api.isConfigured()) {
+        setPromotions([]); setAnnouncements([]);
+        return;
+      }
+      const [pr, ar] = await Promise.all([
+        api.get('/api/promotions/visible'),
+        api.get('/api/announcements/visible?target=partner_portal'),
+      ]);
       if (!alive) return;
-      if (r && r.ok && Array.isArray(r.items)) setPromotions(r.items);
-      // 실패 시 setPromotions 호출 안 함 → 직전 정상 값 유지.
+      if (pr && pr.ok && Array.isArray(pr.items)) setPromotions(pr.items);
+      if (ar && ar.ok && Array.isArray(ar.items)) setAnnouncements(ar.items);
+      // 실패 시 setX 호출 안 함 → 직전 정상 값 유지 (fake zero 방지).
     };
     refreshLocal();
-    fetchPromotions();
-    const onChange = () => { refreshLocal(); fetchPromotions(); };
+    fetchBackend();
+    const onChange = () => { refreshLocal(); fetchBackend(); };
     window.addEventListener('storage', onChange);
     window.addEventListener('daemu-db-change', onChange);
     const id = setInterval(() => {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchPromotions();
+        fetchBackend();
       }
     }, 60_000);
     const onVis = () => {
-      if (alive && typeof document !== 'undefined' && !document.hidden) fetchPromotions();
+      if (alive && typeof document !== 'undefined' && !document.hidden) fetchBackend();
     };
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
     return () => {
@@ -100,9 +111,12 @@ export default function PartnerPromotions() {
   const liveEvents = useMemo(() => events.filter(eventIsLive), [events]);
   const liveCoupons = useMemo(() => coupons.filter(couponIsLive), [coupons]);
   const livePromos = useMemo(() => promotions.filter(promotionIsLive), [promotions]);
+  // backend visible endpoint 가 이미 active + 스케줄 + 만료를 server-side 에서
+  // 걸러주므로 frontend 는 받은 그대로 표시. 별도 client filter 불필요.
+  const liveAnnouncements = announcements;
 
   // 모두 비어있으면 패널 자체를 숨김 — 깔끔한 빈 상태
-  if (!liveEvents.length && !liveCoupons.length && !livePromos.length) return null;
+  if (!liveEvents.length && !liveCoupons.length && !livePromos.length && !liveAnnouncements.length) return null;
 
   const copyCode = (code) => {
     if (!code) return;
@@ -125,6 +139,52 @@ export default function PartnerPromotions() {
       <div style={{ fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: '#8c6d2c', marginBottom: 14, fontWeight: 600 }}>
         파트너 혜택 / 진행 중인 안내
       </div>
+
+      {/* backend 공지 / 프로모션 (admin /admin/announcements 등록) — 가장 위 노출 */}
+      {liveAnnouncements.length > 0 && (
+        <div style={{ marginBottom: (liveEvents.length || liveCoupons.length || livePromos.length) ? 18 : 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12 }}>
+            {liveAnnouncements.slice(0, 6).map((a) => {
+              const accent = a.kind === 'urgent' ? '#c64a3b' : (a.kind === 'promo' ? '#b87333' : '#1f5e7c');
+              const label = a.kind === 'urgent' ? '긴급' : (a.kind === 'promo' ? '프로모션' : '공지');
+              const ctaSafe = a.cta_href && /^https?:\/\//i.test(a.cta_href);
+              return (
+                <article key={'ann-' + a.id} style={{
+                  background: '#fff',
+                  border: '1px solid #e6e3dd',
+                  padding: '14px 16px',
+                  borderLeft: '3px solid ' + accent,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                    <span style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: accent, fontWeight: 600 }}>
+                      {label}
+                    </span>
+                    {(a.scheduled_start || a.scheduled_end) && (
+                      <span style={{ fontSize: 11, color: '#8c867d' }}>
+                        {a.scheduled_start ? String(a.scheduled_start).slice(0, 10) : ''}
+                        {(a.scheduled_start && a.scheduled_end) ? ' ~ ' : ''}
+                        {a.scheduled_end ? String(a.scheduled_end).slice(0, 10) : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 14, color: '#231815', fontWeight: 500, marginBottom: 4 }}>{a.title}</div>
+                  {a.body && (
+                    <div style={{ fontSize: 12.5, color: '#5a534b', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'keep-all' }}>
+                      {a.body}
+                    </div>
+                  )}
+                  {ctaSafe && a.cta_label && (
+                    <a href={a.cta_href} target="_blank" rel="noopener noreferrer"
+                       style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: accent, fontWeight: 500, textDecoration: 'underline' }}>
+                      {a.cta_label} →
+                    </a>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 공지 / 이벤트 */}
       {liveEvents.length > 0 && (
