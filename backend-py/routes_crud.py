@@ -1129,6 +1129,12 @@ async def upsert_mail_template(
         for k, v in payload.model_dump().items():
             setattr(tpl, k, v)
     await session.flush()
+    # SQLAlchemy 2.x async: server-side default (updated_at ON UPDATE
+    # CURRENT_TIMESTAMP) 가 flush 후 expired 상태 → 직후 model_to_dict 가
+    # attribute lazy-load 시도 → MissingGreenlet 500. _crud factory 가 이미
+    # 같은 사유로 session.refresh 를 사용 — 본 단건 라우트도 동일하게 보강.
+    # (라이브 incident 2026-05-07 02:49:05 traceback 의 직접 원인.)
+    await session.refresh(tpl)
     return {"ok": True, "template": model_to_dict(tpl)}
 
 
