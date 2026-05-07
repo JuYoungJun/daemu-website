@@ -193,6 +193,16 @@ async function del(id) {
 render();
 hydrateFromBackend().then(render);
 
+// daemu-db-change 이벤트 listener — admin-hydrate-helper 의 자동 refetch 가
+// store 를 갱신하면 화면도 즉시 재렌더. mutation 시점 / hydrate 결과 도착 시점
+// 양쪽 모두 받아 사용자가 새로고침 없이도 최신 상태를 본다.
+// 한 번만 등록되도록 module-level guard.
+if (!window.__daemuPartnersListenerAttached) {
+  window.__daemuPartnersListenerAttached = true;
+  window.addEventListener('daemu-db-change', () => {
+    try { render(); } catch (_) { /* ignore */ }
+  });
+}
 
 Object.assign(window, { filtered, render, openAdd, openEdit, resetForm, save, toggleActive, del, hydrateFromBackend });
 })();

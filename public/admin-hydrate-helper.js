@@ -49,10 +49,48 @@
   };
 
   // store 직접 갱신 (변이 후 즉시 화면 반영용 — 다음 hydrate 가 backend 로 정정).
-  window.daemuStoreSet = function (storageKey, rows) {
+  // opts.origin = 'mutation' (기본) — 외부 변이. helper 의 자동 refetch listener
+  //               가 이 이벤트를 받아 모든 cached storageKey refetch.
+  // opts.origin = 'hydrate'  — refetch 결과 store 갱신. helper listener 가 무시
+  //               해 cascade 무한 루프를 차단. UI(page script) 는 origin 무관하게
+  //               render() 호출.
+  window.daemuStoreSet = function (storageKey, rows, opts) {
     window.daemuStore[storageKey] = Array.isArray(rows) ? rows : [];
-    try { window.dispatchEvent(new Event('daemu-db-change')); } catch (_) { /* ignore */ }
+    try {
+      const detail = { storageKey, origin: (opts && opts.origin) || 'mutation' };
+      window.dispatchEvent(new CustomEvent('daemu-db-change', { detail }));
+    } catch (_) { /* ignore */ }
   };
+
+  // helper 자체의 자동 refetch — 외부 mutation 발생 시 모든 cached storageKey
+  // 를 backend 로부터 다시 읽어오게 한다. cascade 는 origin='hydrate' 검사로 차단.
+  // 한 번만 등록되도록 module-level guard.
+  let _autoRefreshAttached = false;
+  function _refreshAllCached() {
+    for (const key of Object.keys(_hydrateOpts)) {
+      try { window.daemuRefetch(key); } catch (_) { /* ignore */ }
+    }
+  }
+  function _ensureAutoRefresh() {
+    if (_autoRefreshAttached) return;
+    _autoRefreshAttached = true;
+    window.addEventListener('daemu-db-change', (e) => {
+      const origin = e && e.detail && e.detail.origin;
+      if (origin === 'hydrate') return;  // self — 무한 cascade 방지
+      _refreshAllCached();
+    });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) _refreshAllCached();
+      });
+      // visible 일 때만 60s 폴링 — cross-device sync 보강.
+      setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          _refreshAllCached();
+        }
+      }, 60_000);
+    }
+  }
 
   /**
    * @param {object} opts
@@ -68,6 +106,7 @@
     }
     // 다음 refetch 를 위해 옵션 캐시.
     _hydrateOpts[storageKey] = { storageKey, endpoint, mapItem };
+    _ensureAutoRefresh();
     _state.hydrating.add(storageKey);
     try {
       if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
@@ -98,7 +137,7 @@
         }
       }).filter(Boolean);
 
-      window.daemuStoreSet(storageKey, mapped);
+      window.daemuStoreSet(storageKey, mapped, { origin: 'hydrate' });
       return { ok: true, count: mapped.length, transient: false };
     } catch (e) {
       try { console.warn('[daemuHydrate]', storageKey, e); } catch (_) { /* ignore */ }

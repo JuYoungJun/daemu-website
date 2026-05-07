@@ -651,4 +651,113 @@ SELECT table_name, index_name, column_name, non_unique
 
 ---
 
+## 14. Realtime 전략 (2026-05 갱신)
+
+### 14.1 현재 채택 — near real-time polling + 변경 이벤트 + visibility 갱신
+
+데모/현 운영 단계에서는 다음 조합으로 *near real-time* 을 보장합니다 (true real-time
+SSE/WebSocket 미적용):
+
+1. **`daemu-db-change` 이벤트 (같은 탭 cross-component)**
+   - `src/lib/api.js` 의 mutation 호출 직후 `logOutbox` 가 자동 발화.
+   - PromotionBanner / PartnerPromotions / AdminGate KPI / AdminInquiries /
+     `public/admin-hydrate-helper.js` 가 listen 후 backend refetch + 화면 재렌더.
+   - cascade 무한 루프는 `daemuStoreSet` 의 `origin='hydrate'` vs `'mutation'`
+     마커로 차단 — helper 자체가 발화한 hydrate 이벤트는 helper listener 가 무시.
+
+2. **`visibilitychange` (탭 복귀 즉시 갱신)**
+   - 탭이 다시 visible 이 되는 순간 1회 즉시 refetch.
+   - 백그라운드에 있는 동안 다른 디바이스 / 다른 탭의 변경을 사용자가 본인
+     화면 복귀 시점에 즉시 본다.
+
+3. **60초 주기 폴링 (visible 일 때만)**
+   - `document.visibilityState === 'visible'` 가드로 백그라운드 호출 누적 방지.
+   - cross-device sync 보강 — 같은 디바이스가 아니면 daemu-db-change 가
+     전파되지 않으므로 이 폴링이 backstop.
+   - cleanup: `clearInterval` + `removeEventListener` + `alive` flag.
+
+4. **fake zero / fake success 회피**
+   - 백엔드 호출 실패 시 setKpiCounts/setItems 호출하지 않음 → *직전 정상 값
+     유지* + 작은 에러 안내. 공백 화면이나 0 표시로 사용자 혼란 차단.
+
+### 14.2 SSE/WebSocket 보류 사유 (2026-05 시점)
+
+| 항목 | 검증 결과 |
+|---|---|
+| EventSource Authorization 헤더 | 미지원 — 토큰을 query string 또는 cookie 로 보내야 함. query string 은 Render access logs / proxy 노출 risk. |
+| 단기 event 토큰 redesign | session cookie (httpOnly/Secure/SameSite=Lax) 또는 별도 short-lived event token 발급 endpoint 필요 — auth/session 모델 *재설계* 수준의 작업. |
+| Render free-tier 안정성 | long-lived connection / proxy buffering / 15분 idle sleep 동작 미검증. |
+| payload | hint-only 설계 자체는 OK 하지만 위 항목 차단. |
+| 이중성 | mutation 빈도가 실시간 채팅 수준이 아님 — 60s 폴링으로 사용자 체감 충분. |
+| 결론 | **데모 라이브 中 보류**. Cafe24 이전 + paid tier 진입 후 §14.3 절차로 단계적 도입. |
+
+### 14.3 Cafe24 이전 시 SSE/WebSocket 도입 prerequisites
+
+| Prerequisite | 설명 |
+|---|---|
+| HTTPS / 안정 host | Cafe24 가상 서버 + nginx/Apache 역방향 프록시 + SSE chunked transfer 허용 (`proxy_buffering off;` 또는 동등 설정). |
+| Auth redesign | (a) httpOnly Secure cookie session 또는 (b) `EVENT_TOKEN_SECRET` 환경 변수 기반 short-lived event token 발급 endpoint. token 은 60~180초. payload 안에 admin/partner/public scope. |
+| Endpoint 분리 | `GET /api/events/admin` (admin scope) / `GET /api/events/partner` (partner self) / `GET /api/events/public` (popups/promotions). 각각 scope 별 권한 검증. |
+| Payload 최소화 | `{"area": "...", "type": "changed", "ts": "..."}` hint-only. 절대 PII / 토큰 / 복구 코드 / 발주 상세 미포함. client 가 보호된 API 로 refetch — 권한 검증은 그 시점에 backend 가 처리. |
+| CORS/Origin | wildcard 금지. `https://daemu.<cafe24-domain>` 같은 정확한 origin 만 허용. |
+| Lifecycle | `EventSource.close()` on logout/unmount, exponential backoff reconnect (1s→2s→4s→8s, max 30s), expired token 즉시 disconnect. |
+| Logging | event token / payload / IP 등 민감 정보 logs 미기록. |
+| Fallback | event stream 끊기면 즉시 polling 모드로 전환 — admin 작업이 절대 멈추지 않게. |
+
+### 14.4 추가될 환경 변수 (SSE 도입 시점에만)
+
+| Env var | 용도 | 필수 여부 | Demo 값 출처 | Cafe24 이전 메모 |
+|---|---|---|---|---|
+| `EVENT_TOKEN_SECRET` | short-lived event token 서명/검증 | SSE 도입 시 필수 | (현재 없음, 도입 후 추가) | systemd EnvironmentFile 또는 별도 secret store |
+| `EVENT_TOKEN_TTL_SECONDS` | event token TTL (60~180 권장) | 선택 | default 120 | 동일 |
+| `REALTIME_ENABLED` | SSE on/off 플래그 | 선택 | default `0` (off) | 점진적 enable |
+| `SSE_HEARTBEAT_SECONDS` | keep-alive ping 주기 | 선택 | default 25 | nginx `proxy_read_timeout` 보다 작게 |
+
+**현재 데모 단계에서는 위 env 가 *모두 미사용*입니다 — 추가하지 않아도 됩니다.**
+
+## 15. 이번 라이브 stabilization 변경 요약 (2026-05)
+
+본 sprint 에서 데모 라이브 中 적용한 변경 (커밋 단위):
+
+1. **`fix(partner)`** (`0dea6f4`) — partner first-login password-change hang fix.
+   - `src/lib/api.js` 의 모든 fetch 호출에 30초 `AbortController` timeout.
+   - `ForcePasswordChange.submit` try/catch/finally 로 영구 hang 차단.
+   - `partnerAuth.changePassword` 응답 정합성 검증 (must_change_password 명시).
+
+2. **`fix(partner)`** (`0f9c8cf`) — `password_changed_at` surface.
+   - Partner 모델 + migrations.py + DBML + apiDocsData.js 동기화.
+   - `/api/partner-auth/login`/`/me`/`/change-password` 응답에 시각 필드.
+   - frontend adapter 매핑 — partner Account 탭 "비번 변경일" 즉시 갱신.
+
+3. **`fix(ui)`** (`50853fe`) — 비밀번호 실시간 검증 + AdminGate KPI live refresh.
+   - ForcePasswordChange / Account 폼에 ✓/○ 체크리스트 + submit disable.
+   - AdminGate KPI 가 daemu-db-change + visibilitychange + 60s polling.
+
+4. **`fix(admin)`** (`e72ded1`) — AdminInquiries 자동 최신화 + 2FA 복구 코드 재생성.
+   - AdminInquiries 가 daemu-db-change + visibility + 60s polling.
+   - `/api/auth/totp/recovery-codes/regenerate` (step-up 비번 재확인).
+   - UserOut.recovery_codes_count 노출 + TwoFactorPanel UI.
+
+5. **이번 commit** — localStorage source-of-truth 제거 + RawPage admin 자동 갱신.
+   - `GET /api/promotions/visible` 신규 공개 endpoint.
+   - PromotionBanner / PartnerPromotions 의 `promotions` 부분이 backend 단일
+     진실원으로 이전. cross-device sync 가능.
+   - `admin-hydrate-helper.js` 가 daemu-db-change + visibility + 60s polling
+     자동 refetch (cascade 차단 origin 마커 적용).
+   - admin-partners-page.js / admin-orders-page.js 가 store 갱신 시 자동 render().
+
+### 15.1 Cafe24 이전 시 검증 추가 항목
+
+이전 §3 ~ §13 의 체크리스트에 더해:
+
+- [ ] `GET /api/promotions/visible` 응답에 sensitive 필드 없음 확인 (id/title/code/discount_*/valid_*/active 만).
+- [ ] PromotionBanner / PartnerPromotions 가 다른 브라우저/디바이스에서 동일 데이터 표시.
+- [ ] admin RawPage (`/admin/partners`, `/admin/orders`) 가 사용자 가입 신청 / 발주 직후 hard refresh 없이 자동 행 추가 표시.
+- [ ] AdminGate KPI 가 mutation 즉시 + 60s + 탭 복귀 시 갱신.
+- [ ] AdminInquiries 가 contact 폼 제출 시 자동 갱신.
+- [ ] 2FA 복구 코드 재생성 — step-up 비번 + 옛 코드 무효 + 새 코드 1회 표시.
+- [ ] Render logs / Cafe24 systemd journal 에 token / 비번 / 복구 코드 plaintext 미노출 확인.
+
+---
+
 본 문서는 운영자 인수인계 + Cafe24 이전 시점에 그대로 활용할 수 있도록 작성되었습니다. 실제 secret 은 별도 안전 저장소에서 관리하세요.

@@ -1,19 +1,25 @@
 // 파트너 포털 상단에 노출되는 공지·이벤트·쿠폰·프로모션 패널.
 //
 // 데이터 출처:
-//   · DB('events')    — 관리자 페이지의 "프로모션" 메뉴 → 이벤트/공지 탭에서 등록
-//   · DB('coupons')   — 같은 페이지 → 쿠폰 코드
-//   · DB('promotions')— backend 측 promotions(데모 모드는 미사용)
+//   · DB('events')                       — 옛 demo 모드의 이벤트/공지 시드 (backend
+//                                          모델 미존재 — UI-only 데모 데이터로 잔존)
+//   · DB('coupons')                      — 옛 demo 모드의 쿠폰 시드 (backend 모델
+//                                          미존재 — UI-only 데모 데이터로 잔존)
+//   · GET /api/promotions/visible        — backend Aiven `promotions` 의 active +
+//                                          valid 범위 내 항목. source of truth.
+//                                          다른 브라우저/디바이스에서도 동일.
 //
-// 표시 규칙:
-//   · status === 'active' 인 항목만
-//   · 쿠폰: from~to 유효기간 내 + 사용량(uses < max) 미달
-//   · 이벤트: period 텍스트 그대로 표시 (자유 형식)
+// 갱신 트리거 (promotions 만 — events/coupons 는 같은 탭 storage 이벤트로 갱신):
+//   · mount 시 1회 backend fetch
+//   · daemu-db-change 이벤트
+//   · visibilitychange 시 즉시
+//   · visible 일 때만 60s 폴링
 //
 // 모든 텍스트는 React가 자동 escape — XSS 위험 없음.
 
 import { useEffect, useMemo, useState } from 'react';
 import { DB } from '../lib/db.js';
+import { api } from '../lib/api.js';
 
 function couponIsLive(c) {
   if ((c.status || 'active') !== 'active') return false;
@@ -45,22 +51,49 @@ function CouponDiscountText(c) {
 }
 
 export default function PartnerPromotions() {
+  // events / coupons 는 옛 demo 시드 — backend 모델 미존재. UI 잔존.
   const [events, setEvents] = useState(() => DB.get('events') || []);
   const [coupons, setCoupons] = useState(() => DB.get('coupons') || []);
-  const [promotions, setPromotions] = useState(() => DB.get('promotions') || []);
+  // promotions 만 backend Aiven source of truth. 옛 DB.get('promotions') 는
+  // 다른 브라우저/디바이스에서 보이지 않던 한계 → /api/promotions/visible 로 대체.
+  const [promotions, setPromotions] = useState([]);
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
-    const refresh = () => {
+    let alive = true;
+    const refreshLocal = () => {
+      if (!alive) return;
       setEvents(DB.get('events') || []);
       setCoupons(DB.get('coupons') || []);
-      setPromotions(DB.get('promotions') || []);
     };
-    window.addEventListener('storage', refresh);
-    window.addEventListener('daemu-db-change', refresh);
+    const fetchPromotions = async () => {
+      if (!alive) return;
+      if (!api.isConfigured()) { setPromotions([]); return; }
+      const r = await api.get('/api/promotions/visible');
+      if (!alive) return;
+      if (r && r.ok && Array.isArray(r.items)) setPromotions(r.items);
+      // 실패 시 setPromotions 호출 안 함 → 직전 정상 값 유지.
+    };
+    refreshLocal();
+    fetchPromotions();
+    const onChange = () => { refreshLocal(); fetchPromotions(); };
+    window.addEventListener('storage', onChange);
+    window.addEventListener('daemu-db-change', onChange);
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchPromotions();
+      }
+    }, 60_000);
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) fetchPromotions();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
     return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('daemu-db-change', refresh);
+      alive = false;
+      window.removeEventListener('storage', onChange);
+      window.removeEventListener('daemu-db-change', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
     };
   }, []);
 

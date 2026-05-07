@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import require_admin, require_perm
@@ -662,6 +662,43 @@ async def list_visible_partner_brands(session: AsyncSession = Depends(get_sessio
     )
     rows = res.scalars().all()
     return {"ok": True, "items": [model_to_dict(r) for r in rows]}
+
+
+@router.get("/promotions/visible")
+async def list_visible_promotions(session: AsyncSession = Depends(get_session)):
+    """공개/파트너 페이지의 PromotionBanner / PartnerPromotions 가 호출. 인증 없음.
+
+    노출 조건:
+      · active = True
+      · valid_from 미설정 또는 현재 시각 이후
+      · valid_to   미설정 또는 현재 시각 이전
+      · usage_limit > 0 인 경우 usage_count < usage_limit
+    응답 필드는 *공개 가시 항목만* (id/title/code/discount_*/valid_*). usage_count
+    같은 운영 메타는 미노출. code 는 사용자가 직접 입력하는 값이라 노출이 의도됨.
+    backend = source of truth — frontend 의 옛 localStorage 'promotions' 시드는
+    더 이상 신뢰하지 않음.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = select(Promotion).where(Promotion.active == True)  # noqa: E712
+    stmt = stmt.where(or_(Promotion.valid_from.is_(None), Promotion.valid_from <= now))
+    stmt = stmt.where(or_(Promotion.valid_to.is_(None), Promotion.valid_to >= now))
+    stmt = stmt.order_by(desc(Promotion.created_at)).limit(50)
+    rows = (await session.execute(stmt)).scalars().all()
+    items = []
+    for p in rows:
+        if p.usage_limit and p.usage_count >= p.usage_limit:
+            continue
+        items.append({
+            "id": p.id,
+            "title": p.title,
+            "code": p.code,
+            "discount_type": p.discount_type,
+            "discount_value": p.discount_value,
+            "valid_from": p.valid_from.isoformat() if p.valid_from else None,
+            "valid_to": p.valid_to.isoformat() if p.valid_to else None,
+            "active": p.active,
+        })
+    return {"ok": True, "items": items}
 
 
 _crud(Order, "orders",

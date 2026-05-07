@@ -400,6 +400,16 @@ async function sendDoc(id, kind) {
 render();
 hydrateFromBackend().then(render);
 
+// daemu-db-change 이벤트 listener — admin-hydrate-helper 의 자동 refetch 가
+// store 를 갱신하면 즉시 재렌더. 다른 탭/다른 디바이스의 변경(60s 폴링 또는
+// 탭 복귀 트리거) 도 같은 경로로 화면에 반영. 한 번만 등록되도록 guard.
+if (!window.__daemuOrdersListenerAttached) {
+  window.__daemuOrdersListenerAttached = true;
+  window.addEventListener('daemu-db-change', () => {
+    try { render(); } catch (_) { /* ignore */ }
+  });
+}
+
 Object.assign(window, {
   loadPartners, onPickPartner, fmtMoney, filtered, render,
   openAdd, openEdit, resetForm, save, updateStatus, del,
