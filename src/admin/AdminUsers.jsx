@@ -14,6 +14,7 @@
 //   - CSV 내보내기
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import { api } from '../lib/api.js';
 import { Auth } from '../lib/auth.js';
@@ -218,6 +219,7 @@ export default function AdminUsers() {
       <AdminShell>
         <main className="page">
           <section className="wide admin-page">
+            <Link to="/admin" className="adm-back">← Dashboard</Link>
             <h1 className="page-title">사용자 관리</h1>
             <div className="adm-empty" style={{ padding: 32, textAlign: 'center' }}>
               <p>이 페이지는 <strong>관리자(admin)</strong> 권한 사용자만 접근할 수 있습니다.</p>
@@ -233,6 +235,7 @@ export default function AdminUsers() {
     <AdminShell>
       <main className="page">
         <section className="wide admin-page">
+          <Link to="/admin" className="adm-back">← Dashboard</Link>
           <h1 className="page-title">사용자 권한 관리</h1>
 
           <PageActions>
