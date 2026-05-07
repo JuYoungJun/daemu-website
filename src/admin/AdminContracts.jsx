@@ -1165,10 +1165,32 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
     setD({ ...d, recipients: list });
   };
 
-  // CRM/Partners/Orders pickers — pulled from local DB for convenience.
-  const crmList = DB.get('crm');
-  const partnerList = DB.get('partners');
-  const orderList = DB.get('orders');
+  // CRM/Partners/Orders pickers — backend Aiven 진실원.
+  // 옛 DB.get('crm') / DB.get('partners') / DB.get('orders') 단독 의존 제거.
+  // mount 시 backend 3개 list 를 fetch 해 dropdown 채움. 미설정 시 localStorage
+  // fallback (dev/demo).
+  const [crmList, setCrmList] = useState(() => DB.get('crm') || []);
+  const [partnerList, setPartnerList] = useState(() => DB.get('partners') || []);
+  const [orderList, setOrderList] = useState(() => DB.get('orders') || []);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!api.isConfigured()) return;
+      try {
+        const [crm, partners, orders] = await Promise.all([
+          api.get('/api/crm?page_size=500'),
+          api.get('/api/partners?page_size=500'),
+          api.get('/api/orders?page_size=500'),
+        ]);
+        if (!alive) return;
+        if (crm?.ok && Array.isArray(crm.items)) setCrmList(crm.items);
+        if (partners?.ok && Array.isArray(partners.items)) setPartnerList(partners.items);
+        if (orders?.ok && Array.isArray(orders.items)) setOrderList(orders.items);
+        // 부분 실패 시 직전 정상 값 유지 (fake zero 방지).
+      } catch { /* 네트워크 오류 — fallback */ }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const save = async () => {
     if (!d.title.trim()) { setErr('제목을 입력하세요.'); return; }
@@ -1331,7 +1353,8 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
                   <select value={d.partner_id || ''} onChange={(e) => setD({ ...d, partner_id: e.target.value ? Number(e.target.value) : null })}
                     style={{ flex: 1 }}>
                     <option value="">(선택 없음)</option>
-                    {partnerList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {/* backend partners: company_name (회사명). 옛 localStorage: name. */}
+                    {partnerList.map((p) => <option key={p.id} value={p.id}>{p.company_name || p.name}</option>)}
                   </select>
                   <button type="button" className="adm-btn-sm" disabled={!d.partner_id}
                     onClick={() => {
@@ -1346,7 +1369,14 @@ function DocumentEditor({ doc, templates, onClose, onSaved }) {
                   <select value={d.order_id || ''} onChange={(e) => setD({ ...d, order_id: e.target.value ? Number(e.target.value) : null })}
                     style={{ flex: 1 }}>
                     <option value="">(선택 없음)</option>
-                    {orderList.map((o) => <option key={o.id} value={o.id}>#{String(o.id).slice(-6)} {o.partner}</option>)}
+                    {/* backend orders: partner_id 만 (no string `partner`) → partnerList 에서 회사명 lookup. */}
+                    {orderList.map((o) => {
+                      const partnerName = o.partner
+                        || (partnerList.find((x) => x.id === o.partner_id)?.company_name)
+                        || (partnerList.find((x) => x.id === o.partner_id)?.name)
+                        || '';
+                      return <option key={o.id} value={o.id}>#{String(o.id).slice(-6)} {partnerName}</option>;
+                    })}
                   </select>
                   <button type="button" className="adm-btn-sm" disabled={!d.order_id}
                     onClick={() => {

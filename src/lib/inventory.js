@@ -81,11 +81,40 @@ export function adjustStock(sku, delta, reason = '') {
 }
 
 // 사이트 전체 재고 요약 — 모니터링 KPI 용.
-export function stockSummary() {
+//
+// 정책 (2026-05): backend Aiven `products` 가 source of truth. 운영에서
+// localStorage 'products' 카탈로그는 비어있어 옛 동기 stockSummary() 가 항상
+// 0 만 반환했음 → backend `/api/products` 로 전환.
+// async 함수 — 호출자는 await 필요. backend 미설정(dev/demo) 시는 옛
+// localStorage fallback 그대로 동작.
+export async function stockSummary() {
+  // dynamic import — 운영 외 페이지 로드 시 api 모듈 로드 회피.
+  let api;
+  try { ({ api } = await import('./api.js')); } catch { /* ignore */ }
+  if (api && api.isConfigured && api.isConfigured()) {
+    const r = await api.get('/api/products?page_size=500');
+    if (r && r.ok && Array.isArray(r.items)) {
+      let total = 0;
+      const low = [];
+      const out = [];
+      for (const p of r.items) {
+        const s = Number(p.stock_count || 0);
+        total += s;
+        const cat = String(p.category_code || p.category || '');
+        const entry = { sku: p.sku, name: p.name, category: cat };
+        if (s === 0) out.push(entry);
+        else if (s < (Number(p.low_stock_threshold) || LOW_STOCK_THRESHOLD)) low.push({ ...entry, stock: s });
+      }
+      return { totalUnits: total, lowStock: low, outOfStock: out };
+    }
+    // backend 호출 실패 — 빈 통계 반환 (옛 localStorage 무시).
+    return { totalUnits: 0, lowStock: [], outOfStock: [] };
+  }
+  // dev / demo (api 미설정) 옛 localStorage fallback.
   const catalog = loadProducts();
   let total = 0;
-  let lowStockSkus = [];
-  let outOfStockSkus = [];
+  const lowStockSkus = [];
+  const outOfStockSkus = [];
   for (const cat of catalog) {
     for (const it of (cat.items || [])) {
       const s = Number(it.stock) || 0;

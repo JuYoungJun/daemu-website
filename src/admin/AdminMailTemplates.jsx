@@ -1000,41 +1000,56 @@ function formatDate(value) {
 }
 
 // 데이터 소스별 레코드 → 템플릿 변수 매핑 정의.
+//
+// 정책 (2026-05): backend Aiven 단일 진실원. extract(cache) 가 BulkSendPanel
+// 의 backend cache 에서 row 를 가져와 정규화. 옛 DB.get(...) 직접 의존 제거.
+// backend 미설정 시는 cache 가 비어있어 빈 array — 사용자에게 fake-zero 가
+// 아닌 *직접 입력* 으로 안내.
+//
 // fieldMap 의 값은 string 또는 (record) => string 함수. 함수면 통화/날짜 포맷
 // 등 가공된 결과를 변수로 사용한다.
 const DATA_SOURCES = [
   {
     key: 'manual',
     label: '직접 입력',
-    fetch: () => [],
+    extract: () => [],
     fieldMap: {},
   },
   {
+    // backend `/api/crm` row: { id, name, email, phone, source, status, ... }
     key: 'crm',
     label: 'CRM 고객',
-    fetch: () => DB.get('crm') || [],
+    extract: (cache) => cache.crm || [],
     fieldMap: {
       '이름': 'name',
+      '이메일': 'email',
+      '전화': 'phone',
+    },
+  },
+  {
+    // backend `/api/partners` row:
+    //   { id, company_name, contact_name, email, phone, status, ... }
+    key: 'partners',
+    label: '파트너사',
+    extract: (cache) => (cache.partners || []).map((p) => ({
+      id: p.id,
+      email: p.email,
+      person: p.contact_name || p.name || '',
+      phone: p.phone,
+      company: p.company_name || p.name || '',
+    })),
+    fieldMap: {
+      '이름': 'person',
       '이메일': 'email',
       '전화': 'phone',
       '회사': 'company',
     },
   },
   {
-    key: 'partners',
-    label: '파트너사',
-    fetch: () => DB.get('partners') || [],
-    fieldMap: {
-      '이름': 'person',
-      '이메일': 'email',
-      '전화': 'phone',
-      '회사': 'name',
-    },
-  },
-  {
+    // backend `/api/inquiries`: { id, name, email, phone, status, replied, ... }
     key: 'inquiries',
     label: '문의자',
-    fetch: () => DB.get('inquiries') || [],
+    extract: (cache) => cache.inquiries || [],
     fieldMap: {
       '이름': 'name',
       '이메일': 'email',
@@ -1042,41 +1057,38 @@ const DATA_SOURCES = [
     },
   },
   {
+    // backend `/api/newsletter`: { id, email, name, source, status }
     key: 'subscribers',
     label: '뉴스레터 구독자',
-    fetch: () => DB.get('subscribers') || [],
+    extract: (cache) => cache.subscribers || [],
     fieldMap: {
       '이름': 'name',
       '이메일': 'email',
     },
   },
   {
-    // 발주 — 발주 행을 파트너 이메일로 연결해 발주번호/접수일/합계 등을
-    // 자동 채운다. 배송 안내·재발주·발주 마감 안내 메일에 적합.
+    // 발주 — backend `/api/orders` 의 partner_id 를 cache.partners 에서 lookup.
+    // backend Order: { id, partner_id, title, amount, items, status,
+    //                  due_date, created_at }.
     key: 'orders',
     label: '발주 (파트너에게 전송)',
-    fetch: () => {
-      const orders = DB.get('orders') || [];
-      const partners = DB.get('partners') || [];
-      const partnerByName = Object.fromEntries(partners.map((p) => [String(p.name || '').trim(), p]));
+    extract: (cache) => {
+      const orders = cache.orders || [];
+      const partners = cache.partners || [];
+      const partnerById = Object.fromEntries(partners.map((p) => [p.id, p]));
       return orders.map((o) => {
-        const p = partnerByName[String(o.partner || '').trim()] || {};
-        const total = Number.isFinite(Number(o.amount))
-          ? Number(o.amount)
-          : Number(o.qty || 0) * Number(o.price || 0);
+        const p = partnerById[o.partner_id] || {};
         return {
           id: o.id,
           email: p.email || '',
-          person: p.person || o.partner,
+          person: p.contact_name || p.name || '',
           phone: p.phone || '',
-          company: o.partner || p.name || '',
+          company: p.company_name || p.name || '',
           order_no: '#' + String(o.id || '').slice(-6),
-          order_date: o.date || o.created_at,
+          order_date: o.created_at,
           due_date: o.due_date,
-          product: o.product || o.title || '',
-          qty: o.qty,
-          price: o.price,
-          total,
+          product: o.title || '',
+          total: Number(o.amount || 0),
           status: o.status,
         };
       });
@@ -1093,23 +1105,25 @@ const DATA_SOURCES = [
     },
   },
   {
-    // 계약/PO 문서 — recipients 배열을 펼쳐 각 수신자에 대해 1행 생성.
-    // 계약서·발주서 발송, 재발송 안내, 서명 독촉 등에 적합.
+    // 계약/PO 문서 — backend `/api/documents`. recipients 배열을 펼쳐 각 수신자
+    // 에 대해 1행 생성.
+    // backend Document: { id, kind, title, recipients (array of {name,email,role}),
+    //                      variables, sent_at, ... }.
     key: 'documents',
     label: '계약/PO 문서 수신자',
-    fetch: () => {
-      const docs = DB.get('documents') || [];
+    extract: (cache) => {
+      const docs = cache.documents || [];
       const rows = [];
       for (const d of docs) {
         const recipients = Array.isArray(d.recipients) ? d.recipients : [];
-        const total = (d.variables && (d.variables.합계금액 || d.variables.amount)) || d.amount;
+        const total = (d.variables && (d.variables.합계금액 || d.variables.amount));
         for (const r of recipients) {
           if (!r || !r.email) continue;
           rows.push({
             id: String(d.id) + ':' + r.email,
             email: r.email,
             name: r.name || '',
-            company: (d.variables && d.variables.고객사명) || d.company || '',
+            company: (d.variables && d.variables.고객사명) || '',
             doc_no: '#' + String(d.id || '').slice(-6),
             doc_title: d.title || '',
             doc_kind: d.kind === 'purchase_order' ? '발주서' : '계약서',
@@ -1226,7 +1240,7 @@ function BulkSendPanel({ templates }) {
   // 추출. 옛 localStorage `DB.get(...)` 의존 제거 — backend Aiven = 단일 진실원.
   // fail 시 setError 만 갱신 → fake 0 표시 차단.
   const [recipientCache, setRecipientCache] = useState({
-    crm: [], partners: [], subscribers: [], inquiries: [],
+    crm: [], partners: [], subscribers: [], inquiries: [], orders: [], documents: [],
   });
   const [recipientCacheError, setRecipientCacheError] = useState('');
 
@@ -1236,17 +1250,21 @@ function BulkSendPanel({ templates }) {
       return;
     }
     try {
-      const [crm, partners, subscribers, inquiries] = await Promise.all([
+      const [crm, partners, subscribers, inquiries, orders, documents] = await Promise.all([
         api.get('/api/crm?page_size=500'),
         api.get('/api/partners?page_size=500'),
         api.get('/api/newsletter?page_size=500'),
         api.get('/api/inquiries?page_size=500'),
+        api.get('/api/orders?page_size=500'),
+        api.get('/api/documents?page_size=500'),
       ]);
       const next = {
         crm: crm?.ok && Array.isArray(crm.items) ? crm.items : null,
         partners: partners?.ok && Array.isArray(partners.items) ? partners.items : null,
         subscribers: subscribers?.ok && Array.isArray(subscribers.items) ? subscribers.items : null,
         inquiries: inquiries?.ok && Array.isArray(inquiries.items) ? inquiries.items : null,
+        orders: orders?.ok && Array.isArray(orders.items) ? orders.items : null,
+        documents: documents?.ok && Array.isArray(documents.items) ? documents.items : null,
       };
       const failedKeys = Object.entries(next).filter(([, v]) => v === null).map(([k]) => k);
       // 실패한 영역만 직전 값 유지 (fake 0 방지) + 부분 에러 안내.
@@ -1255,8 +1273,10 @@ function BulkSendPanel({ templates }) {
         partners: next.partners ?? prev.partners,
         subscribers: next.subscribers ?? prev.subscribers,
         inquiries: next.inquiries ?? prev.inquiries,
+        orders: next.orders ?? prev.orders,
+        documents: next.documents ?? prev.documents,
       }));
-      if (failedKeys.length === 4) {
+      if (failedKeys.length === 6) {
         setRecipientCacheError('수신자 그룹을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
       } else if (failedKeys.length) {
         setRecipientCacheError('일부 수신자 그룹을 불러오지 못했습니다 (' + failedKeys.join(', ') + ').');
@@ -1295,8 +1315,8 @@ function BulkSendPanel({ templates }) {
   const source = getDataSource(sourceKey);
   const sourceRecords = useMemo(() => {
     if (source.key === 'manual') return [];
-    return source.fetch().filter((r) => r && r.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.email)));
-  }, [source]);
+    return source.extract(recipientCache).filter((r) => r && r.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.email)));
+  }, [source, recipientCache]);
 
   // 소스 변경 시 selectedIds 를 모든 레코드로 reset (전체 선택이 기본).
   useEffect(() => {

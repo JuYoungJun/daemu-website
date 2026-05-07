@@ -1,37 +1,28 @@
-// 파트너 포털 상단에 노출되는 공지·이벤트·쿠폰·프로모션 패널.
+// 파트너 포털 상단에 노출되는 공지·프로모션 패널.
 //
-// 데이터 출처:
-//   · DB('events')                       — 옛 demo 모드의 이벤트/공지 시드 (backend
-//                                          모델 미존재 — UI-only 데모 데이터로 잔존)
-//   · DB('coupons')                      — 옛 demo 모드의 쿠폰 시드 (backend 모델
-//                                          미존재 — UI-only 데모 데이터로 잔존)
-//   · GET /api/promotions/visible        — backend Aiven `promotions` 의 active +
-//                                          valid 범위 내 항목. source of truth.
-//                                          다른 브라우저/디바이스에서도 동일.
+// 데이터 출처 (모두 backend Aiven — single source of truth):
+//   · GET /api/promotions/visible                            — 활성 프로모션
+//   · GET /api/announcements/visible?target=partner_portal   — 어드민 공지
 //
-// 갱신 트리거 (promotions 만 — events/coupons 는 같은 탭 storage 이벤트로 갱신):
+// 사용자 정책: 쿠폰/공지 = partner portal 외 노출 금지. 본 컴포넌트는
+// PartnerPortal 안에서만 마운트되므로 정책 준수.
+//
+// 갱신 트리거:
 //   · mount 시 1회 backend fetch
 //   · daemu-db-change 이벤트
 //   · visibilitychange 시 즉시
 //   · visible 일 때만 60s 폴링
 //
-// 모든 텍스트는 React가 자동 escape — XSS 위험 없음.
+// 모든 텍스트는 React 가 자동 escape — XSS 위험 없음.
+//
+// 주: 옛 DB('events') / DB('coupons') localStorage 시드 의존 제거됨
+// (시드 자체가 어디에서도 add 되지 않아 항상 빈 배열 — dead UI 였음).
+// 그쪽 데이터가 필요하면 어드민 /admin/announcements (kind=promo) 또는
+// /admin/promotion (쿠폰) 으로 backend 등록.
 
-import { useEffect, useMemo, useState } from 'react';
-import { DB } from '../lib/db.js';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 
-function couponIsLive(c) {
-  if ((c.status || 'active') !== 'active') return false;
-  const now = Date.now();
-  if (c.from && new Date(c.from).getTime() > now) return false;
-  if (c.to && new Date(c.to + 'T23:59:59').getTime() < now) return false;
-  if (c.max && Number(c.uses || 0) >= Number(c.max)) return false;
-  return true;
-}
-function eventIsLive(e) {
-  return (e.status || 'active') === 'active';
-}
 function promotionIsLive(p) {
   if ((p.status || (p.active ? 'active' : 'paused') || 'active') !== 'active') return false;
   const now = Date.now();
@@ -43,33 +34,12 @@ function promotionIsLive(p) {
   return true;
 }
 
-function CouponDiscountText(c) {
-  if (c.type === 'percent') return `${c.value}% 할인`;
-  if (c.type === 'amount')  return `${Number(c.value || 0).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원 할인`;
-  if (c.type === 'bogo')    return '1+1 / 추가 증정';
-  return c.value ? `${c.value}` : '특가';
-}
-
 export default function PartnerPromotions() {
-  // events / coupons 는 옛 demo 시드 — backend 모델 미존재. UI 잔존.
-  const [events, setEvents] = useState(() => DB.get('events') || []);
-  const [coupons, setCoupons] = useState(() => DB.get('coupons') || []);
-  // promotions + announcements: backend Aiven source of truth.
-  // 옛 DB.get('promotions') 의 localStorage 단독 의존 제거 → /api/promotions/visible
-  // /api/announcements/visible?target=partner_portal 도 같이 fetch — 어드민이
-  // /admin/announcements 에서 등록한 공지가 partner portal 안에서만 노출
-  // (사용자 정책: 공개 사이트 노출 금지).
   const [promotions, setPromotions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
-  const [copied, setCopied] = useState('');
 
   useEffect(() => {
     let alive = true;
-    const refreshLocal = () => {
-      if (!alive) return;
-      setEvents(DB.get('events') || []);
-      setCoupons(DB.get('coupons') || []);
-    };
     const fetchBackend = async () => {
       if (!alive) return;
       if (!api.isConfigured()) {
@@ -85,10 +55,8 @@ export default function PartnerPromotions() {
       if (ar && ar.ok && Array.isArray(ar.items)) setAnnouncements(ar.items);
       // 실패 시 setX 호출 안 함 → 직전 정상 값 유지 (fake zero 방지).
     };
-    refreshLocal();
     fetchBackend();
-    const onChange = () => { refreshLocal(); fetchBackend(); };
-    window.addEventListener('storage', onChange);
+    const onChange = () => { fetchBackend(); };
     window.addEventListener('daemu-db-change', onChange);
     const id = setInterval(() => {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -101,32 +69,19 @@ export default function PartnerPromotions() {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
     return () => {
       alive = false;
-      window.removeEventListener('storage', onChange);
       window.removeEventListener('daemu-db-change', onChange);
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
       clearInterval(id);
     };
   }, []);
 
-  const liveEvents = useMemo(() => events.filter(eventIsLive), [events]);
-  const liveCoupons = useMemo(() => coupons.filter(couponIsLive), [coupons]);
-  const livePromos = useMemo(() => promotions.filter(promotionIsLive), [promotions]);
+  const livePromos = promotions.filter(promotionIsLive);
   // backend visible endpoint 가 이미 active + 스케줄 + 만료를 server-side 에서
-  // 걸러주므로 frontend 는 받은 그대로 표시. 별도 client filter 불필요.
+  // 걸러주므로 frontend 는 받은 그대로 표시.
   const liveAnnouncements = announcements;
 
-  // 모두 비어있으면 패널 자체를 숨김 — 깔끔한 빈 상태
-  if (!liveEvents.length && !liveCoupons.length && !livePromos.length && !liveAnnouncements.length) return null;
-
-  const copyCode = (code) => {
-    if (!code) return;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(code).then(
-        () => { setCopied(code); setTimeout(() => setCopied(''), 1800); },
-        () => { /* ignore */ },
-      );
-    }
-  };
+  // 모두 비어있으면 패널 자체 숨김.
+  if (!livePromos.length && !liveAnnouncements.length) return null;
 
   return (
     <div style={{
@@ -183,86 +138,6 @@ export default function PartnerPromotions() {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* 공지 / 이벤트 */}
-      {liveEvents.length > 0 && (
-        <div style={{ marginBottom: liveCoupons.length || livePromos.length ? 18 : 0 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12 }}>
-            {liveEvents.slice(0, 6).map((e) => (
-              <article key={e.id} style={{
-                background: '#fff',
-                border: '1px solid #e6e3dd',
-                padding: '14px 16px',
-                borderLeft: '3px solid ' + (e.type === '이벤트' ? '#b87333' : '#1f5e7c'),
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
-                  <span style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: e.type === '이벤트' ? '#b87333' : '#1f5e7c', fontWeight: 600 }}>
-                    {e.type || '공지'}
-                  </span>
-                  {e.period && <span style={{ fontSize: 11, color: '#8c867d' }}>{e.period}</span>}
-                </div>
-                <div style={{ fontSize: 14, color: '#231815', fontWeight: 500, marginBottom: 4 }}>{e.title}</div>
-                {e.body && (
-                  <div style={{ fontSize: 12.5, color: '#5a534b', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'keep-all' }}>
-                    {e.body}
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 쿠폰 */}
-      {liveCoupons.length > 0 && (
-        <div style={{ marginBottom: livePromos.length ? 18 : 0 }}>
-          <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#5a534b', fontWeight: 600, marginBottom: 8 }}>
-            사용 가능한 쿠폰
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
-            {liveCoupons.slice(0, 8).map((c) => (
-              <button key={c.id} type="button" onClick={() => copyCode(c.code)}
-                style={{
-                  background: '#231815',
-                  color: '#f6f4f0',
-                  padding: '14px 16px',
-                  border: 'none',
-                  borderRadius: 4,
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  fontFamily: 'inherit',
-                  transition: 'transform .15s ease, box-shadow .15s ease',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(35,24,21,.18)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#e6c891', marginBottom: 6 }}>
-                  COUPON
-                </div>
-                <div style={{ fontFamily: "'SF Mono', Menlo, monospace", fontSize: 16, letterSpacing: '.06em', marginBottom: 6 }}>
-                  {c.code}
-                </div>
-                <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: 'italic', fontSize: 18 }}>
-                  {CouponDiscountText(c)}
-                </div>
-                {c.desc && <div style={{ fontSize: 11.5, color: 'rgba(246,244,240,.7)', marginTop: 4, lineHeight: 1.5 }}>{c.desc}</div>}
-                <div style={{ marginTop: 8, fontSize: 10.5, letterSpacing: '.04em', color: 'rgba(246,244,240,.55)' }}>
-                  {c.to ? `~ ${c.to}까지` : '상시'}
-                  {c.max ? ` · ${c.uses || 0}/${c.max} 사용` : ''}
-                </div>
-                {copied === c.code && (
-                  <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 11, color: '#2e7d32', background: '#e7f4e8', padding: '2px 8px', borderRadius: 3 }}>
-                    복사됨 ✓
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 11, color: '#8c867d', marginTop: 8 }}>
-            쿠폰 카드를 클릭하면 코드가 클립보드에 복사됩니다. 발주 시 비고란에 코드를 입력하면 본사 확인 후 적용됩니다.
-          </p>
         </div>
       )}
 

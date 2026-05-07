@@ -758,6 +758,47 @@ SSE/WebSocket 미적용):
 - [ ] 2FA 복구 코드 재생성 — step-up 비번 + 옛 코드 무효 + 새 코드 1회 표시.
 - [ ] Render logs / Cafe24 systemd journal 에 token / 비번 / 복구 코드 plaintext 미노출 확인.
 
+### 15.2 P0/P1 localStorage → backend 전환 (2026-05-07)
+
+이전 §15 의 backend 진실원 정책을 **남아있던 marginal localStorage 의존 5곳**까지 확장한 commit:
+
+1. **Partner 발주 이력** (`Partners.jsx::History`)
+   - 변경: `DB.get('orders')` 단독 → `GET /api/partner/orders?page_size=200` (partner-scoped JWT).
+   - 효과: 파트너가 다른 브라우저/디바이스로 로그인해도 backend 진실원의 발주 이력 그대로 노출. fake history 가능성 0. `_normalizeBackendOrder()` 가 backend shape → 화면 shape 매핑.
+
+2. **AdminContracts dropdown picker** (`AdminContracts.jsx::DocumentEditor`)
+   - 변경: CRM/partners/orders dropdown 의 `DB.get(...)` → `api.get('/api/crm|/api/partners|/api/orders')` mount fetch.
+   - 효과: 어드민이 backend 등록 데이터를 그대로 picker 에서 선택. partner 의 `company_name` 노출 (옛 `name` fallback 유지). `Order` 의 `partner_id` 를 partnerList 에서 회사명 lookup.
+
+3. **AdminMailTemplates BulkSendPanel sources** (`AdminMailTemplates.jsx::DATA_SOURCES`)
+   - 변경: 6개 source (crm/partners/inquiries/subscribers/orders/documents) 의 `fetch()` → `extract(cache)` (backend cache 인자). `recipientCache` 에 +orders +documents 추가 + reloadRecipientCache 가 6개 endpoint Promise.all.
+   - 효과: 단체 발송 source 가 backend 데이터로 동작. fieldMap 도 backend 응답 필드명 (partner.contact_name/company_name, order.partner_id → partner lookup) 으로 정규화.
+
+4. **AdminMonitoring 재고 요약** (`AdminMonitoring.jsx` + `lib/inventory.js::stockSummary`)
+   - 변경: `stockSummary()` async 화 + backend `/api/products?page_size=500` lookup. 옛 localStorage 'products' 카탈로그가 비어 있어 항상 0 만 표시되던 misleading surface 해결. `stock_count`, `low_stock_threshold` 컬럼 사용. backend 미설정 시 옛 localStorage fallback 유지.
+   - 효과: 어드민 monitoring 페이지의 "재고 부족 (< N)" / "품절" 카드가 진짜 backend 재고 데이터 반영.
+
+5. **PartnerPromotions dead UI 제거** (`components/PartnerPromotions.jsx`)
+   - 변경: 옛 `DB.get('events')` / `DB.get('coupons')` localStorage 시드 의존 + 표시 영역 삭제 (시드 add 코드가 어디에도 없어 항상 빈 배열이었음 — dead UI). announcements + promotions 만 남김.
+   - 효과: 코드 정리 (UX 영향 0). 어드민이 등록한 공지(`/admin/announcements`) + 프로모션(`/admin/promotion`) 만 표시.
+
+### 15.2.1 Cafe24 이전 시 추가 검증
+
+§15.1 의 항목에 더해:
+
+- [ ] partner 로그인 → 발주 history 가 backend `/api/partner/orders` 응답을 그대로 표시 (시크릿 창에서도 동일).
+- [ ] /admin/contracts 신규 작성 → CRM/파트너/발주 dropdown 에 backend 데이터 보임.
+- [ ] /admin/mail-templates 단체 발송 → CRM 단계 / 파트너 / 문의자 / 구독자 / 발주 / 계약 6개 source 모두 backend 데이터로 명단 표시.
+- [ ] /admin/monitoring → 재고 카드가 `/api/products` 응답 기준 (low_stock_threshold) 으로 표시.
+- [ ] partner portal 의 PartnerPromotions 가 `events`/`coupons` 표시 영역 없이 announcements + promotions 만 표시 (이전 dead UI 제거 확인).
+- [ ] 운영 환경 LocalStorage inspector 에서 `daemu_orders`, `daemu_events`, `daemu_coupons` 가 비어 있어도 화면 정상 (backend 의존성 100%).
+
+### 15.2.2 미적용 / 후속 작업
+
+- **`lib/numbering.js` PO 번호 채번**: 현재 frontend 채번 결과를 backend `Order.title` 에 저장. backend `id` 가 진짜 unique key 라 데이터 무결성 위험 없음. 동시 채번 시 cosmetic race condition 가능 — 운영 단계에서 `GET /api/orders/next-po-number` endpoint 추가 권장.
+- **`/api/promotions/visible` + `/api/announcements/visible` partner_token 잠금**: 익명 GET 가능 — 정책 hardening 시 require_partner_token 추가. frontend api.get 의 partner header 첨부 옵션 확장 필요.
+- **Public 페이지 lazy split**: main bundle 이 11개 public 페이지 eager import (260K). Home 외 lazy 분리하면 LCP 개선 ~80K.
+
 ---
 
 본 문서는 운영자 인수인계 + Cafe24 이전 시점에 그대로 활용할 수 있도록 작성되었습니다. 실제 secret 은 별도 안전 저장소에서 관리하세요.

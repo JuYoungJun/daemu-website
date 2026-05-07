@@ -116,7 +116,7 @@
 
 - 인증 경로: **JWT 토큰 단일 경로** (`backend-py/auth.py` + `src/lib/auth.js`).
 - localStorage 의 `daemu_admin_auth` 플래그(`LEGACY_KEY`)는 옛 정적 어드민 시절의 마이그레이션 보조 플래그입니다 — 별도 인증 우회 경로가 아닙니다.
-- localStorage 의 `DB.*` 키들은 어드민 RawPage hydrate 캐시입니다 — 백엔드 진실값과 미러됩니다.
+- localStorage 의 `DB.*` 키들은 short-lived UI hydrate cache 입니다 (기준: 2026-05). 운영 단계에서는 (1) admin/partner JWT 세션, (2) RawPage 의 임시 mirror, (3) 마케팅 분석 (PIPA 동의 후 자체 추적), (4) backend 미설정(dev/demo) 시 fallback 으로만 사용. **서비스/어드민 공유 데이터는 backend Aiven 단일 진실원** — localStorage source-of-truth 의존 0 (P0 마이그레이션 완료).
 - 클라이언트 캐시를 변조해도 백엔드 권한 검사는 우회되지 않습니다 (`require_perm` 의존성으로 모든 어드민 API 가 보호됨).
 
 ---

@@ -474,8 +474,20 @@ export default function AdminMonitoring() {
   }, [outbox]);
 
   // 5) 백업 상태 — 마지막 CSV export 일시 (localStorage 마커).
-  // 재고 요약 — 카탈로그 전체 합산.
-  const stockStats = useMemo(() => stockSummary(), [outbox]);
+  // 재고 요약 — backend `/api/products` (단일 진실원). 운영에서 옛 localStorage
+  // 'products' 카탈로그가 비어 있어 stockSummary() 가 항상 0/empty 였음 →
+  // backend lookup 으로 전환. async — useState + useEffect 로 hydrate.
+  const [stockStats, setStockStats] = useState({ totalUnits: 0, lowStock: [], outOfStock: [] });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await stockSummary();
+        if (alive) setStockStats(s);
+      } catch { /* ignore — 직전 정상 값 유지 */ }
+    })();
+    return () => { alive = false; };
+  }, [outbox]);
 
   const backupStatus = useMemo(() => {
     try {

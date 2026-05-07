@@ -163,7 +163,7 @@ content_blocks.section_key UNIQUE
 
 - **Aiven for MySQL 무료 티어**: 자동 백업 2회/일, 보존 2일. paid plan 으로 더 길게.
 - **CSV 정기 export**: 어드민 메인의 "CSV 다운로드 폴더" 설정 후 각 페이지 CSV 내보내기. 월 1회 권장.
-- **localStorage 캐시**: 일부 어드민 페이지가 backend 휘발 시 localStorage 사본을 보여줌. Aiven 도입 후엔 의존성 낮음.
+- **localStorage 캐시**: 운영 단계에서는 backend Aiven 이 단일 진실원이며, localStorage 는 (1) 어드민/파트너 JWT 세션, (2) 옛 RawPage 의 short-lived UI hydrate mirror, (3) backend 미설정(dev/demo) 시 fallback 으로만 사용됨. 즉 *서비스 / 어드민 공유 데이터* 는 더 이상 localStorage 단독 의존이 없음 (2026-05 기준). 운영 단계에서 localStorage 를 source of truth 로 쓰는 것은 정책상 금지.
 
 ## ERD 시각화
 

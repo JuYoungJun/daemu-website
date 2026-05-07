@@ -750,18 +750,79 @@ const qtyBtnStyle = {
 };
 
 /* 발주 이력 + 시각 상태 + 재주문 */
+
+// backend `/api/partner/orders` 응답 → 화면 표시 형식 정규화.
+// backend shape: {id, partner_id, title, status, amount, items, note,
+//                  created_at, updated_at}
+// 화면 shape:    {id, partnerId, partner, product, qty, price, total,
+//                  items, status, date}
+// coupon 객체는 backend 에 컬럼이 없어 표시에서 빠짐 (상위 발주 row 의 metadata
+// 로 별도 저장 가능 — 추후 admin orders 의 coupon column 마이그레이션 시 추가).
+function _normalizeBackendOrder(o, partner) {
+  const items = Array.isArray(o.items) ? o.items : [];
+  const totalQty = items.reduce((a, it) => a + Number(it.qty || 0), 0);
+  return {
+    id: o.id,
+    _backend: true,
+    partnerId: o.partner_id ?? partner.id,
+    partner: partner.name,
+    product: o.title || '',
+    qty: totalQty,
+    price: totalQty ? Math.round(Number(o.amount || 0) / totalQty) : 0,
+    total: Number(o.amount || 0),
+    items,
+    status: o.status || '접수',
+    note: o.note || '',
+    date: o.created_at ? new Date(o.created_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '',
+  };
+}
+
 function History({ partner, onReorder }) {
-  const [orders, setOrders] = useState(() => DB.get('orders').filter((o) => o.partnerId === partner.id || o.partner === partner.name).reverse());
+  const [orders, setOrders] = useState([]);
 
   useEffect(() => {
-    const refresh = () => setOrders(DB.get('orders').filter((o) => o.partnerId === partner.id || o.partner === partner.name).reverse());
-    window.addEventListener('daemu-db-change', refresh);
-    window.addEventListener('storage', refresh);
-    return () => {
-      window.removeEventListener('daemu-db-change', refresh);
-      window.removeEventListener('storage', refresh);
+    let alive = true;
+    const fetchOrders = async () => {
+      // backend partner — /api/partner/orders 진실원.
+      if (api.isConfigured() && partner._backend) {
+        const r = await api.get('/api/partner/orders?page_size=200',
+          { skipAuth: true, headers: PartnerAuth.authHeader() });
+        if (!alive) return;
+        if (r && r.ok && Array.isArray(r.items)) {
+          setOrders(r.items.map((o) => _normalizeBackendOrder(o, partner)));
+        }
+        // 실패 시 setOrders 안 부름 → 직전 정상 값 유지 (fake zero 방지).
+        return;
+      }
+      // dev / demo / legacy seed partner — 옛 localStorage fallback.
+      if (!alive) return;
+      setOrders(
+        (DB.get('orders') || [])
+          .filter((o) => o.partnerId === partner.id || o.partner === partner.name)
+          .reverse()
+      );
     };
-  }, [partner.id, partner.name]);
+    fetchOrders();
+    const onChange = () => { if (alive) fetchOrders(); };
+    window.addEventListener('daemu-db-change', onChange);
+    window.addEventListener('storage', onChange);
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) fetchOrders();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchOrders();
+      }
+    }, 60_000);
+    return () => {
+      alive = false;
+      window.removeEventListener('daemu-db-change', onChange);
+      window.removeEventListener('storage', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+  }, [partner.id, partner.name, partner._backend]);
 
   const totalAmt = orders.reduce((a, o) => a + (Number(o.total || 0) || (Number(o.qty || 0) * Number(o.price || 0))), 0);
 
