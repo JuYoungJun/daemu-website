@@ -108,6 +108,9 @@ class PartnerOut(BaseModel):
     status: str
     last_login_at: datetime | None = None
     must_change_password: bool = False
+    # partner 본인이 마지막으로 비밀번호를 교체한 시각. None 이면 초기 비번
+    # 사용 중 (UI: "미변경 (초기 비번 사용 중)" 표시).
+    password_changed_at: datetime | None = None
 
 
 class PartnerLoginOut(BaseModel):
@@ -173,6 +176,7 @@ async def partner_login(
             status=partner.status,
             last_login_at=partner.last_login_at,
             must_change_password=bool(getattr(partner, "must_change_password", False)),
+            password_changed_at=getattr(partner, "password_changed_at", None),
         ),
     )
 
@@ -189,6 +193,7 @@ async def partner_me(partner: Partner = Depends(require_partner_token)):
         status=partner.status,
         last_login_at=partner.last_login_at,
         must_change_password=bool(getattr(partner, "must_change_password", False)),
+        password_changed_at=getattr(partner, "password_changed_at", None),
     )
 
 
@@ -207,12 +212,14 @@ async def partner_change_password(
         raise HTTPException(400, detail="새 비밀번호는 기존 비밀번호와 달라야 합니다.")
     partner.password_hash = hash_password(payload.new_password)
     partner.must_change_password = False
+    partner.password_changed_at = datetime.now(timezone.utc)
     await session.flush()
     await session.refresh(partner)
     return {
         "ok": True,
         "partner_id": partner.id,
         "must_change_password": partner.must_change_password,
+        "password_changed_at": partner.password_changed_at.isoformat() if partner.password_changed_at else None,
     }
 
 

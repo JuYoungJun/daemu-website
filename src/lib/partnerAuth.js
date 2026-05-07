@@ -117,6 +117,9 @@ export const PartnerAuth = {
           status: r.partner.status || '',
           active: 'active',
           must_change_password: mustChange,
+          // backend snake_case → frontend camelCase. Account 탭의
+          // "비번 변경일" 표시가 backend 단일 진실원으로부터 직접 채워짐.
+          passwordUpdatedAt: r.partner.password_changed_at || null,
           _backend: true,
         };
         // 옛 캐시된 sync LoginForm 회귀 방어 — 호출자가 await 안 해도 backend
@@ -175,6 +178,10 @@ export const PartnerAuth = {
           // 새로고침 후에도 첫 로그인 강제 변경 화면이 자동으로 뜨도록
           // login 응답에서 받은 must_change_password 를 그대로 surface.
           must_change_password: !!u.must_change_password,
+          // 비번 변경일 — login 시 backend 가 내려준 password_changed_at 가
+          // localStorage user JSON 에 저장되어 있음. partner Account 탭에서
+          // 새로고침 없이도 즉시 표시 가능하도록 camelCase 로 매핑.
+          passwordUpdatedAt: u.password_changed_at || null,
           _backend: true,
         };
       }
@@ -219,7 +226,8 @@ export const PartnerAuth = {
         current_password: String(currentPassword || ''),
         new_password: String(newPassword),
       }, { skipAuth: true, headers: authHeader() });
-      // backend 정상 응답: { ok: true, partner_id, must_change_password: false }
+      // backend 정상 응답: { ok: true, partner_id, must_change_password: false,
+      //                       password_changed_at: '2026-...Z' }
       // ok: true 인데 must_change_password 가 여전히 true 로 오면 정합성 깨짐 →
       // 화면이 ForcePasswordChange 로 다시 빠지므로 명시적으로 실패 처리.
       if (r && r.ok && r.must_change_password === false) {
@@ -228,11 +236,14 @@ export const PartnerAuth = {
           if (raw) {
             const u = JSON.parse(raw);
             u.must_change_password = false;
+            // backend 가 내려준 변경 시각을 즉시 캐시에 반영 — Account 탭의
+            // "비번 변경일" 이 새로고침 없이도 즉시 갱신되도록.
+            if (r.password_changed_at) u.password_changed_at = r.password_changed_at;
             localStorage.setItem(PARTNER_USER_STORAGE_KEY, JSON.stringify(u));
           }
         } catch { /* ignore */ }
         try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
-        return { ok: true };
+        return { ok: true, password_changed_at: r.password_changed_at || null };
       }
       return {
         ok: false,

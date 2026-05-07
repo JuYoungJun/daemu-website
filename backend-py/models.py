@@ -121,6 +121,12 @@ class Partner(Base):
     # /api/partner-auth/change-password 호출 시 False. login 응답에 그대로 노출 →
     # frontend 가 ForcePasswordChange 화면 분기.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
+    # partner 본인이 마지막으로 비밀번호를 변경한 시각. /api/partner-auth/change-password
+    # 가 set. None 이면 partner 가 한 번도 본인 비번을 교체한 적 없음 = 초기 비번
+    # (휴대폰 끝 4자리 또는 admin 발급 임시) 사용 중 → /partners 의 Account 탭에서
+    # "미변경 (초기 비번 사용 중)" 표시. admin set-password reset 은 이 값을
+    # 변경하지 않음 — "최근 본인 변경 시점" 의미를 보존.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

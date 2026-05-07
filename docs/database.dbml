@@ -78,6 +78,8 @@ Table partners {
   intro text
   status varchar(24) [default: '대기', note: '대기 | 승인 | 비활성']
   password_hash varchar(255) [default: '', note: 'bcrypt — partner-auth 로그인용']
+  must_change_password tinyint(1) [default: 1, note: '첫 로그인 / admin reset 직후 true. ForcePasswordChange 분기.']
+  password_changed_at datetime [note: 'partner 본인의 마지막 비밀번호 변경 시각. None 이면 초기 비번 사용 중. admin set-password 는 이 값을 변경하지 않음.']
   approved_at datetime
   last_login_at datetime
   created_at datetime [default: `current_timestamp`]

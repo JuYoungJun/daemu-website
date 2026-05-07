@@ -96,6 +96,8 @@ export const DB_GROUPS = [
           { col: 'intro', type: 'text', note: '회사 소개' },
           { col: 'status', type: 'varchar(24)', note: '대기 / 승인 / 거절' },
           { col: 'password_hash', type: 'varchar(255)' },
+          { col: 'must_change_password', type: 'bool', note: '첫 로그인 / admin reset 직후 true → ForcePasswordChange 분기' },
+          { col: 'password_changed_at', type: 'datetime?', note: 'partner 본인의 마지막 비번 변경 시각. None=초기 비번 사용 중' },
           { col: 'approved_at', type: 'datetime?' },
         ],
         usedBy: ['/partners 가입/로그인', '/admin/partners', 'orders.partner_id'],

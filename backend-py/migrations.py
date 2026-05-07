@@ -46,6 +46,9 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
     # 끝 4자리는 일회용 — 사용자가 로그인 시 ForcePasswordChange 화면으로
     # 분기 후 강한 비밀번호로 변경.
     ("partners", "must_change_password", "TINYINT(1)", "DEFAULT 1"),
+    # partner 본인이 비번을 마지막으로 교체한 시각. /partners Account 탭의
+    # "비번 변경일" 표시. 옛 schema 에는 컬럼이 없으므로 idempotent 보강.
+    ("partners", "password_changed_at", "DATETIME", ""),
 
     # Product (inventory) — 옛 시점에 만들어진 `products` 테이블이 ORM 신규
     # 컬럼과 schema drift 면 INSERT 시 'Unknown column' 으로 500 발생.
