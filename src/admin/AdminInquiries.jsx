@@ -138,7 +138,10 @@ export default function AdminInquiries() {
       siteAlert('서버 상태 변경에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
       return;
     }
-    await reload();
+    // 즉시 화면 반영 — backend 200 직후 사용자가 round-trip 을 기다리지 않음.
+    setItems((prev) => prev.map((x) => x.id === id ? { ...x, status, replied: status === '답변완료' } : x));
+    // background 검증 — 다음 cycle 에서 backend 응답으로 정정 (await 안 함).
+    reload();
 
     if (status === '답변완료' && target.email && target.reply && target.reply.trim() && isEmailEnabled()) {
       if (await siteConfirm('회신 메모 내용을 ' + target.email + ' 로 발송할까요?')) {
@@ -170,7 +173,9 @@ export default function AdminInquiries() {
       siteAlert('서버 삭제에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
       return;
     }
-    await reload();
+    // 즉시 화면에서 행 제거 — refetch round-trip 대기 없이 UI 반응.
+    setItems((prev) => prev.filter((x) => x.id !== id));
+    reload();
   };
 
   const saveEdit = async (form) => {
@@ -203,9 +208,10 @@ export default function AdminInquiries() {
         return;
       }
     }
-    await reload();
+    // 즉시 modal 닫기 + reload 는 background — 사용자가 즉시 결과를 본다.
     setEditing(null);
     setCreating(false);
+    reload();
   };
 
   return (

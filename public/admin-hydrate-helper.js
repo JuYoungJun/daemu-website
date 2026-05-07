@@ -157,13 +157,26 @@
 
   /**
    * 쓰기 연산 backend 미러.
-   *   { method, endpoint, body, mapResponse, refetchKey }
-   * `refetchKey` 가 주어지면 backend 성공 후 자동으로 daemuHydrate 재실행 →
-   * window.daemuStore[refetchKey] 가 backend 응답으로 갱신됨.
+   *   { method, endpoint, body, mapResponse, refetchKey, id }
+   *
+   * 동작 순서:
+   *   1) backend 호출 (mutation).
+   *   2) backend 200 직후 *즉시* store 에 optimistic local patch:
+   *      · POST  → 응답 item 이 있으면 list 맨 앞에 prepend (id 중복 시 교체).
+   *      · PATCH/PUT → 응답 item 의 id 와 일치하는 row 를 응답 item 으로 교체.
+   *      · DELETE → opts.id 또는 endpoint 끝 숫자 id 의 row 제거.
+   *      patch 직후 daemu-db-change(origin='mutation') 발화 → page script 의
+   *      render() 가 즉시 실행되어 사용자가 *서버 응답 직후* 화면 변화를 본다.
+   *      이전엔 daemuRefetch 한 번 더 round-trip 해야 화면이 갱신되어 sluggish.
+   *   3) 그 *후* background daemuRefetch (정정 / 검증). 사용자 체감 0ms 추가.
+   *      cascade 무한 루프는 origin='hydrate' 마커로 차단 — helper listener 가
+   *      hydrate 자가 발화는 무시.
+   *
+   * 실패 시 patch 미수행 — fake success 방지.
    * @returns {Promise<{ok, status, item?, error?}>}
    */
   window.daemuMirror = async function (opts) {
-    const { method, endpoint, body, mapResponse, refetchKey } = opts || {};
+    const { method, endpoint, body, mapResponse, refetchKey, id } = opts || {};
     if (!window.api || !window.api.isConfigured || !window.api.isConfigured()) {
       return { ok: false, status: 0, error: 'no-backend' };
     }
@@ -182,9 +195,50 @@
       if (item && typeof mapResponse === 'function') {
         try { item = mapResponse(item); } catch (_) { /* ignore */ }
       }
-      // backend 가 source of truth — mutation 성공 시 자동 refetch 로 store 갱신.
+      // 즉시 optimistic local patch — backend success 직후 화면이 곧바로 변화.
       if (refetchKey) {
-        try { await window.daemuRefetch(refetchKey); } catch (_) { /* ignore */ }
+        try {
+          const cur = Array.isArray(window.daemuStore[refetchKey]) ? window.daemuStore[refetchKey] : [];
+          let next = cur;
+          if (m === 'DELETE') {
+            // id: opts.id 우선, 없으면 endpoint 끝 숫자 추출.
+            let delId = id;
+            if (delId == null) {
+              const match = String(endpoint || '').match(/\/(\d+)(?:[\/?]|$)/);
+              if (match) delId = Number(match[1]);
+            }
+            if (delId != null) {
+              next = cur.filter((x) => String(x && x.id) !== String(delId));
+            }
+          } else if (item && item.id != null) {
+            const existsAt = cur.findIndex((x) => String(x && x.id) === String(item.id));
+            const merged = { ...(existsAt >= 0 ? cur[existsAt] : {}), ...item, _backend: true };
+            if (m === 'POST') {
+              if (existsAt >= 0) {
+                next = cur.slice();
+                next[existsAt] = merged;
+              } else {
+                next = [merged, ...cur];
+              }
+            } else {
+              // PATCH / PUT — 기존 row 교체 (없으면 prepend 로 안전 보강).
+              if (existsAt >= 0) {
+                next = cur.slice();
+                next[existsAt] = merged;
+              } else {
+                next = [merged, ...cur];
+              }
+            }
+          }
+          if (next !== cur) {
+            window.daemuStoreSet(refetchKey, next, { origin: 'mutation' });
+          }
+        } catch (_) { /* ignore — refetch 가 backstop */ }
+      }
+      // backend 가 단일 진실원 — 정정/검증을 위한 background refetch.
+      // await 안 함 → 사용자 체감 0ms. cascade 차단은 origin 마커로 보장.
+      if (refetchKey) {
+        try { window.daemuRefetch(refetchKey); } catch (_) { /* ignore */ }
       }
       return { ok: true, status: r.status || 200, item };
     } catch (e) {
