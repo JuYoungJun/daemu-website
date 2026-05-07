@@ -202,9 +202,13 @@ export const PartnerAuth = {
 
   /** 비밀번호 변경 화면이 떠야 하는지.
    *  · backend partner — login 응답 / /me 의 must_change_password 사용.
-   *  · dev/demo 시드 — 옛 passwordChanged 플래그 + default phone-last4 비교. */
+   *  · dev/demo 시드 — 옛 passwordChanged 플래그 + default phone-last4 비교.
+   *  · testpartner@daemu.kr 은 데모/시연 계정이라 어떤 경우에도 강제 변경 면제
+   *    (backend 부팅 hook 도 must_change_password 를 False 로 정상화 — 이중 안전망).
+   */
   needsPasswordChange(partner) {
     if (!partner) return false;
+    if ((partner.email || '').toLowerCase() === 'testpartner@daemu.kr') return false;
     if (partner._backend) return !!partner.must_change_password;
     if (partner.passwordChanged === true) return false;
     return !partner.password || String(partner.password) === defaultPasswordOf(partner);

@@ -345,6 +345,22 @@ async def lifespan(_app: FastAPI):
                 except Exception as _e:  # noqa: BLE001
                     print(f"[seed] partner password backfill skipped: {_e!r}")
 
+                # testpartner@daemu.kr 데모 계정 — 강제 비밀번호 변경 면제.
+                # 어떤 경로로 must_change_password 가 True 가 되어도 부팅 시
+                # 정상화. 데모/테스트 시연 시 매번 비번 변경 화면이 뜨지 않도록.
+                try:
+                    from sqlalchemy import select as _sa_select
+                    from models import Partner
+                    test_partner = (await session.execute(
+                        _sa_select(Partner).where(Partner.email == "testpartner@daemu.kr")
+                    )).scalar_one_or_none()
+                    if test_partner and test_partner.must_change_password:
+                        test_partner.must_change_password = False
+                        await session.commit()
+                        print("[seed] testpartner@daemu.kr — must_change_password 면제")
+                except Exception as _e:  # noqa: BLE001
+                    print(f"[seed] testpartner must_change_password normalisation skipped: {_e!r}")
+
                 # ※ DAEMU_RESET_TOTP_EMAIL env 기반 2FA 리셋은 제거됨 (2026-05-01).
                 # 사유: 호스트별로 env 등록/삭제 절차가 달라(Render Dashboard
                 # vs Cafe24 systemd EnvironmentFile + restart) 운영자 실수 +
