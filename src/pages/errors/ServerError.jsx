@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import ErrorPage from '../../components/ErrorPage.jsx';
 import { OvenSmoking } from '../../components/errorIllustrations.jsx';
 
@@ -18,6 +19,15 @@ export default function ServerError({ resetError, errorMessage, componentStack }
       window.location.href = cur + sep + '_cb=' + Date.now();
     } catch { /* ignore */ }
   };
+  // chunk-fail 케이스는 사용자 클릭 없이도 5초 후 자동 cache-bust reload.
+  // ErrorBoundary 의 1차 자동 reload 가 이미 소진된 후라 마지막 안전망.
+  const autoTriggered = useRef(false);
+  useEffect(() => {
+    if (!isChunkFail || autoTriggered.current) return;
+    autoTriggered.current = true;
+    const t = setTimeout(() => { hardReload(); }, 5000);
+    return () => clearTimeout(t);
+  }, [isChunkFail]);
   const tryAgain = (
     <button type="button" className="err-btn" onClick={() => {
       if (typeof resetError === 'function') resetError();
@@ -44,6 +54,19 @@ export default function ServerError({ resetError, errorMessage, componentStack }
       </p>
     </details>
   ) : null;
+  if (isChunkFail) {
+    return (
+      <ErrorPage
+        code="업데이트"
+        title="새 버전으로 업데이트 중"
+        message="사이트가 방금 새 버전으로 배포되었습니다. 5초 안에 자동으로 새로고침됩니다 — 바로 적용하려면 아래 버튼을 눌러주세요."
+        illustration={<OvenSmoking />}
+        primaryAction={tryAgain}
+        meta="Stale build · auto-reload"
+        extra={debugDetails}
+      />
+    );
+  }
   return (
     <ErrorPage
       code="500"

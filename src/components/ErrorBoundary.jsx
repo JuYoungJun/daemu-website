@@ -4,6 +4,7 @@ import ServerError from '../pages/errors/ServerError.jsx';
 // sessionStorage marker — App.jsx 의 lazyWithReload 와 동일 키. KEY 라는 짧은
 // 변수명은 Snyk CWE-547 가 hardcoded secret 으로 오인하므로 _STORAGE_KEY 접미.
 const CHUNK_RELOAD_STORAGE_KEY = 'daemu_chunk_reload_ts';
+const CHUNK_RELOAD_COUNT_STORAGE_KEY = 'daemu_chunk_reload_count';
 
 export default class ErrorBoundary extends Component {
   state = { error: null, info: null };
@@ -27,14 +28,26 @@ export default class ErrorBoundary extends Component {
       } catch { /* ignore */ }
 
       // Stale chunk 감지 — 새 빌드 deploy 후 옛 chunk URL 이 404 가 나
-      // dynamic import 가 실패한 케이스. 1분 안에 한 번만 자동 reload.
+      // dynamic import 가 실패한 케이스. App.jsx 의 lazyWithReload 와 같은
+      // count 마커를 공유 — count==0 이면 단순 reload, count>=1 은 cache-bust
+      // 쿼리 부착으로 옛 index.html 캐시까지 우회. count>=3 도달 시 더 이상
+      // 자동 reload 안 하고 ServerError 화면이 그대로 표시 (수동 버튼 사용).
       const msg = String(error?.message || '');
       if (/chunk|Failed to fetch dynamically|Loading.*chunk|Importing a module script failed/i.test(msg)) {
         try {
           const last = Number(sessionStorage.getItem(CHUNK_RELOAD_STORAGE_KEY) || 0);
-          if (!last || Date.now() - last > 60_000) {
+          const count = Number(sessionStorage.getItem(CHUNK_RELOAD_COUNT_STORAGE_KEY) || 0);
+          const sinceLast = Date.now() - last;
+          if (count < 3 && (last === 0 || sinceLast > 60_000)) {
             sessionStorage.setItem(CHUNK_RELOAD_STORAGE_KEY, String(Date.now()));
-            window.location.reload();
+            sessionStorage.setItem(CHUNK_RELOAD_COUNT_STORAGE_KEY, String(count + 1));
+            if (count === 0) {
+              window.location.reload();
+            } else {
+              const cur = window.location.href.replace(/[?&]_cb=\d+/g, '');
+              const sep = cur.includes('?') ? '&' : '?';
+              window.location.href = cur + sep + '_cb=' + Date.now();
+            }
           }
         } catch { /* ignore */ }
       }
