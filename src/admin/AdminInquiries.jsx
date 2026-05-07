@@ -78,7 +78,34 @@ export default function AdminInquiries() {
     }
   };
 
-  useEffect(() => { reload(); /* eslint-disable-line */ }, []);
+  // 자동 최신화 (near real-time):
+  //   · mount 시 1회
+  //   · 같은 탭 내 다른 admin 화면 mutation → daemu-db-change 즉시 갱신
+  //   · 백그라운드 갔다가 visible 복귀 시 즉시 갱신
+  //   · visible 일 때만 60초 주기 폴링 (cross-tab/cross-device 보강)
+  // 백엔드 source of truth — 옛 localStorage 캐시 의존 없음.
+  useEffect(() => {
+    let alive = true;
+    reload();
+    const onChange = () => { if (alive) reload(); };
+    window.addEventListener('daemu-db-change', onChange);
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reload();
+      }
+    }, 60_000);
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) reload();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    return () => {
+      alive = false;
+      window.removeEventListener('daemu-db-change', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

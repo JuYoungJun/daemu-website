@@ -302,6 +302,10 @@ class UserOut(BaseModel):
     # 첫 접속 시 이메일 인증 필요 여부 — frontend 가 이 필드를 보고
     # 인증 화면을 먼저 띄울지 결정. None 이면 미인증, 있으면 인증된 시각.
     email_verified_at: datetime | None = None
+    # 남은 1회용 복구 코드 갯수만 노출. 코드 자체는 절대 안 노출 — 평문은
+    # 활성화 / 재생성 시점에만 1회 표시. 사용자가 "5/8 남음" 같은 잔여
+    # 표시로 재생성 필요성을 인지할 수 있도록.
+    recovery_codes_count: int = 0
 
 
 class LoginOut(BaseModel):
@@ -664,6 +668,7 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
             totp_enabled=user.totp_enabled,
             totp_app_label=user.totp_app_label or "",
             email_verified_at=user.email_verified_at,
+            recovery_codes_count=len(user.recovery_codes or []),
         ),
     )
 
@@ -676,6 +681,7 @@ async def me(user: AdminUser = Depends(require_user)):
         totp_enabled=user.totp_enabled,
         totp_app_label=user.totp_app_label or "",
         email_verified_at=user.email_verified_at,
+        recovery_codes_count=len(user.recovery_codes or []),
     )
 
 
@@ -789,6 +795,39 @@ async def totp_disable(
     from audit import log_event
     await log_event(session, None, action="totp.disabled", actor_user=user)
     return {"ok": True}
+
+
+# 복구 코드 재생성 — 활성된 2FA 사용자 본인이, 비밀번호 재확인 step-up
+# 후에만 호출 가능. 옛 codes 는 즉시 무효 (totp_secret 은 그대로 유지 —
+# 인증 앱 재등록 없이도 새 백업 코드만 발급). 평문은 응답에서 단 1회 노출.
+class RegenerateRecoveryCodesIn(BaseModel):
+    password: str  # step-up 본인 확인
+
+
+@router.post("/totp/recovery-codes/regenerate")
+async def regenerate_recovery_codes(
+    payload: RegenerateRecoveryCodesIn,
+    user: AdminUser = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not user.totp_enabled:
+        raise HTTPException(400, detail="2단계 인증이 비활성된 상태에서는 복구 코드를 발급할 수 없습니다.")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, detail="비밀번호가 일치하지 않습니다.")
+
+    import secrets as _secrets
+    raw_codes = []
+    hashed = []
+    for _ in range(8):
+        code_raw = _secrets.token_hex(4).upper()
+        formatted = code_raw[:4] + '-' + code_raw[4:]
+        raw_codes.append(formatted)
+        hashed.append(hash_password(formatted))
+    user.recovery_codes = hashed
+    await session.flush()
+    from audit import log_event
+    await log_event(session, None, action="totp.recovery_codes.regenerated", actor_user=user)
+    return {"ok": True, "recovery_codes": raw_codes}
 
 
 # ── 2FA 분실 복구 — 이메일 링크 (host-agnostic) ─────────────────────

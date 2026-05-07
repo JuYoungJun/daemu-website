@@ -19,7 +19,10 @@ import { api } from '../lib/api.js';
 const Q_PIX = 7;  // px per QR module — placeholder size; we render text-only QR alternative
 
 export default function TwoFactorPanel({ user, onClose }) {
-  // step: 'idle' | 'setup' | 'verify' | 'recovery' | 'disable'
+  // step: 'idle' | 'setup' | 'verify' | 'recovery' | 'disable' | 'enabled'
+  //     | 'regenerate' | 'regenerated'
+  // 'regenerate' 단계는 step-up 비밀번호 재확인 폼. 'regenerated' 는
+  // 새 8개 코드를 1회 표시 (이후 평문 재조회 불가).
   const [step, setStep] = useState(user?.totp_enabled ? 'enabled' : 'idle');
   const [secret, setSecret] = useState('');
   const [otpauthUri, setOtpauthUri] = useState('');
@@ -27,6 +30,7 @@ export default function TwoFactorPanel({ user, onClose }) {
   const [code, setCode] = useState('');
   const [appLabel, setAppLabel] = useState('Google Authenticator');
   const [pwForDisable, setPwForDisable] = useState('');
+  const [pwForRegen, setPwForRegen] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -73,6 +77,17 @@ export default function TwoFactorPanel({ user, onClose }) {
     setLoading(false);
     if (!r.ok) { setError(r.error || '비활성화에 실패했습니다.'); return; }
     setStep('disabled-done');
+  };
+
+  const regenerate = async (e) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    const r = await api.post('/api/auth/totp/recovery-codes/regenerate', { password: pwForRegen });
+    setLoading(false);
+    setPwForRegen('');
+    if (!r.ok) { setError(r.error || '복구 코드 재생성에 실패했습니다.'); return; }
+    setRecoveryCodes(r.recovery_codes || []);
+    setStep('regenerated');
   };
 
   return (
@@ -183,6 +198,19 @@ export default function TwoFactorPanel({ user, onClose }) {
                 등록된 인증 앱: <strong>{user.totp_app_label}</strong>
               </p>
             )}
+            <div style={{ fontSize: 12, color: '#5a534b', background: '#f6f4f0', border: '1px solid #d7d4cf', padding: '10px 12px', borderRadius: 4, margin: '8px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span>
+                  남은 1회용 복구 코드: <strong>{Number(user?.recovery_codes_count || 0)}</strong> / 8
+                </span>
+                <button type="button" className="adm-btn-sm" onClick={() => { setError(''); setStep('regenerate'); }}>
+                  복구 코드 재생성
+                </button>
+              </div>
+              <div style={{ fontSize: 11.5, color: '#8c867d', marginTop: 6, lineHeight: 1.6 }}>
+                인증 앱을 잃었거나 복구 코드를 다 썼을 때만 재생성하세요. 재생성 즉시 옛 코드는 모두 무효 — 새 코드 8개로 교체됩니다. 인증 앱(TOTP) 자체는 그대로 유지.
+              </div>
+            </div>
             <p style={{ fontSize: 12, color: '#8c867d' }}>
               비활성화하려면 비밀번호로 본인 확인이 필요합니다.
             </p>
@@ -200,6 +228,52 @@ export default function TwoFactorPanel({ user, onClose }) {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {step === 'regenerate' && (
+          <div>
+            <p style={{ fontSize: 13, lineHeight: 1.7, color: '#5a4a2a', background: '#fff8ec', border: '1px solid #f0e3c4', padding: '10px 12px' }}>
+              ⚠ 새 복구 코드 8개를 발급하면 <strong>옛 복구 코드는 즉시 모두 무효</strong>됩니다.
+              인증 앱(TOTP) 자체는 영향 없음 — 같은 인증 앱 그대로 사용.
+            </p>
+            <form onSubmit={regenerate}>
+              <Field label="현재 비밀번호 (본인 확인)">
+                <input type="password" autoComplete="current-password" required autoFocus
+                  value={pwForRegen} onChange={(e) => setPwForRegen(e.target.value)}
+                  style={{ width: '100%', padding: 10, border: '1px solid #d7d4cf', fontSize: 14 }} />
+              </Field>
+              {error && <p style={{ color: '#c0392b', fontSize: 12, margin: '6px 0 0' }}>{error}</p>}
+              <div className="adm-action-row">
+                <button type="button" className="adm-btn-sm" onClick={() => { setError(''); setPwForRegen(''); setStep('enabled'); }}>취소</button>
+                <button type="submit" className="btn" disabled={loading}>
+                  {loading ? '발급 중…' : '복구 코드 재생성'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {step === 'regenerated' && (
+          <div>
+            <p style={{ fontSize: 13, lineHeight: 1.7, color: '#2e7d32', fontWeight: 500 }}>
+              새 복구 코드 8개가 발급되었습니다.
+            </p>
+            <p style={{ fontSize: 12.5, lineHeight: 1.7, color: '#5a4a2a', background: '#fff8ec', border: '1px solid #f0e3c4', padding: 12 }}>
+              아래 복구 코드를 안전한 곳에 보관하세요. 인증 앱을 잃었을 때 1회씩 사용 가능합니다.
+              <strong> 화면을 닫으면 다시 볼 수 없으며, 옛 복구 코드는 모두 무효 처리되었습니다.</strong>
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 12, fontFamily: 'monospace', fontSize: 14 }}>
+              {recoveryCodes.map((c) => (
+                <code key={c} style={{ padding: 8, background: '#f6f4f0', border: '1px solid #d7d4cf', textAlign: 'center', letterSpacing: '.06em' }}>{c}</code>
+              ))}
+            </div>
+            <div className="adm-action-row">
+              <button type="button" className="adm-btn-sm" onClick={() => {
+                navigator.clipboard?.writeText(recoveryCodes.join('\n'));
+              }}>모두 복사</button>
+              <button type="button" className="btn" onClick={onClose}>저장 완료</button>
+            </div>
           </div>
         )}
 
