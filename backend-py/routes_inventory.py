@@ -447,6 +447,8 @@ async def update_lot(
             note="LOT 수량 조정", actor_user_id=me.id,
         ))
     await session.flush()
+    # SQLAlchemy 2.x async: server_default(created_at/updated_at) lazy-load 회피.
+    await session.refresh(obj)
     return {"ok": True, "item": _model_to_dict(obj)}
 
 

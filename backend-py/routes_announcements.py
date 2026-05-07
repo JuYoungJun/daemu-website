@@ -112,6 +112,9 @@ async def create_announcement(
     obj = Announcement(**payload.model_dump(), created_by=me.id)
     session.add(obj)
     await session.flush()
+    # SQLAlchemy 2.x async: server_default(created_at/updated_at) lazy-load
+    # 회피 — refresh 없이 _to_dict 호출 시 MissingGreenlet 500.
+    await session.refresh(obj)
     return {"ok": True, "item": _to_dict(obj)}
 
 
@@ -128,6 +131,8 @@ async def update_announcement(
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(obj, k, v)
     await session.flush()
+    # ON UPDATE CURRENT_TIMESTAMP 인 updated_at 도 server-side → refresh 필요.
+    await session.refresh(obj)
     return {"ok": True, "item": _to_dict(obj)}
 
 

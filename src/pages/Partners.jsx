@@ -423,23 +423,29 @@ function Shop({ partner, onSubmitted }) {
   const total = Math.max(0, subtotal - discount);
 
   // cart 또는 subtotal 변경 시 적용된 쿠폰 재검증 (subtotal 0이 되거나 한도 초과 등)
+  // validateCoupon 은 backend `/api/promotions/visible` 비동기 lookup — async.
   useEffect(() => {
     if (!appliedCoupon) return;
-    const r = validateCoupon(appliedCoupon.coupon.code, subtotal);
-    if (!r.ok) {
-      setAppliedCoupon(null);
-      setCouponMsg({ kind: 'err', text: '장바구니가 변경되어 쿠폰이 해제되었습니다: ' + r.reason });
-      return;
-    }
-    if (r.discount !== appliedCoupon.discount) {
-      setAppliedCoupon({ coupon: r.coupon, discount: r.discount });
-    }
+    let alive = true;
+    (async () => {
+      const r = await validateCoupon(appliedCoupon.coupon.code, subtotal);
+      if (!alive) return;
+      if (!r.ok) {
+        setAppliedCoupon(null);
+        setCouponMsg({ kind: 'err', text: '장바구니가 변경되어 쿠폰이 해제되었습니다: ' + r.reason });
+        return;
+      }
+      if (r.discount !== appliedCoupon.discount) {
+        setAppliedCoupon({ coupon: r.coupon, discount: r.discount });
+      }
+    })();
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtotal]);
 
-  const applyCoupon = () => {
+  const applyCoupon = async () => {
     setCouponMsg({ kind: '', text: '' });
-    const r = validateCoupon(couponInput, subtotal);
+    const r = await validateCoupon(couponInput, subtotal);
     if (!r.ok) {
       setAppliedCoupon(null);
       setCouponMsg({ kind: 'err', text: r.reason });

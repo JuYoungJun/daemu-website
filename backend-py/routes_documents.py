@@ -159,6 +159,8 @@ async def create_template(
     )
     session.add(t)
     await session.flush()
+    # SQLAlchemy 2.x async: server_default(created_at/updated_at) lazy-load 회피.
+    await session.refresh(t)
     return {"ok": True, "item": template_to_dict(t)}
 
 
@@ -175,6 +177,8 @@ async def update_template(
     for k in ("name", "kind", "subject", "body", "variables", "active"):
         setattr(t, k, getattr(payload, k))
     await session.flush()
+    # ON UPDATE CURRENT_TIMESTAMP 인 updated_at 도 server-side → refresh 필요.
+    await session.refresh(t)
     return {"ok": True, "item": template_to_dict(t)}
 
 
@@ -298,6 +302,8 @@ async def create_document(
     push_history(d, "created", by=user.email)
     session.add(d)
     await session.flush()
+    # SQLAlchemy 2.x async: server_default(created_at/updated_at) lazy-load 회피.
+    await session.refresh(d)
     return {"ok": True, "item": doc_to_dict(d)}
 
 
@@ -335,6 +341,8 @@ async def update_document(
     d.work_id = payload.work_id
     push_history(d, "edited", by=user.email)
     await session.flush()
+    # ON UPDATE CURRENT_TIMESTAMP 인 updated_at 도 server-side → refresh 필요.
+    await session.refresh(d)
     return {"ok": True, "item": doc_to_dict(d)}
 
 
@@ -371,6 +379,8 @@ async def cancel_document(
     d.canceled_reason = (payload.reason or "")[:255]
     push_history(d, "canceled", by=user.email, detail={"reason": d.canceled_reason})
     await session.flush()
+    # updated_at server-side onupdate → refresh.
+    await session.refresh(d)
     return {"ok": True, "item": doc_to_dict(d)}
 
 
@@ -470,6 +480,8 @@ async def send_document_doc(
         push_history(d, "sent", by=user.email,
                      detail={"sent": sent, "failed": failed, "sign_required": payload.sign_required})
     await session.flush()
+    # updated_at server-side onupdate (status/sent_at 변경) → refresh.
+    await session.refresh(d)
     return {
         "ok": True,
         "sent": sent,

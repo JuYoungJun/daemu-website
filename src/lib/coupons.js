@@ -1,33 +1,71 @@
 // 쿠폰 검증·할인 계산 — Shop / PartnerPromotions / 향후 admin orders에서
-// 공통으로 사용할 수 있는 순수 함수 모음.
+// 공통으로 사용할 수 있는 함수 모음.
 //
-// 쿠폰 데이터(localStorage 'daemu_coupons')의 형태:
+// source of truth (2026-05-): backend Aiven `promotions` 테이블.
+// `/api/promotions/visible` 가 active + 유효기간 + 사용한도 미만 행만 반환.
+// 옛 localStorage 'daemu_coupons' 단독 의존 제거 — admin 이 등록한 쿠폰을
+// 다른 브라우저 / 디바이스에서도 동일하게 검증 가능해야 함.
+//
+// 통합 coupon 객체 형태 (backend 응답을 정규화):
 //   {
 //     id, code, desc?, type ('percent'|'amount'|'bogo'),
 //     value, from?, to?, max?, uses?, status ('active'|'paused'),
 //   }
 
 import { DB } from './db.js';
+import { api } from './api.js';
 
-export function findCoupon(code) {
+// backend `/api/promotions/visible` 응답 → 통합 coupon 형태로 정규화.
+// backend 는 visible 단계에서 active=true + 유효기간 + 사용한도 미만 만 반환
+// 하므로 frontend 는 status='active' 로 가정해도 안전.
+function _adaptBackend(p) {
+  if (!p || !p.code) return null;
+  return {
+    id: p.id,
+    code: p.code,
+    desc: p.title || '',
+    type: p.discount_type || 'amount',
+    value: Number(p.discount_value || 0),
+    from: p.valid_from || '',  // ISO with timezone
+    to: p.valid_to || '',      // ISO with timezone
+    status: p.active === false ? 'paused' : 'active',
+    _backend: true,
+  };
+}
+
+// async — backend lookup 우선, 미설정 / 실패 시 localStorage fallback.
+export async function findCoupon(code) {
   if (!code) return null;
   const target = String(code).trim().toLowerCase();
   if (!target) return null;
+  if (api.isConfigured()) {
+    try {
+      const r = await api.get('/api/promotions/visible');
+      if (r && r.ok && Array.isArray(r.items)) {
+        const hit = r.items.find((p) => (p.code || '').toLowerCase() === target);
+        if (hit) return _adaptBackend(hit);
+        // backend 가 응답했는데 매칭 없음 → 진짜 없는 쿠폰. localStorage 보조 검색
+        // 안 함 (운영에서 옛 localStorage 시드가 fake hit 만들지 않도록).
+        return null;
+      }
+    } catch { /* 네트워크 에러 — fallback */ }
+  }
+  // dev / demo (api 미설정) fallback
   const list = DB.get('coupons') || [];
   return list.find((c) => (c.code || '').toLowerCase() === target) || null;
 }
 
-// (ok, reason, coupon, discount)
+// async — (ok, reason, coupon, discount)
 // subtotal: number — 적용 전 합계
 // 반환:
-//   { ok: false, reason, code }                     — 무효 (사유 노출)
+//   { ok: false, reason }                           — 무효 (사유 노출)
 //   { ok: true,  coupon, discount, savedAmount }    — 적용 가능
-export function validateCoupon(code, subtotal) {
+export async function validateCoupon(code, subtotal) {
   const trimmed = String(code || '').trim();
   if (!trimmed) {
     return { ok: false, reason: '쿠폰 코드를 입력해 주세요.' };
   }
-  const coupon = findCoupon(trimmed);
+  const coupon = await findCoupon(trimmed);
   if (!coupon) {
     return { ok: false, reason: '존재하지 않는 쿠폰 코드입니다.' };
   }
@@ -38,8 +76,15 @@ export function validateCoupon(code, subtotal) {
   if (coupon.from && new Date(coupon.from).getTime() > now) {
     return { ok: false, reason: `사용 시작일 이전입니다 (${coupon.from} 부터).` };
   }
-  if (coupon.to && new Date(coupon.to + 'T23:59:59').getTime() < now) {
-    return { ok: false, reason: `만료된 쿠폰입니다 (${coupon.to} 까지).` };
+  // backend ISO ('2026-12-31T23:59:59+00:00') 는 그대로 파싱.
+  // 옛 localStorage 'YYYY-MM-DD' 는 그날 23:59:59 까지 유효 — 시간 부분 append.
+  if (coupon.to) {
+    const isISO = /T\d{2}:\d{2}/.test(String(coupon.to));
+    const toDate = isISO ? new Date(coupon.to) : new Date(coupon.to + 'T23:59:59');
+    const t = toDate.getTime();
+    if (Number.isFinite(t) && t < now) {
+      return { ok: false, reason: `만료된 쿠폰입니다 (${coupon.to} 까지).` };
+    }
   }
   if (coupon.max && Number(coupon.uses || 0) >= Number(coupon.max)) {
     return { ok: false, reason: '사용 한도가 모두 소진된 쿠폰입니다.' };
