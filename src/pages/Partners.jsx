@@ -259,13 +259,21 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
   // current_password 검증을 하므로, 첫 변경은 휴대폰 끝 4자리를 자동으로 사용.
   const initialPassword = defaultPasswordHint(partner);
 
+  // 실시간 검증 — 사용자가 타이핑하는 동안 각 조건 ✓ / ○ 체크리스트 표시.
+  // submit 도 이 조건들이 모두 충족됐을 때만 활성화. 라벨/실제 검증 정합성
+  // 보장 (백엔드 PartnerChangePasswordIn 의 min_length=8 + 새/현재 비번 다름).
+  const minLenOK = pw1.length >= 8;
+  const diffFromInitOK = pw1.length > 0 && pw1 !== initialPassword;
+  const matchOK = pw1.length > 0 && pw1 === pw2;
+  const allValid = minLenOK && diffFromInitOK && matchOK;
+
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
     setErr('');
-    if (pw1.length < 8) return setErr('새 비밀번호는 8자 이상이어야 합니다.');
-    if (pw1 !== pw2) return setErr('비밀번호가 일치하지 않습니다.');
-    if (pw1 === initialPassword) return setErr('초기 비밀번호와 다른 값을 사용해 주세요.');
+    if (!minLenOK) return setErr('새 비밀번호는 8자 이상이어야 합니다.');
+    if (!diffFromInitOK) return setErr('초기 비밀번호와 다른 값을 사용해 주세요.');
+    if (!matchOK) return setErr('비밀번호가 일치하지 않습니다.');
     setBusy(true);
     // try/finally — fetch timeout/abort/예외 어느 경로로 끝나도 setBusy(false)
     // 가 보장되어 "변경 중…" 영구 hang 이 발생하지 않게 함.
@@ -301,7 +309,7 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
 
         <form onSubmit={submit} style={{maxWidth:380,margin:'0 auto',padding:'0 24px'}}>
           <div style={{marginBottom:14}}>
-            <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:8}}>새 비밀번호 (8자 이상, 영문+숫자+특수문자 중 2종)</label>
+            <label style={{display:'block',fontSize:11,letterSpacing:'.14em',color:'#6f6b68',textTransform:'uppercase',marginBottom:8}}>새 비밀번호 (8자 이상)</label>
             <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} required minLength={8} autoFocus
               style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
           </div>
@@ -310,8 +318,15 @@ function ForcePasswordChange({ partner, onDone, onLogout }) {
             <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={8}
               style={{width:'100%',padding:12,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
           </div>
+          {pw1.length > 0 && (
+            <ul style={{listStyle:'none',padding:0,margin:'0 0 12px',fontSize:12,lineHeight:1.7}}>
+              <li style={{color: minLenOK ? '#2e7d32' : '#8c867d'}}>{minLenOK ? '✓' : '○'} 8자 이상</li>
+              <li style={{color: diffFromInitOK ? '#2e7d32' : '#8c867d'}}>{diffFromInitOK ? '✓' : '○'} 초기 비밀번호와 다름</li>
+              <li style={{color: matchOK ? '#2e7d32' : '#8c867d'}}>{matchOK ? '✓' : '○'} 새 비밀번호 확인 일치</li>
+            </ul>
+          )}
           {err && <p style={{color:'#c0392b',fontSize:12,marginBottom:12}}>{err}</p>}
-          <button className="btn" type="submit" style={{width:'100%',marginTop:8}} disabled={busy}>
+          <button className="btn" type="submit" style={{width:'100%',marginTop:8}} disabled={busy || !allValid}>
             {busy ? '변경 중…' : '비밀번호 변경 완료'}
           </button>
           <button type="button" onClick={onLogout} style={{display:'block',margin:'18px auto 0',background:'none',border:'none',color:'#8c867d',fontSize:12,textDecoration:'underline',cursor:'pointer'}}>다음에 변경하기 (로그아웃)</button>
@@ -911,13 +926,22 @@ function Account({ partner }) {
     return diff === 0;
   };
 
+  // 실시간 검증 — pw1/pw2/pw0 변경마다 derived. submit 전에 backend 호출
+  // 자체를 막아 "확인 → 에러" round-trip 절약.
+  const accCurrentOK = pw0.length > 0;
+  const accMinLenOK = pw1.length >= 8;
+  const accDiffFromCurrentOK = pw1.length > 0 && pw1 !== pw0;
+  const accMatchOK = pw1.length > 0 && pw1 === pw2;
+  const accAllValid = accCurrentOK && accMinLenOK && accDiffFromCurrentOK && accMatchOK;
+
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
     setMsg('');
-    if (pw1.length < 8) return setMsg('새 비밀번호는 최소 8자 이상이어야 합니다.');
-    if (pw1 !== pw2) return setMsg('새 비밀번호가 일치하지 않습니다.');
-    if (pw1 === pw0) return setMsg('현재 비밀번호와 다른 값을 입력해주세요.');
+    if (!accCurrentOK) return setMsg('현재 비밀번호를 입력해 주세요.');
+    if (!accMinLenOK) return setMsg('새 비밀번호는 최소 8자 이상이어야 합니다.');
+    if (!accDiffFromCurrentOK) return setMsg('현재 비밀번호와 다른 값을 입력해주세요.');
+    if (!accMatchOK) return setMsg('새 비밀번호가 일치하지 않습니다.');
 
     // legacy(localStorage) 파트너만 클라이언트에서 현재 비번 비교.
     // backend 파트너는 서버가 bcrypt 로 검증 → 401 응답을 message 로 표면화.
@@ -986,9 +1010,16 @@ function Account({ partner }) {
               <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={8}
                 style={{width:'100%',padding:10,border:'1px solid #ccc',borderRadius:4,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}} />
             </div>
+            {pw1.length > 0 && (
+              <ul style={{listStyle:'none',padding:0,margin:0,fontSize:12,lineHeight:1.7}}>
+                <li style={{color: accMinLenOK ? '#2e7d32' : '#8c867d'}}>{accMinLenOK ? '✓' : '○'} 8자 이상</li>
+                <li style={{color: accDiffFromCurrentOK ? '#2e7d32' : '#8c867d'}}>{accDiffFromCurrentOK ? '✓' : '○'} 현재 비밀번호와 다름</li>
+                <li style={{color: accMatchOK ? '#2e7d32' : '#8c867d'}}>{accMatchOK ? '✓' : '○'} 새 비밀번호 확인 일치</li>
+              </ul>
+            )}
             {msg && <p style={{fontSize:12,color: msg.startsWith('✓') ? '#2e7d32' : '#c0392b',margin:0}}>{msg}</p>}
             <div style={{display:'flex',gap:10}}>
-              <button type="submit" className="btn" disabled={busy}>{busy ? '변경 중…' : '변경 완료'}</button>
+              <button type="submit" className="btn" disabled={busy || !accAllValid}>{busy ? '변경 중…' : '변경 완료'}</button>
               <button type="button" disabled={busy} onClick={() => { setEditing(false); setMsg(''); setPw0(''); setPw1(''); setPw2(''); }} className="adm-btn-sm" style={smallBtnStyle}>취소</button>
             </div>
           </form>

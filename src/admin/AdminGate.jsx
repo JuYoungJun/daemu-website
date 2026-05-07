@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import { Auth } from '../lib/auth.js';
@@ -102,22 +102,47 @@ export default function AdminGate() {
   // 분기 시 hook 미호출 → React error #310. 분기 자체는 effect 내부에서.
   const [kpiCounts, setKpiCounts] = useState({});
   const [kpiError, setKpiError] = useState('');
-  useEffect(() => {
-    let alive = true;
-    // 분기 — early-skip 은 effect 안에서. hook 자체는 항상 호출됨.
-    if (!loggedIn || mustChange || needsEmailVerify) return undefined;
-    (async () => {
-      const r = await api.get('/api/admin/stats');
-      if (!alive) return;
-      if (r && r.ok && r.counts) { setKpiCounts(r.counts); setKpiError(''); }
-      else if (r && (r.status === 401 || r.status === 403)) {
-        setKpiError('KPI 권한 부족 — admin/monitoring 권한 확인.');
-      } else {
-        setKpiError(r?.error || '/api/admin/stats 호출 실패.');
-      }
-    })();
-    return () => { alive = false; };
+  // refreshKpi 를 useCallback 으로 분리 — daemu-db-change 이벤트, visibilitychange,
+  // 60s polling 모두 같은 함수를 재사용. 실패 시 *기존 counts 유지* (fake zero
+  // 표시 방지) + kpiError 만 갱신.
+  const refreshKpi = useCallback(async () => {
+    if (!loggedIn || mustChange || needsEmailVerify) return;
+    const r = await api.get('/api/admin/stats');
+    if (r && r.ok && r.counts) { setKpiCounts(r.counts); setKpiError(''); }
+    else if (r && (r.status === 401 || r.status === 403)) {
+      setKpiError('KPI 권한 부족 — admin/monitoring 권한 확인.');
+    } else {
+      setKpiError(r?.error || '/api/admin/stats 호출 실패.');
+    }
   }, [loggedIn, mustChange, needsEmailVerify]);
+  useEffect(() => {
+    if (!loggedIn || mustChange || needsEmailVerify) return undefined;
+    let alive = true;
+    refreshKpi();
+    // 다른 어드민 화면 / 동일 탭에서 변경이 일어나면 즉시 KPI 재계산.
+    // (cross-tab 변경은 'storage' 이벤트가 같이 발화하지 않으므로 본 패스에선
+    // 폴링 60s 가 보강.)
+    const onChange = () => { if (alive) refreshKpi(); };
+    window.addEventListener('daemu-db-change', onChange);
+    // 가벼운 폴링 — *visible 일 때만*. 백그라운드 탭에서 호출이 누적되지
+    // 않도록. 60s 주기는 admin KPI 신선도와 backend 부하 사이의 합의.
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshKpi();
+      }
+    }, 60_000);
+    // 탭이 다시 visible 이 되는 순간 즉시 1회 (60s 다 기다리지 않게).
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) refreshKpi();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    return () => {
+      alive = false;
+      window.removeEventListener('daemu-db-change', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+  }, [refreshKpi, loggedIn, mustChange, needsEmailVerify]);
 
   // Refresh /api/auth/me on mount so the forced-change flag stays accurate
   // even if it changed on another device or via admin reset.
