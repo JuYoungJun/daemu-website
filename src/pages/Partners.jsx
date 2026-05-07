@@ -759,31 +759,94 @@ function History({ partner, onReorder }) {
 
   const totalAmt = orders.reduce((a, o) => a + (Number(o.total || 0) || (Number(o.qty || 0) * Number(o.price || 0))), 0);
 
-  const reorder = (o) => {
+  // 재주문 — backend Aiven 에 *진짜* 새 발주 row 생성. 이전엔 localStorage
+  // DB.add 만 호출해 admin 화면에 안 보이고 새로고침 시 사라지던 fake success.
+  // 이제 POST /api/partner/orders 로 partner-scoped 인증 후 저장 → 즉시 화면
+  // 추가 + daemu-db-change 발화로 admin/orders 도 갱신.
+  const reorder = async (o) => {
+    if (api.isConfigured() && partner._backend) {
+      const items = (Array.isArray(o.items) && o.items.length)
+        ? o.items.map((it) => ({
+            sku: String(it.sku || ''),
+            name: String(it.name || ''),
+            unit: String(it.unit || ''),
+            qty: Number(it.qty || 0),
+            price: Number(it.price || 0),
+          }))
+        : [{ sku: '', name: o.product || '재주문', unit: '', qty: Number(o.qty || 1), price: Number(o.price || 0) }];
+      const totalQty = items.reduce((a, x) => a + x.qty, 0);
+      const subtotal = items.reduce((a, x) => a + x.qty * x.price, 0);
+      const summary = items.length === 1 ? items[0].name : `${items[0].name} 외 ${items.length - 1}종`;
+      const r = await api.post('/api/partner/orders', {
+        title: summary,
+        items,
+        amount: subtotal,
+        note: `재주문 (원본 발주 #${o.id})`,
+      }, { skipAuth: true, headers: PartnerAuth.authHeader() });
+      if (!r.ok) {
+        alert('재주문 저장에 실패했습니다. 잠시 후 다시 시도해 주세요. (' + (r.error || ('HTTP ' + (r.status || 0))) + ')');
+        return;
+      }
+      // 즉시 local 미러 — 다음 hydrate 가 정정.
+      try {
+        DB.add('orders', {
+          id: r.item?.id,
+          _backend: true,
+          partner: partner.name,
+          partnerId: partner.id,
+          product: summary,
+          qty: totalQty,
+          price: totalQty ? Math.round(subtotal / totalQty) : 0,
+          total: subtotal,
+          items,
+          status: '접수',
+          reorderOf: o.id,
+          date: new Date().toLocaleDateString('ko-KR'),
+        });
+      } catch { /* ignore */ }
+      window.dispatchEvent(new Event('daemu-db-change'));
+      alert('재주문이 접수되었습니다.');
+      return;
+    }
+    // 백엔드 미연결 / legacy demo seed partner — 옛 동작 유지 (브라우저 로컬).
     if (o.items && o.items.length) {
       o.items.forEach((it) => {
         DB.add('orders', {
-          partner: partner.name,
-          partnerId: partner.id,
-          product: it.name,
-          qty: it.qty,
-          price: it.price,
-          total: it.qty * it.price,
-          items: [it],
-          status: '접수',
-          reorderOf: o.id
+          partner: partner.name, partnerId: partner.id, product: it.name,
+          qty: it.qty, price: it.price, total: it.qty * it.price,
+          items: [it], status: '접수', reorderOf: o.id,
         });
       });
     } else {
-      DB.add('orders', { ...o, id: undefined, date: undefined, status:'접수', reorderOf: o.id });
+      DB.add('orders', { ...o, id: undefined, date: undefined, status: '접수', reorderOf: o.id });
     }
     window.dispatchEvent(new Event('daemu-db-change'));
-    alert('재주문이 접수되었습니다.');
+    alert('재주문이 접수되었습니다 (데모 모드 — 브라우저 로컬 저장).');
   };
 
-  const cancelOrder = (o) => {
+  // 발주 취소 — backend `POST /api/partner/orders/{id}/cancel` 호출 (이미 존재).
+  // 본인 partner_id + status='접수' 검증 후 status='취소' 로 변경. fake delete 제거.
+  const cancelOrder = async (o) => {
     if (o.status !== '접수') { alert('접수 단계의 발주만 취소 가능합니다.'); return; }
     if (!confirm('이 발주를 취소하시겠습니까?')) return;
+    if (api.isConfigured() && partner._backend && o.id != null) {
+      const r = await api.post(`/api/partner/orders/${o.id}/cancel`, { reason: '' },
+        { skipAuth: true, headers: PartnerAuth.authHeader() });
+      if (!r.ok) {
+        alert('발주 취소에 실패했습니다: ' + (r.error || ('HTTP ' + (r.status || 0))));
+        return;
+      }
+      // 즉시 local 미러 — 응답 row 의 status='취소' 로 교체.
+      try {
+        const updated = r.item;
+        if (updated && updated.id != null) {
+          DB.update('orders', updated.id, { status: updated.status || '취소' });
+        }
+      } catch { /* ignore */ }
+      window.dispatchEvent(new Event('daemu-db-change'));
+      return;
+    }
+    // 백엔드 미연결 / legacy partner — 옛 demo 흐름.
     DB.del('orders', o.id);
     window.dispatchEvent(new Event('daemu-db-change'));
   };

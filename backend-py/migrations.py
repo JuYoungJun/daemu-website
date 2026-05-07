@@ -256,6 +256,43 @@ def run_pending_migrations(conn: Connection) -> list[str]:
         except Exception as e:  # noqa: BLE001
             print(f"[migration] skip {clause!r}: {e!r}")
 
+    # 2.5) 컬럼 타입 변경 — TEXT(64KB) → LONGTEXT(~4GB).
+    # /admin/mail 의 base64 inline image 가 TEXT 한도 초과 시 'Data too long
+    # for column' 500. MySQL 한정 — SQLite 는 TEXT 길이 제한 없음 (skip).
+    pending_type_changes = [
+        ("mail_templates", "body", "longtext", "LONGTEXT"),
+        ("mail_templates", "html", "longtext", "LONGTEXT"),
+        ("mail_template_lib", "body", "longtext", "LONGTEXT"),
+    ]
+    if conn.dialect.name != "sqlite":
+        for table, column, target_type, ddl_type in pending_type_changes:
+            if not _table_exists(conn, table):
+                continue
+            try:
+                row = conn.execute(
+                    text(
+                        "SELECT data_type FROM information_schema.columns "
+                        "WHERE table_name = :t AND column_name = :c "
+                        "AND table_schema = DATABASE()"
+                    ),
+                    {"t": table, "c": column},
+                ).first()
+            except Exception as e:  # noqa: BLE001
+                print(f"[migration] inspect type {table}.{column} failed: {e!r}")
+                continue
+            if not row:
+                continue
+            current = str(row[0] or "").lower()
+            if current == target_type:
+                continue  # 이미 LONGTEXT — idempotent skip.
+            clause = f"ALTER TABLE {table} MODIFY {column} {ddl_type}"
+            try:
+                conn.execute(text(clause))
+                applied.append(clause)
+                print(f"[migration] applied: {clause}  (was {current})")
+            except Exception as e:  # noqa: BLE001
+                print(f"[migration] skip {clause!r}: {e!r}")
+
     # 3) ORM 모델 ↔ 실제 테이블 자동 정렬 — schema drift 보강.
     #    (mutation 영향 받는 모델만 — admin_users / outbox / mail_templates 등은
     #    전용 entry 가 PENDING_COLUMNS 에 이미 있으므로 중복 skip 됨.)

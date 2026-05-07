@@ -187,8 +187,11 @@ class MailTemplate(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(40), unique=True, index=True)  # auto-reply | admin-reply | document
     subject: Mapped[str] = mapped_column(String(255))
-    body: Mapped[str] = mapped_column(Text, default="")
-    html: Mapped[str | None] = mapped_column(Text, default=None)
+    # body / html — base64 inline 이미지(`<img src="data:image/...">`) 가 들어갈 수
+    # 있어 일반 TEXT(64KB) 는 'Data too long for column' 500 의 직접 원인.
+    # MySQL 에서 LONGTEXT(~4GB) 로, SQLite 에서는 generic TEXT 로 매핑.
+    body: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
+    html: Mapped[str | None] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default=None)
     images: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     category: Mapped[str] = mapped_column(String(60), default="all")
@@ -454,7 +457,8 @@ class MailTemplateLib(Base):
     name: Mapped[str] = mapped_column(String(120), index=True)
     category: Mapped[str] = mapped_column(String(40), default="general")
     subject: Mapped[str] = mapped_column(String(200))
-    body: Mapped[str] = mapped_column(Text)
+    # body — base64 이미지 inline embed 수용을 위해 LONGTEXT 매핑.
+    body: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     variables: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str] = mapped_column(String(190), default="")

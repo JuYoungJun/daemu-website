@@ -732,6 +732,13 @@ _crud(Outbox, "outbox",
 _crud(NewsletterSubscriber, "newsletter",
       allowed_fields={"email", "name", "source", "status"})
 
+# /admin/mail-templates 라이브러리 (다중 템플릿). 옛 localStorage source-of-truth
+# 를 대체 — 다른 브라우저/디바이스에서 동일 템플릿 표시. body 는 LONGTEXT 매핑
+# (base64 inline 이미지 수용). variables 는 {{var}} placeholder 목록 JSON.
+from models import MailTemplateLib as _MailTemplateLib_for_crud  # noqa: E402
+_crud(_MailTemplateLib_for_crud, "mail-templates",
+      allowed_fields={"name", "category", "subject", "body", "variables", "active", "created_by"})
+
 # 함께하는 파트너사 — Home 페이지의 로고 디스플레이.
 # (Partner 모델은 파트너 *로그인 계정* 이고, 이건 별도 노출용 디스플레이.)
 _crud(PartnerBrand, "partner-brands",

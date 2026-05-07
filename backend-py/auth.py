@@ -179,6 +179,9 @@ PERMISSIONS: dict[str, dict[str, str]] = {
     "promotions":    {ROLE_ADMIN: _ALL},
     "outbox":        {ROLE_ADMIN: _ALL, ROLE_TESTER: _READ, ROLE_DEVELOPER: _READ},
     "mail-template": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
+    # 다중 메일 템플릿 라이브러리 (`mail_template_lib`). _crud(MailTemplateLib)
+    # 가 require_perm("mail-templates", ...) 사용 — 단일 'mail-template' 와 분리.
+    "mail-templates": {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL, ROLE_TESTER: _READ},
     "content":       {ROLE_ADMIN: _ALL, ROLE_DEVELOPER: _ALL},
     # Partner brand logos shown on the public Home page (display only,
     # different from partner login accounts under "partners" key).

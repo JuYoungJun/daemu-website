@@ -4,11 +4,11 @@
 // 별개로 운영자가 *여러 개* 템플릿을 저장해두고 단체 발송, 1:1 발송,
 // 캠페인 등에서 재사용할 수 있게 합니다.
 //
-// 데이터: localStorage 'daemu_mail_templates' — 형태:
-//   [{ id, name, category, subject, body, variables, active, updatedAt }]
-//
-// 향후 backend 연결 시 같은 형태로 mail_template_lib 테이블에 흡수됩니다
-// (B1 모델: backend-py/models.py 의 MailTemplateLib).
+// 데이터 source of truth: backend Aiven `mail_template_lib` 테이블.
+// `/api/mail-templates` 다중 CRUD endpoint (require_perm("mail-templates")).
+// localStorage 'daemu_mail_templates' 는 옛 시드 호환용 *읽기 전용 fallback*
+// (백엔드 미연결 dev 모드에서만 사용). save/update/delete 는 backend 직접 호출
+// — 다른 브라우저/디바이스에서 동일 템플릿이 보이도록 보장.
 //
 // 단체 발송 UI 는 동일 페이지 하단의 "단체 발송" 패널에 있습니다.
 // 실제 발송은 RESEND_API_KEY 가 백엔드에 등록된 후 활성화됩니다 — 그 전까지는
@@ -349,21 +349,78 @@ function applyVars(text, vars) {
 // src/components/MailBodyRenderer.jsx 로 분리됨 (Snyk DOM-XSS taint
 // break + img src 추가 encodeURI sanitizer). import 만 사용.
 
+// backend snake_case 응답 → frontend camelCase 매핑. variables 는 list of strings
+// 또는 dict 둘 다 들어올 수 있어 안전하게 처리.
+function _adaptFromBackend(b) {
+  if (!b) return null;
+  return {
+    id: b.id,
+    name: b.name || '',
+    category: b.category || 'general',
+    subject: b.subject || '',
+    body: b.body || '',
+    variables: Array.isArray(b.variables) ? b.variables : (b.variables ? Object.keys(b.variables) : []),
+    active: b.active !== false,
+    createdAt: b.created_at || null,
+    updatedAt: b.updated_at || null,
+    _backend: true,
+  };
+}
+function _toBackendPayload(form) {
+  return {
+    name: String(form.name || '').trim(),
+    category: form.category || 'general',
+    subject: String(form.subject || ''),
+    body: String(form.body || ''),
+    variables: Array.isArray(form.variables) ? form.variables : [],
+    active: form.active !== false,
+  };
+}
+
 export default function AdminMailTemplates() {
-  const [templates, setTemplates] = useState(() => ensureSeedTemplates());
+  const [templates, setTemplates] = useState(() =>
+    api.isConfigured() ? [] : ensureSeedTemplates()
+  );
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState('');
   const [activePreview, setActivePreview] = useState(null);
 
+  // backend 단일 진실원에서 template list 를 hydrate.
+  // 실패 시 옛 localStorage 시드 fallback (dev / 백엔드 미연결 한정).
+  const reloadFromBackend = async () => {
+    if (!api.isConfigured()) {
+      setTemplates(ensureSeedTemplates());
+      return;
+    }
+    const r = await api.get('/api/mail-templates?page_size=200');
+    if (r && r.ok && Array.isArray(r.items)) {
+      setTemplates(r.items.map(_adaptFromBackend).filter(Boolean));
+    }
+    // 실패 시 setTemplates 호출 안 함 → 직전 정상 값 유지 (fake-zero 방지).
+  };
+
   useEffect(() => {
-    const refresh = () => setTemplates(readTemplates());
-    window.addEventListener('storage', refresh);
-    window.addEventListener('daemu-db-change', refresh);
-    return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('daemu-db-change', refresh);
+    let alive = true;
+    reloadFromBackend();
+    const onChange = () => { if (alive) reloadFromBackend(); };
+    window.addEventListener('daemu-db-change', onChange);
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) reloadFromBackend();
     };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reloadFromBackend();
+      }
+    }, 60_000);
+    return () => {
+      alive = false;
+      window.removeEventListener('daemu-db-change', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 
   const filtered = useMemo(() => {
@@ -371,19 +428,47 @@ export default function AdminMailTemplates() {
     return templates.filter((t) => t.category === filter);
   }, [templates, filter]);
 
-  const upsert = (form) => {
+  // backend POST/PATCH — fake success 방지: 응답 실패 시 visible error + state 미변경.
+  const upsert = async (form) => {
     if (!form.name?.trim()) { siteAlert('템플릿 이름을 입력하세요.'); return; }
     if (!form.subject?.trim()) { siteAlert('메일 제목을 입력하세요.'); return; }
-    const next = [...templates];
-    const now = new Date().toISOString();
-    if (form.id) {
-      const i = next.findIndex((x) => x.id === form.id);
-      if (i >= 0) next[i] = { ...next[i], ...form, updatedAt: now };
-    } else {
-      next.push({ ...form, id: nextId(next), createdAt: now, updatedAt: now });
+    if (!api.isConfigured()) {
+      // dev / 백엔드 미설정 fallback — 옛 localStorage 흐름 유지.
+      const next = [...templates];
+      const now = new Date().toISOString();
+      if (form.id) {
+        const i = next.findIndex((x) => x.id === form.id);
+        if (i >= 0) next[i] = { ...next[i], ...form, updatedAt: now };
+      } else {
+        next.push({ ...form, id: nextId(next), createdAt: now, updatedAt: now });
+      }
+      setTemplates(next);
+      saveTemplates(next);
+      setEditing(null);
+      setCreating(false);
+      return;
     }
-    setTemplates(next);
-    saveTemplates(next);
+    const payload = _toBackendPayload(form);
+    const r = form.id && form._backend
+      ? await api.patch(`/api/mail-templates/${form.id}`, payload)
+      : await api.post('/api/mail-templates', payload);
+    if (!r || !r.ok) {
+      siteAlert('템플릿 저장에 실패했습니다: ' + ((r && r.error) || ('HTTP ' + ((r && r.status) || 0))));
+      return;
+    }
+    // 즉시 local state 갱신 (refetch round-trip 대기 없이) — backend 응답 그대로.
+    const saved = _adaptFromBackend(r.item);
+    if (saved) {
+      setTemplates((prev) => {
+        const idx = prev.findIndex((x) => String(x.id) === String(saved.id));
+        if (idx >= 0) {
+          const next = prev.slice();
+          next[idx] = saved;
+          return next;
+        }
+        return [saved, ...prev];
+      });
+    }
     setEditing(null);
     setCreating(false);
   };
@@ -391,18 +476,43 @@ export default function AdminMailTemplates() {
   const remove = async (id) => {
     const ok = await siteConfirm('이 템플릿을 삭제하시겠습니까?');
     if (!ok) return;
-    const next = templates.filter((x) => x.id !== id);
-    setTemplates(next);
-    saveTemplates(next);
+    if (!api.isConfigured()) {
+      const next = templates.filter((x) => x.id !== id);
+      setTemplates(next);
+      saveTemplates(next);
+      return;
+    }
+    const target = templates.find((x) => x.id === id);
+    if (!target?._backend) {
+      siteAlert('백엔드 템플릿이 아닙니다.');
+      return;
+    }
+    const r = await api.del(`/api/mail-templates/${id}`);
+    if (!r.ok && r.status !== 204) {
+      siteAlert('템플릿 삭제에 실패했습니다: ' + ((r && r.error) || ('HTTP ' + (r.status || 0))));
+      return;
+    }
+    setTemplates((prev) => prev.filter((x) => x.id !== id));
   };
 
-  const duplicate = (id) => {
+  const duplicate = async (id) => {
     const tpl = templates.find((x) => x.id === id);
     if (!tpl) return;
-    const copy = { ...tpl, id: nextId(templates), name: tpl.name + ' (복사본)', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    const next = [...templates, copy];
-    setTemplates(next);
-    saveTemplates(next);
+    if (!api.isConfigured()) {
+      const copy = { ...tpl, id: nextId(templates), name: tpl.name + ' (복사본)', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const next = [...templates, copy];
+      setTemplates(next);
+      saveTemplates(next);
+      return;
+    }
+    const payload = _toBackendPayload({ ...tpl, name: tpl.name + ' (복사본)' });
+    const r = await api.post('/api/mail-templates', payload);
+    if (!r || !r.ok) {
+      siteAlert('복제에 실패했습니다: ' + ((r && r.error) || ('HTTP ' + ((r && r.status) || 0))));
+      return;
+    }
+    const saved = _adaptFromBackend(r.item);
+    if (saved) setTemplates((prev) => [saved, ...prev]);
   };
 
   return (
