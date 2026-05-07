@@ -141,7 +141,15 @@
   }
 
   function applyTemplate(d) {
-    document.getElementById("m-subject").value = d.subject || defaults.subject;
+    // 비동기 hydrate 가 끝났을 때 사용자가 이미 페이지를 떠났을 수 있다.
+    // 그 경우 m-subject 등 RawPage element 들이 DOM 에 없어 null 이 된다.
+    // 한 element 라도 없으면 silent no-op — 실 페이지에 들어오면 load() 가
+    // 다시 호출되어 정상 hydrate.
+    const sub = document.getElementById("m-subject");
+    const act = document.getElementById("m-active");
+    const cat = document.getElementById("m-category");
+    if (!sub || !act || !cat) return;
+    sub.value = d.subject || defaults.subject;
     imagesCache = (d.images || []).map(im => ({
       contentId: im.contentId,
       filename: im.filename,
@@ -149,8 +157,8 @@
       previewUrl: im.previewUrl || im.url || ''
     }));
     renderBody(d.body || defaults.body);
-    document.getElementById("m-active").value = d.active || defaults.active;
-    document.getElementById("m-category").value = d.category || defaults.category;
+    act.value = d.active || defaults.active;
+    cat.value = d.category || defaults.category;
     updatePreview();
   }
 

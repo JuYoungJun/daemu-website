@@ -386,53 +386,6 @@ export default function AdminMailTemplates() {
   const [filter, setFilter] = useState('');
   const [activePreview, setActivePreview] = useState(null);
 
-  // 분류별 일괄 추가 수신자 그룹의 backend cache. mount 시 backend 4개 list
-  // 를 fetch 해 in-memory 에 보관. extract(recipientCache) 가 그룹별 emails
-  // 추출. 옛 localStorage `DB.get(...)` 의존 제거 — backend Aiven = 단일 진실원.
-  // fail 시 setError 만 갱신 → fake 0 표시 차단.
-  const [recipientCache, setRecipientCache] = useState({
-    crm: [], partners: [], subscribers: [], inquiries: [],
-  });
-  const [recipientCacheError, setRecipientCacheError] = useState('');
-
-  const reloadRecipientCache = async () => {
-    if (!api.isConfigured()) {
-      setRecipientCacheError('백엔드 미연결 — 수신자 그룹은 비어 있습니다.');
-      return;
-    }
-    try {
-      const [crm, partners, subscribers, inquiries] = await Promise.all([
-        api.get('/api/crm?page_size=500'),
-        api.get('/api/partners?page_size=500'),
-        api.get('/api/newsletter?page_size=500'),
-        api.get('/api/inquiries?page_size=500'),
-      ]);
-      const next = {
-        crm: crm?.ok && Array.isArray(crm.items) ? crm.items : null,
-        partners: partners?.ok && Array.isArray(partners.items) ? partners.items : null,
-        subscribers: subscribers?.ok && Array.isArray(subscribers.items) ? subscribers.items : null,
-        inquiries: inquiries?.ok && Array.isArray(inquiries.items) ? inquiries.items : null,
-      };
-      const failedKeys = Object.entries(next).filter(([, v]) => v === null).map(([k]) => k);
-      // 실패한 영역만 직전 값 유지 (fake 0 방지) + 부분 에러 안내.
-      setRecipientCache((prev) => ({
-        crm: next.crm ?? prev.crm,
-        partners: next.partners ?? prev.partners,
-        subscribers: next.subscribers ?? prev.subscribers,
-        inquiries: next.inquiries ?? prev.inquiries,
-      }));
-      if (failedKeys.length === 4) {
-        setRecipientCacheError('수신자 그룹을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
-      } else if (failedKeys.length) {
-        setRecipientCacheError('일부 수신자 그룹을 불러오지 못했습니다 (' + failedKeys.join(', ') + ').');
-      } else {
-        setRecipientCacheError('');
-      }
-    } catch (e) {
-      setRecipientCacheError('수신자 그룹을 불러오지 못했습니다: ' + (e?.message || String(e)));
-    }
-  };
-
   // backend 단일 진실원에서 template list 를 hydrate.
   // 실패 시 옛 localStorage 시드 fallback (dev / 백엔드 미연결 한정).
   const reloadFromBackend = async () => {
@@ -450,8 +403,7 @@ export default function AdminMailTemplates() {
   useEffect(() => {
     let alive = true;
     reloadFromBackend();
-    reloadRecipientCache();
-    const onChange = () => { if (alive) { reloadFromBackend(); reloadRecipientCache(); } };
+    const onChange = () => { if (alive) reloadFromBackend(); };
     window.addEventListener('daemu-db-change', onChange);
     const onVis = () => {
       if (alive && typeof document !== 'undefined' && !document.hidden) reloadFromBackend();
@@ -460,7 +412,6 @@ export default function AdminMailTemplates() {
     const id = setInterval(() => {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         reloadFromBackend();
-        reloadRecipientCache();
       }
     }, 60_000);
     return () => {
@@ -1269,6 +1220,76 @@ function BulkSendPanel({ templates }) {
   const [defaultVars, setDefaultVars] = useState({});
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
+
+  // 분류별 일괄 추가 수신자 그룹의 backend cache. mount 시 backend 4개 list
+  // 를 fetch 해 in-memory 에 보관. extract(recipientCache) 가 그룹별 emails
+  // 추출. 옛 localStorage `DB.get(...)` 의존 제거 — backend Aiven = 단일 진실원.
+  // fail 시 setError 만 갱신 → fake 0 표시 차단.
+  const [recipientCache, setRecipientCache] = useState({
+    crm: [], partners: [], subscribers: [], inquiries: [],
+  });
+  const [recipientCacheError, setRecipientCacheError] = useState('');
+
+  const reloadRecipientCache = async () => {
+    if (!api.isConfigured()) {
+      setRecipientCacheError('백엔드 미연결 — 수신자 그룹은 비어 있습니다.');
+      return;
+    }
+    try {
+      const [crm, partners, subscribers, inquiries] = await Promise.all([
+        api.get('/api/crm?page_size=500'),
+        api.get('/api/partners?page_size=500'),
+        api.get('/api/newsletter?page_size=500'),
+        api.get('/api/inquiries?page_size=500'),
+      ]);
+      const next = {
+        crm: crm?.ok && Array.isArray(crm.items) ? crm.items : null,
+        partners: partners?.ok && Array.isArray(partners.items) ? partners.items : null,
+        subscribers: subscribers?.ok && Array.isArray(subscribers.items) ? subscribers.items : null,
+        inquiries: inquiries?.ok && Array.isArray(inquiries.items) ? inquiries.items : null,
+      };
+      const failedKeys = Object.entries(next).filter(([, v]) => v === null).map(([k]) => k);
+      // 실패한 영역만 직전 값 유지 (fake 0 방지) + 부분 에러 안내.
+      setRecipientCache((prev) => ({
+        crm: next.crm ?? prev.crm,
+        partners: next.partners ?? prev.partners,
+        subscribers: next.subscribers ?? prev.subscribers,
+        inquiries: next.inquiries ?? prev.inquiries,
+      }));
+      if (failedKeys.length === 4) {
+        setRecipientCacheError('수신자 그룹을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      } else if (failedKeys.length) {
+        setRecipientCacheError('일부 수신자 그룹을 불러오지 못했습니다 (' + failedKeys.join(', ') + ').');
+      } else {
+        setRecipientCacheError('');
+      }
+    } catch (e) {
+      setRecipientCacheError('수신자 그룹을 불러오지 못했습니다: ' + (e?.message || String(e)));
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    reloadRecipientCache();
+    const onChange = () => { if (alive) reloadRecipientCache(); };
+    window.addEventListener('daemu-db-change', onChange);
+    const onVis = () => {
+      if (alive && typeof document !== 'undefined' && !document.hidden) reloadRecipientCache();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    const id = setInterval(() => {
+      if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reloadRecipientCache();
+      }
+    }, 60_000);
+    return () => {
+      alive = false;
+      window.removeEventListener('daemu-db-change', onChange);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   const tpl = templates.find((t) => String(t.id) === String(templateId));
   const source = getDataSource(sourceKey);
