@@ -17,6 +17,12 @@ import { useEffect } from 'react';
 
 const ALLOW_SAME_ORIGIN_PREFIX = /^\/[^/]/;  // path-relative, no protocol
 
+// vite.config.js 의 define 으로 빌드 시점에 주입. 매 deploy 마다 새 값 →
+// public/admin-*-page.js 같은 hash-less raw script 의 옛 캐시 무효화.
+// 미주입 (dev 모드) 시 'dev' 로 fallback.
+// eslint-disable-next-line no-undef
+const BUILD_VERSION = typeof __DAEMU_BUILD_TIME__ !== 'undefined' ? __DAEMU_BUILD_TIME__ : 'dev';
+
 export function useExternalScript(src, deps = []) {
   useEffect(() => {
     if (!src) return;
@@ -24,7 +30,8 @@ export function useExternalScript(src, deps = []) {
       console.warn('useExternalScript: rejecting non-same-origin src', src);
       return;
     }
-    const resolved = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') + src;
+    const cacheBust = src.includes('?') ? `&v=${BUILD_VERSION}` : `?v=${BUILD_VERSION}`;
+    const resolved = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') + src + cacheBust;
 
     // Already injected by an earlier mount? Keep it; just bail.
     const existing = document.querySelector(`script[data-daemu-script="${CSS.escape(src)}"]`);

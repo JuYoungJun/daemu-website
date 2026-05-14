@@ -22,11 +22,21 @@ function manualChunks(id) {
   if (id.includes('/src/lib/email') || id.includes('/src/lib/upload')) return 'lib-email-upload';
 }
 
+// 빌드 시점 timestamp — `useExternalScript` 가 public/admin-*-page.js 로드
+// 시 ?v= query 로 부착해서 새 deploy 후에도 옛 raw script 캐시 잡지 않게.
+// main bundle (index-*.js) 은 Vite 가 자체 hash 부착해서 자동 cache-bust 되지만
+// public/ 의 raw script 는 hash 가 없어 GH Pages default cache-control(10분) 동안
+// 옛 코드 잡힘 → admin 페이지의 회귀 fix 들이 즉시 사용자에게 전파 안 됨.
+const BUILD_TIME = String(Date.now());
+
 export default defineConfig({
   plugins: [react()],
   base,
   server: { port: 8765, host: true },
   preview: { port: 8765, host: true },
+  define: {
+    __DAEMU_BUILD_TIME__: JSON.stringify(BUILD_TIME),
+  },
   build: {
     // 빌드 산출물 sourcemap 끔 — 클라이언트 인도 사이트라 코드 노출 회피.
     sourcemap: false,
