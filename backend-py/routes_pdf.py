@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 from typing import Any
@@ -28,6 +29,35 @@ router = APIRouter(prefix="/api/pdf", tags=["pdf"])
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 50
 DPI = 144
+# PDF bomb / 비정상 파일 처리 타임아웃 — 정상 PDF 는 페이지당 100~300ms.
+# 50 페이지 × 300ms ≈ 15s + 여유. 초과 시 504 반환.
+RASTERIZE_TIMEOUT_SECONDS = 30
+
+
+def _rasterize_sync(data: bytes) -> tuple[int, list[dict]]:
+    """blocking 작업 — asyncio.to_thread 로 격리해서 timeout 가능하게."""
+    import fitz  # PyMuPDF
+    doc = fitz.open(stream=data, filetype="pdf")
+    if doc.page_count > MAX_PAGES:
+        doc.close()
+        raise HTTPException(status_code=413, detail=f"페이지가 너무 많습니다 (최대 {MAX_PAGES})")
+    pages: list[dict] = []
+    try:
+        zoom = DPI / 72
+        matrix = fitz.Matrix(zoom, zoom)
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            buf = io.BytesIO(pix.tobytes("png"))
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            pages.append({
+                "index": i,
+                "width": pix.width,
+                "height": pix.height,
+                "dataUrl": f"data:image/png;base64,{b64}",
+            })
+    finally:
+        doc.close()
+    return len(pages), pages
 
 
 @router.post("/rasterize")
@@ -42,38 +72,26 @@ async def rasterize_pdf(
         raise HTTPException(status_code=400, detail="PDF 파일이 아닙니다")
 
     try:
-        import fitz  # PyMuPDF
+        import fitz  # noqa: F401  — 사전 import 검증, 실제 사용은 _rasterize_sync.
     except ImportError:
         raise HTTPException(status_code=500, detail="PyMuPDF 미설치 — requirements 의 pymupdf 확인")
 
+    # PDF bomb / 악성 파일 timeout 가드 — 정상 처리는 asyncio.to_thread 로 격리,
+    # 30초 초과 시 timeout 504.
     try:
-        doc = fitz.open(stream=data, filetype="pdf")
+        page_count, pages = await asyncio.wait_for(
+            asyncio.to_thread(_rasterize_sync, data),
+            timeout=RASTERIZE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="PDF 변환 시간이 초과되었습니다 (30초). 더 작은 파일로 시도해 주세요.")
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"PDF 파싱 실패: {e}")
 
-    if doc.page_count > MAX_PAGES:
-        doc.close()
-        raise HTTPException(status_code=413, detail=f"페이지가 너무 많습니다 (최대 {MAX_PAGES})")
-
-    pages: list[dict] = []
-    try:
-        zoom = DPI / 72  # PDF 표준 72dpi → 144dpi
-        matrix = fitz.Matrix(zoom, zoom)
-        for i, page in enumerate(doc):
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            buf = io.BytesIO(pix.tobytes("png"))
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            pages.append({
-                "index": i,
-                "width": pix.width,
-                "height": pix.height,
-                "dataUrl": f"data:image/png;base64,{b64}",
-            })
-    finally:
-        doc.close()
-
     return {
-        "page_count": len(pages),
+        "page_count": page_count,
         "dpi": DPI,
         "pages": pages,
     }

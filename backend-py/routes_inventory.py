@@ -584,12 +584,17 @@ async def reserve_stock_for_order(
         prod_res = await session.execute(select(Product).where(Product.sku == sku))
         product = prod_res.scalar_one_or_none()
 
-        lot_res = await session.execute(
+        # with_for_update() — 동시 발주 race 차단. 다른 트랜잭션은 같은 LOT row
+        # 를 잠그면 대기. SQLite 는 무시 (전체 DB lock 으로 대체됨).
+        lot_stmt = (
             select(StockLot)
             .where(StockLot.sku == sku, StockLot.quantity > 0,
                    StockLot.quarantined == False)  # noqa: E712
             .order_by(asc(StockLot.expires_at), asc(StockLot.id))
         )
+        if session.bind and session.bind.dialect.name != "sqlite":
+            lot_stmt = lot_stmt.with_for_update()
+        lot_res = await session.execute(lot_stmt)
         lots = lot_res.scalars().all()
         # 만료 LOT 자동 제외 (Sweep 가 늦게 돌 수도 있어 inline 검증)
         now = datetime.now(timezone.utc)
@@ -650,6 +655,68 @@ async def reserve_stock_for_order(
                 pass
 
     return {"used_lots": used_lots}
+
+
+async def release_stock_for_order(
+    session: AsyncSession,
+    *,
+    order_id: int | str,
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
+    """발주 취소 시 reserve 차감한 재고를 LOT 단위로 복구.
+
+    `stock_history` 에 reason='order' + ref_type='order' + ref_id=order_id 로
+    기록된 -take 항목들을 역재생해서 같은 LOT (또는 Product 직접) 에 다시 +take.
+    이미 release 처리된 발주는 idempotent (history 에 'order_cancel' 기록이
+    있으면 skip).
+    """
+    # 이미 release 된 적 있는지 확인 — idempotent.
+    already = await session.execute(
+        select(StockHistory).where(
+            StockHistory.ref_type == "order",
+            StockHistory.ref_id == str(order_id),
+            StockHistory.reason == "order_cancel",
+        )
+    )
+    if already.scalar_one_or_none():
+        return {"restored": [], "skipped": "already released"}
+
+    # 원래 차감 기록 (reason='order') 을 모두 가져와서 역재생.
+    res = await session.execute(
+        select(StockHistory).where(
+            StockHistory.ref_type == "order",
+            StockHistory.ref_id == str(order_id),
+            StockHistory.reason == "order",
+        )
+    )
+    rows = res.scalars().all()
+
+    restored: list[dict[str, Any]] = []
+    for h in rows:
+        take = int(-(h.delta or 0))  # 원래 -take 였으므로 부호 반전.
+        if take <= 0:
+            continue
+        if h.lot_id:
+            lot = await session.get(StockLot, h.lot_id)
+            if lot is not None:
+                lot.quantity = int(lot.quantity or 0) + take
+                restored.append({"sku": h.sku, "lot_id": lot.id, "qty": take})
+        else:
+            # LOT 미지정 차감 — Product.stock_count 복구.
+            prod_res = await session.execute(select(Product).where(Product.sku == h.sku))
+            product = prod_res.scalar_one_or_none()
+            if product:
+                product.stock_count = int(product.stock_count or 0) + take
+                restored.append({"sku": h.sku, "lot_id": None, "qty": take})
+
+        session.add(StockHistory(
+            sku=h.sku, lot_id=h.lot_id, delta=take,
+            reason="order_cancel", ref_type="order", ref_id=str(order_id),
+            note=f"발주 취소 복구 (원 history id={h.id})",
+            actor_user_id=actor_user_id,
+        ))
+
+    return {"restored": restored}
 
 
 # ─────────────────────────────────────────────────────────────────────

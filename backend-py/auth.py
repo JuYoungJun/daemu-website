@@ -1216,10 +1216,18 @@ async def update_user(user_id: int, payload: UserUpdateIn, session: AsyncSession
 
 
 @users_router.delete("/{user_id}", status_code=204)
-async def delete_user(user_id: int, session: AsyncSession = Depends(get_session), me_user: AdminUser = Depends(require_admin)):
+async def delete_user(user_id: int, request: Request, session: AsyncSession = Depends(get_session), me_user: AdminUser = Depends(require_admin)):
     target = await session.get(AdminUser, user_id)
     if not target:
         raise HTTPException(404, detail="user not found")
     if target.id == me_user.id:
         raise HTTPException(400, detail="cannot delete yourself")
+    # audit log — 다른 admin DELETE 와 일관성 + 사고 시 추적 가능.
+    from audit import log_event
+    await log_event(
+        session, request,
+        action="user.delete",
+        actor_user=me_user,
+        meta={"target_user_id": target.id, "target_email": target.email, "target_role": target.role},
+    )
     await session.delete(target)

@@ -86,8 +86,9 @@ PENDING_COLUMNS: list[tuple[str, str, str, str]] = [
 
 
 # 인덱스 보강 — 모델에 index=True 를 추가했을 때 기존 테이블에는 자동 적용
-# 안 되므로 idempotent ALTER 로 처리. (table, column, index_name).
-# CREATE INDEX IF NOT EXISTS 는 SQLite + MySQL 8 양쪽 지원.
+# 안 되므로 idempotent 처리. (table, column, index_name).
+# MySQL 은 CREATE INDEX 에 IF NOT EXISTS 절을 지원하지 않으므로 (8.0.45 에서도
+# 1064 syntax error) information_schema 확인 후 분기. SQLite 만 IF NOT EXISTS.
 PENDING_INDEXES: list[tuple[str, str, str]] = [
     ("admin_users", "created_at", "ix_admin_users_created_at"),
     ("orders", "partner_id", "ix_orders_partner_id"),
@@ -243,18 +244,37 @@ def run_pending_migrations(conn: Connection) -> list[str]:
         except Exception as e:  # noqa: BLE001
             print(f"[migration] skip {clause!r}: {e!r}")
 
-    # 2) 인덱스 추가 (idempotent — CREATE INDEX IF NOT EXISTS).
-    #    SQLite / MySQL 8 양쪽 호환. 이미 있으면 silent skip.
+    # 2) 인덱스 추가 (idempotent).
+    #    MySQL 은 `CREATE INDEX IF NOT EXISTS` 를 지원하지 않음 — 8.0.45 에서도
+    #    1064 syntax error. (PostgreSQL/SQLite 만 지원하는 비표준 syntax.)
+    #    따라서 dialect 별로 분기 — MySQL 은 information_schema 로 사전 확인,
+    #    SQLite 는 그대로 IF NOT EXISTS 사용.
+    dialect_name = conn.dialect.name
     for table, column, index_name in PENDING_INDEXES:
         if not _table_exists(conn, table):
             continue
-        clause = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"
         try:
-            conn.execute(text(clause))
+            if dialect_name == "sqlite":
+                clause = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"
+                conn.execute(text(clause))
+            else:
+                # MySQL / MariaDB / PostgreSQL: 존재 확인 후 없으면 생성.
+                row = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.statistics "
+                        "WHERE table_schema = DATABASE() "
+                        "AND table_name = :t AND index_name = :i"
+                    ),
+                    {"t": table, "i": index_name},
+                ).first()
+                if row:
+                    continue  # 이미 존재 — silent skip.
+                clause = f"CREATE INDEX {index_name} ON {table} ({column})"
+                conn.execute(text(clause))
             applied.append(clause)
             print(f"[migration] applied: {clause}")
         except Exception as e:  # noqa: BLE001
-            print(f"[migration] skip {clause!r}: {e!r}")
+            print(f"[migration] skip index {index_name} on {table}({column}): {e!r}")
 
     # 2.5) 컬럼 타입 변경 — TEXT(64KB) → LONGTEXT(~4GB).
     # /admin/mail 의 base64 inline image 가 TEXT 한도 초과 시 'Data too long

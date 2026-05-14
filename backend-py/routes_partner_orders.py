@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_session
 from models import Order, Partner
+from routes_inventory import release_stock_for_order, reserve_stock_for_order
 from routes_partner_auth import require_partner_token
 
 
@@ -109,6 +110,14 @@ async def create_partner_order(
     )
     session.add(order)
     await session.flush()
+    # 재고 차감 — 실패 시 HTTPException(400) 으로 같은 트랜잭션 안에서 rollback.
+    # FastAPI Depends(get_session) 가 예외 발생 시 session.rollback() 호출.
+    await reserve_stock_for_order(
+        session,
+        items=items_data,
+        order_id=order.id,
+        actor_user_id=None,
+    )
     await session.refresh(order)
     return {"ok": True, "item": _order_to_dict(order)}
 
@@ -134,6 +143,9 @@ async def cancel_partner_order(
     order.status = "취소"
     if payload.reason:
         order.note = (order.note or "") + f"\n[취소 사유] {payload.reason.strip()[:500]}"
+    # 재고 복구 — 생성 시 reserve_stock_for_order 가 차감한 stock_history 를
+    # 역재생. idempotent (이미 release 된 발주는 skip).
+    await release_stock_for_order(session, order_id=order.id, actor_user_id=None)
     await session.flush()
     await session.refresh(order)
     return {"ok": True, "item": _order_to_dict(order)}

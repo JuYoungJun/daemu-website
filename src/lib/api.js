@@ -41,6 +41,17 @@ function _friendlyFetchError(err) {
 // 으로 상한 시간 보장. opts.timeoutMs 로 호출별 override 가능 (업로드 등).
 const DEFAULT_TIMEOUT_MS = 30000;
 
+// cold-start 자동 재시도 — 첫 시도가 timeout/네트워크 실패/502/503/504 면
+// 짧은 대기 후 1회 retry. backend 가 깨어나는 데 30~60초 걸리는데, 첫 요청은
+// timeout 후 두 번째 요청은 warm 한 backend 를 잡는 패턴 자주 발생.
+// GET 만 자동 재시도 — mutating 호출 (POST/PATCH/DELETE) 은 idempotent 아닐 수
+// 있어 위험 (예: 발주 중복 생성). 호출자가 opts.retry=true 로 명시 시만 retry.
+const RETRY_BACKOFF_MS = 1200;
+const TRANSIENT_STATUSES = new Set([0, 502, 503, 504]);
+function isTransientError(errStr) {
+  return /Failed to fetch|NetworkError|ERR_NETWORK|Load failed|timeout|AbortError|aborted/i.test(String(errStr || ''));
+}
+
 async function request(method, path, body, opts = {}) {
   if (!BASE) {
     // 보안 (코드 리뷰 F-3.3, High): production build 에서는 simulated 동작
@@ -113,23 +124,40 @@ export const api = {
 
   async get(path, opts = {}) {
     if (!BASE) return { ok: false, simulated: true };
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
-    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { /* ignore */ } }, timeoutMs) : null;
-    try {
-      const res = await fetch(BASE + path, {
-        headers: opts.skipAuth ? {} : authHeader(),
-        signal: ctrl ? ctrl.signal : undefined,
-      });
-      const text = await res.text();
-      let json = null;
-      try { json = text ? JSON.parse(text) : null; } catch { /* JSON 아님 */ }
-      return { ok: res.ok, status: res.status, ...((json && typeof json === 'object') ? json : {}) };
-    } catch (err) {
-      return { ok: false, error: _friendlyFetchError(err), errorDetail: String(err) };
-    } finally {
-      if (timer) clearTimeout(timer);
+    // GET 은 idempotent — cold start 첫 요청 실패 시 1회 자동 재시도.
+    // opts.retry=false 로 명시하면 끔. timeoutMs 짧게 (cold start 진단용) 도 가능.
+    const allowRetry = opts.retry !== false;
+    const maxAttempts = allowRetry ? 2 : 1;
+    let lastResult = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
+      const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { /* ignore */ } }, timeoutMs) : null;
+      try {
+        const res = await fetch(BASE + path, {
+          headers: { ...(opts.skipAuth ? {} : authHeader()), ...(opts.headers || {}) },
+          signal: ctrl ? ctrl.signal : undefined,
+        });
+        const text = await res.text();
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch { /* JSON 아님 */ }
+        const result = { ok: res.ok, status: res.status, ...((json && typeof json === 'object') ? json : {}) };
+        // 성공 또는 영구적 4xx → 즉시 반환.
+        if (res.ok || !TRANSIENT_STATUSES.has(res.status)) {
+          return result;
+        }
+        lastResult = result;
+      } catch (err) {
+        lastResult = { ok: false, error: _friendlyFetchError(err), errorDetail: String(err) };
+        if (!isTransientError(err)) return lastResult;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (attempt + 1 < maxAttempts) {
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+      }
     }
+    return lastResult || { ok: false, error: '요청을 처리하지 못했습니다.' };
   },
 };
 
