@@ -40,7 +40,7 @@ def _to_dict(obj: Announcement) -> dict[str, Any]:
 
 @router.get("/announcements/visible")
 async def list_visible(
-    request: "Request",
+    request: Request,
     target: str = Query("all", pattern=r"^(all|partner_portal)$"),
 ):
     """현재 노출 중인 공지/프로모션. 정책 (2026-05):
@@ -59,6 +59,24 @@ async def list_visible(
             claims = None
         if not claims:
             raise HTTPException(status_code=401, detail="partner token required")
+
+    async with get_session_context() as session:
+        now = datetime.now(timezone.utc)
+        stmt = select(Announcement).where(Announcement.active == True)  # noqa: E712
+        if target == "partner_portal":
+            # 파트너 포털은 partner_portal + all 둘 다 표시
+            stmt = stmt.where(or_(Announcement.target == "partner_portal",
+                                  Announcement.target == "all"))
+        else:
+            # 공개 사이트는 all 만
+            stmt = stmt.where(Announcement.target == "all")
+        stmt = stmt.where(or_(Announcement.scheduled_start == None,  # noqa: E711
+                              Announcement.scheduled_start <= now))
+        stmt = stmt.where(or_(Announcement.scheduled_end == None,  # noqa: E711
+                              Announcement.scheduled_end >= now))
+        stmt = stmt.order_by(desc(Announcement.created_at)).limit(50)
+        rows = (await session.execute(stmt)).scalars().all()
+        return {"ok": True, "items": [_to_dict(r) for r in rows]}
 
 
 # Helper for unauthenticated read (we still want session_scope)
