@@ -187,7 +187,6 @@ function PromptBody({ item, onSubmit, onCancel }) {
         placeholder={item.placeholder || ''}
         required={item.required}
         className="site-dialog-input"
-        onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
       />
       <div className="site-dialog-actions">
         <button type="button" className="site-dialog-btn site-dialog-btn--ghost" onClick={onCancel}>취소</button>

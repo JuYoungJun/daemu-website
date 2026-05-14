@@ -200,13 +200,20 @@
     buildTitleInto(document.getElementById('wd-title'), data.title);
     document.getElementById('wd-addr').textContent = data.addr || '';
     // Image src — only allow safe schemes (http(s)/data: image/relative).
+    // SPA sub-path 배포 (GitHub Pages: /daemu-website/) 환경에서 상대 path
+    // (예: `assets/work-...png`) 가 현재 라우트 (`/work/{slug}`) 기준으로
+    // 해석되어 404 가 나는 회귀를 차단 — window.DAEMU_BASE prefix 부착.
     function safeImageSrc(s) {
       const v = String(s == null ? '' : s).trim();
       if (!v) return '';
       if (v.startsWith('/') || v.startsWith('?') || v.startsWith('#')) return v;
       if (/^data:image\//i.test(v)) return v;
       const m = /^(https?):/i.exec(v);
-      return m ? v : '';
+      if (m) return v;
+      // 상대 path — BASE 부착 (window.DAEMU_BASE 는 GH_PAGES 빌드 시
+      // '/daemu-website/' 로 세팅됨, 그 외 환경은 '/').
+      const base = (typeof window !== 'undefined' && window.DAEMU_BASE) || '/';
+      return base.replace(/\/+$/, '') + '/' + v.replace(/^\/+/, '');
     }
     if (data.img) {
       const safeSrc = safeImageSrc(data.img);

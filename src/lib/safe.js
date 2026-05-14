@@ -57,6 +57,18 @@ export function safeUrl(value, { allowMailto = true, allowTel = true } = {}) {
 const SAFE_MEDIA_DATA_PREFIX = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
 const SAFE_REL_PREFIX = /^(\/|\?|#)/;
 
+// SPA 가 sub-path 에 배포되는 경우 (GitHub Pages: /daemu-website/) 상대경로
+// 이미지가 현재 라우트 기준으로 해석되어 404 가 됨. 예: /work/beclassy-naju
+// 에서 `<img src="assets/foo.png">` → /work/beclassy-naju/assets/foo.png.
+// Vite 의 BASE_URL 기반으로 base prefix 부착해서 어느 라우트에서든 동일하게
+// public/assets/foo.png 가 잡히도록 normalize.
+function _baseUrl() {
+  try {
+    const b = (import.meta && import.meta.env && import.meta.env.BASE_URL) || '/';
+    return String(b).replace(/\/+$/, '') + '/';
+  } catch { return '/'; }
+}
+
 export function safeMediaUrl(value, { allowBlob = false } = {}) {
   if (value == null) return '';
   const raw = String(value).trim();
@@ -75,7 +87,11 @@ export function safeMediaUrl(value, { allowBlob = false } = {}) {
     parsed = new URL(raw);
   } catch {
     // scheme 도 없고 / 로 시작하지도 않는 경우 — URI 문자만 있으면 상대경로로 통과.
-    return /^[a-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/i.test(raw) ? String(raw) : '';
+    // 단 BASE_URL prefix 를 부착해서 현재 라우트와 무관하게 일관된 절대 path 로.
+    if (/^[a-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/i.test(raw)) {
+      return _baseUrl() + raw.replace(/^\/+/, '');
+    }
+    return '';
   }
   const proto = parsed.protocol.toLowerCase();
   if (proto !== 'http:' && proto !== 'https:') return '';
