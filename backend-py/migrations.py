@@ -291,7 +291,8 @@ def run_pending_migrations(conn: Connection) -> list[str]:
         ("site_popups", "image_url", "longtext", "LONGTEXT"),
         ("partner_brands", "logo", "longtext", "LONGTEXT"),
         ("products", "image_url", "longtext", "LONGTEXT"),
-        ("media_assets", "url", "longtext", "LONGTEXT"),
+        # media_assets.url 은 별도 처리 — 위 단순 ALTER 는 인덱스 충돌로 실패.
+        # 아래 2.5.1 에서 DROP INDEX → MODIFY → CREATE INDEX(prefix) 순.
     ]
     if conn.dialect.name != "sqlite":
         for table, column, target_type, ddl_type in pending_type_changes:
@@ -321,6 +322,39 @@ def run_pending_migrations(conn: Connection) -> list[str]:
                 print(f"[migration] applied: {clause}  (was {current})")
             except Exception as e:  # noqa: BLE001
                 print(f"[migration] skip {clause!r}: {e!r}")
+
+    # 2.5.1) media_assets.url 만 별도 처리 — 위 단순 ALTER 가 인덱스 충돌
+    # (MySQL ERROR 1170: BLOB/TEXT column used in key spec without key
+    # length) 로 실패. url 컬럼에 ix_media_assets_url 인덱스가 걸려 있어
+    # 단순 LONGTEXT 변환 불가. 순서: DROP INDEX → MODIFY → CREATE INDEX
+    # (prefix length 191 — utf8mb4 4 bytes * 191 = 764 < 767 byte key
+    # limit). MySQL 만 — SQLite 는 위 2.5 에서 처리 skip 됨.
+    if conn.dialect.name != "sqlite" and _table_exists(conn, "media_assets"):
+        try:
+            col_row = conn.execute(text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_schema=DATABASE() AND table_name='media_assets' "
+                "AND column_name='url'"
+            )).first()
+            current_type = str(col_row[0] or "").lower() if col_row else ""
+            if current_type and current_type != "longtext":
+                # 1) 기존 인덱스 drop (있으면).
+                idx_row = conn.execute(text(
+                    "SELECT 1 FROM information_schema.statistics "
+                    "WHERE table_schema=DATABASE() AND table_name='media_assets' "
+                    "AND index_name='ix_media_assets_url'"
+                )).first()
+                if idx_row:
+                    conn.execute(text("DROP INDEX ix_media_assets_url ON media_assets"))
+                # 2) LONGTEXT 변환.
+                conn.execute(text("ALTER TABLE media_assets MODIFY url LONGTEXT"))
+                # 3) prefix-length 인덱스 재생성. 옛 인덱스 없었으면 새로 만듦
+                #    (없어도 무방하지만 검색 perf 유지).
+                conn.execute(text("CREATE INDEX ix_media_assets_url ON media_assets(url(191))"))
+                applied.append("media_assets.url → LONGTEXT + url(191) index")
+                print(f"[migration] applied: media_assets.url → LONGTEXT + url(191) prefix index (was {current_type})")
+        except Exception as e:  # noqa: BLE001
+            print(f"[migration] skip media_assets.url LONGTEXT: {e!r}")
 
     # 2.6) 이미지 URL 경로 정규화 — `assets/foo.png` (앞 `/` 없음) →
     # `/assets/foo.png`. SPA 가 sub-path 에 deploy 될 때 (GitHub Pages
