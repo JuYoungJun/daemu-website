@@ -150,7 +150,7 @@ export async function consumeCoupon(couponId, opts = {}) {
         promotion_id: Number(couponId),
         client_event_id: eventId,
         quantity: 1,
-      }, { skipAuth: true });
+      }, { skipAuth: true, headers: PartnerAuth.authHeader() });
       backendOk = !!(r && r.ok);
       if (!backendOk) {
         // backend 실패 시 호출자에게 false — fake success 안 함.

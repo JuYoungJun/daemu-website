@@ -421,14 +421,30 @@ async def send_document_doc(
     if payload.sign_required and not d.sign_token:
         d.sign_token = secrets.token_urlsafe(32)
 
-    # Build the public sign URL based on the request origin so admins can
-    # forward this to clients.
-    origin = request.headers.get("origin") or ""
-    if not origin:
-        scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
-        host_hdr = request.headers.get("host") or request.url.netloc
-        origin = f"{scheme}://{host_hdr}"
-    sign_url = f"{origin.rstrip('/')}/sign/{d.sign_token}" if payload.sign_required else ""
+    # Build the public sign URL — frontend SPA 가 sub-path 에 배포 (GitHub
+    # Pages /daemu-website/) 되는 경우 origin (= "https://juyoungjun.github.io")
+    # 만으로는 SPA base 가 빠져서 수신자 클릭 시 404. SITE_BASE_URL env 가
+    # 운영자 직접 설정한 *frontend* base 절대 URL (예:
+    # "https://juyoungjun.github.io/daemu-website" 또는 "https://daemu.kr").
+    # 없으면 origin 기반 fallback — dev / 동일 origin 배포에서만 안전.
+    import os as _os
+    site_base = (_os.environ.get("SITE_BASE_URL") or "").rstrip("/")
+    if not site_base:
+        origin = request.headers.get("origin") or ""
+        if not origin:
+            scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+            host_hdr = request.headers.get("host") or request.url.netloc
+            origin = f"{scheme}://{host_hdr}"
+        site_base = origin.rstrip("/")
+        # 사용자가 SITE_BASE_URL 안 설정한 경우 운영자에게 경고 (서명 메일이
+        # 잘못된 base 로 갈 가능성 — 특히 GitHub Pages 서브패스 환경).
+        print(
+            "[documents] WARN: SITE_BASE_URL env 미설정 — sign_url 을 "
+            f"request origin('{site_base}') 으로 생성. SPA 가 sub-path 에 "
+            "배포된 환경이라면 Render dashboard 에 SITE_BASE_URL=<frontend "
+            "full URL 포함 sub-path> 설정 필수."
+        )
+    sign_url = f"{site_base}/sign/{d.sign_token}" if payload.sign_required else ""
 
     # Reuse the unified email sender from main.py — single source of truth
     # for Resend / SMTP fallback. Imported here to avoid circular import.

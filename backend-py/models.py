@@ -283,6 +283,28 @@ class Promotion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PromotionConsumption(Base):
+    """쿠폰 사용 이벤트 — `/api/promotions/consume` 가 INSERT.
+    UniqueConstraint(promotion_id, client_event_id) 로 멱등 보장 — 같은
+    발주 제출의 재시도가 두 번 카운트되지 않음.
+    """
+    __tablename__ = "promotion_consumptions"
+    __table_args__ = (
+        UniqueConstraint("promotion_id", "client_event_id",
+                         name="uq_promotion_consumption_event"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    promotion_id: Mapped[int] = mapped_column(
+        ForeignKey("promotions.id", ondelete="CASCADE"), index=True,
+    )
+    client_event_id: Mapped[str] = mapped_column(String(80))
+    partner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ContentBlock(Base):
     """Generic key-value site copy / settings (about page text, etc.)."""
     __tablename__ = "content_blocks"

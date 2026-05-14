@@ -279,10 +279,19 @@ def run_pending_migrations(conn: Connection) -> list[str]:
     # 2.5) 컬럼 타입 변경 — TEXT(64KB) → LONGTEXT(~4GB).
     # /admin/mail 의 base64 inline image 가 TEXT 한도 초과 시 'Data too long
     # for column' 500. MySQL 한정 — SQLite 는 TEXT 길이 제한 없음 (skip).
+    # /api/upload 의 base64 inline (Render free 휘발 디스크 회피) 적용 후
+    # image_url 컬럼들도 같은 이유로 LONGTEXT 필요 (VARCHAR(500) 으로는
+    # data:image/jpeg;base64,... 1MB 본문 안 들어감).
     pending_type_changes = [
         ("mail_templates", "body", "longtext", "LONGTEXT"),
         ("mail_templates", "html", "longtext", "LONGTEXT"),
         ("mail_template_lib", "body", "longtext", "LONGTEXT"),
+        ("works", "hero_image_url", "longtext", "LONGTEXT"),
+        ("announcements", "image_url", "longtext", "LONGTEXT"),
+        ("site_popups", "image_url", "longtext", "LONGTEXT"),
+        ("partner_brands", "logo", "longtext", "LONGTEXT"),
+        ("products", "image_url", "longtext", "LONGTEXT"),
+        ("media_assets", "url", "longtext", "LONGTEXT"),
     ]
     if conn.dialect.name != "sqlite":
         for table, column, target_type, ddl_type in pending_type_changes:

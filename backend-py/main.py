@@ -1028,9 +1028,30 @@ async def upload(
     if not magic_byte_ok(buf, ext):
         raise HTTPException(415, detail="파일 내용이 선언된 형식과 일치하지 않습니다.")
 
-    # F-33: token_hex(8) gives 32 bits of entropy + the timestamp prefix —
-    # collisions over the lifetime of the demo are now astronomically
-    # unlikely (vs token_hex(4)'s 16 bits which collide in ~64K uploads).
+    # 이미지 → base64 data URL 응답 (DB inline 저장 가능). Render free tier
+    # 의 휘발 디스크 의존 제거 — 컨테이너 재시작에도 파일 안 사라짐. DB 의
+    # image_url 컬럼이 LONGTEXT 라 큰 base64 도 저장 가능 (migrations 2.7).
+    # 작은 이미지 (≤1MB) 만 inline. 큰 이미지 + 영상은 디스크 fallback +
+    # 경고 (운영 단계에서 외부 storage 로 이전 권장).
+    kind = upload_kind(ext)
+    INLINE_CAP = 1 * 1024 * 1024  # 1 MB — 응답 크기 + DB row 크기 트레이드오프
+    mime = detect_mime(safe, payload.contentType)
+    if kind == "image" and len(buf) <= INLINE_CAP:
+        b64 = base64.b64encode(buf).decode("ascii")
+        data_url = f"data:{mime};base64,{b64}"
+        return {
+            "ok": True,
+            "url": data_url,
+            "filename": safe,
+            "contentType": mime,
+            "size": len(buf),
+            "kind": kind,
+            "storage": "inline-base64",
+        }
+
+    # 큰 이미지 / 영상 → 디스크 저장 (legacy path). Render free 환경에서는
+    # 컨테이너 재시작 시 사라짐 — 운영 단계에서 외부 storage (S3/R2/Aiven)
+    # 로 이전 필수.
     file_id = format(int(time.time() * 1000), "x") + "-" + secrets.token_hex(8)
     final_name = f"{file_id}{ext.lower()}"
     final_path = UPLOAD_DIR / final_name
@@ -1050,9 +1071,14 @@ async def upload(
         "ok": True,
         "url": f"{host}/uploads/{final_name}",
         "filename": safe,
-        "contentType": detect_mime(final_name, payload.contentType),
+        "contentType": mime,
         "size": len(buf),
-        "kind": upload_kind(ext),
+        "kind": kind,
+        "storage": "disk-ephemeral",
+        "warning": (
+            "이 파일은 임시 디스크에 저장되어 서버 재시작 시 사라질 수 있습니다. "
+            "영상은 외부 호스팅, 큰 이미지는 운영 단계에서 영구 저장소로 이전이 필요합니다."
+        ),
     }
 
 
