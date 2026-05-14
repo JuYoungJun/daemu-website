@@ -97,6 +97,13 @@ export function useSitePopups(pageKey) {
           if (p.frequency === 'once') return false;
           if (p.frequency === 'daily' && dismissed === today) return false;
         }
+        // 같은 브라우저 세션에서는 한 번 닫은 팝업을 다시 띄우지 않음 —
+        // frequency='always' 만 예외 (매 방문마다 노출 의도).
+        if (p.frequency !== 'always') {
+          try {
+            if (sessionStorage.getItem('daemu_popup_session_' + p.id)) return false;
+          } catch { /* sessionStorage 비활성 — 무시 */ }
+        }
         return true;
       });
       if (!eligible.length) return;
@@ -117,10 +124,18 @@ export function useSitePopups(pageKey) {
 export function dismissPopup(p, withSkipChecked) {
   if (!p) return;
   const today = new Date().toISOString().slice(0, 10);
-  if (withSkipChecked) {
-    localStorage.setItem('daemu_popup_dismissed_' + p.id, today);
-  } else if (p.frequency === 'once') {
-    localStorage.setItem('daemu_popup_dismissed_' + p.id, today);
+  // localStorage: 영속 dismiss — "오늘 하루 보지 않기" 체크 또는
+  // frequency='daily'/'once' 정책상 같은 날 재노출 금지.
+  if (withSkipChecked || p.frequency === 'once' || p.frequency === 'daily') {
+    try {
+      localStorage.setItem('daemu_popup_dismissed_' + p.id, today);
+    } catch { /* storage 비활성 — 무시 */ }
+  }
+  // sessionStorage: 같은 세션 내 재노출 차단. frequency='always' 만 예외.
+  if (p.frequency !== 'always') {
+    try {
+      sessionStorage.setItem('daemu_popup_session_' + p.id, '1');
+    } catch { /* storage 비활성 — 무시 */ }
   }
 }
 

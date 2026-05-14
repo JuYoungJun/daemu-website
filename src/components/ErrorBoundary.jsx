@@ -33,7 +33,12 @@ export default class ErrorBoundary extends Component {
       // 쿼리 부착으로 옛 index.html 캐시까지 우회. count>=3 도달 시 더 이상
       // 자동 reload 안 하고 ServerError 화면이 그대로 표시 (수동 버튼 사용).
       const msg = String(error?.message || '');
-      if (/chunk|Failed to fetch dynamically|Loading.*chunk|Importing a module script failed/i.test(msg)) {
+      // chunk 로드 실패 + stale-bundle ReferenceError (변수 삭제 회귀) 도 매칭.
+      // 두 번째 패턴은 deploy 직후 사용자가 옛 main bundle 을 잡고 있을 때
+      // 발생 — index.html 의 새 hash 가 캐시 우회되면 해소되므로 같은 복구 OK.
+      const isStaleChunk = /chunk|Failed to fetch dynamically|Loading.*chunk|Importing a module script failed/i.test(msg);
+      const isStaleRef = /ReferenceError|is not defined|Cannot read propert(?:y|ies) of undefined/i.test(msg);
+      if (isStaleChunk || isStaleRef) {
         try {
           const last = Number(sessionStorage.getItem(CHUNK_RELOAD_STORAGE_KEY) || 0);
           const count = Number(sessionStorage.getItem(CHUNK_RELOAD_COUNT_STORAGE_KEY) || 0);

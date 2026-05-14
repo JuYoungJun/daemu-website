@@ -118,10 +118,16 @@ export default function DialogHost() {
   return createPortal(
     <>
       {top && (
-        <div className="site-dialog-overlay"
-          onClick={() => top.type === 'alert' && close(top.id)}>
-          <div className={'site-dialog-box' + (top.type === 'csv-preview' ? ' site-dialog-box--wide' : '')}
-            onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <ModalShell
+          item={top}
+          onBackdrop={() => top.type === 'alert' && close(top.id)}
+          onEscape={() => {
+            // ESC: alert 은 확인, confirm/csv-preview 는 취소, prompt 는 null.
+            if (top.type === 'alert') close(top.id);
+            else if (top.type === 'confirm' || top.type === 'csv-preview') close(top.id, false);
+            else if (top.type === 'prompt') close(top.id, null);
+          }}
+        >
             {top.type === 'prompt'
               ? <PromptBody item={top} onSubmit={(v) => close(top.id, v)} onCancel={() => close(top.id, null)} />
               : top.type === 'csv-preview'
@@ -140,8 +146,7 @@ export default function DialogHost() {
                   </div>
                 </>
               )}
-          </div>
-        </div>
+        </ModalShell>
       )}
       {!!toasts.length && (
         <div className="site-toast-stack">
@@ -288,3 +293,82 @@ function CsvPreviewBody({ item, onConfirm, onCancel }) {
 }
 
 function rand() { return Date.now() + '-' + Math.random().toString(36).slice(2, 8); }
+
+// ModalShell — focus trap + ESC + backdrop + body scroll lock.
+// 모달이 열리는 동안 Tab/Shift+Tab 이 dialog 안에서만 순환하고, ESC 로 닫고,
+// 마운트 시 첫 focusable 에 focus, 닫힐 때 직전 focus 로 복귀.
+function ModalShell({ item, onBackdrop, onEscape, children }) {
+  const overlayRef = useRef(null);
+  const boxRef = useRef(null);
+  const lastFocusRef = useRef(null);
+
+  useEffect(() => {
+    lastFocusRef.current = document.activeElement;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // 초기 focus — 첫 focusable 요소 (autoFocus 가 이미 동작 중이면 그대로).
+    const raf = requestAnimationFrame(() => {
+      if (!boxRef.current) return;
+      if (boxRef.current.contains(document.activeElement)) return;
+      const first = boxRef.current.querySelector(
+        'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
+      );
+      try { first?.focus(); } catch { /* ignore */ }
+    });
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onEscape?.();
+        return;
+      }
+      if (e.key !== 'Tab' || !boxRef.current) return;
+      const focusables = Array.from(boxRef.current.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ));
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !boxRef.current.contains(active)) {
+          e.preventDefault();
+          try { last.focus(); } catch { /* ignore */ }
+        }
+      } else {
+        if (active === last) {
+          e.preventDefault();
+          try { first.focus(); } catch { /* ignore */ }
+        }
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = prevOverflow;
+      try {
+        if (lastFocusRef.current && typeof lastFocusRef.current.focus === 'function') {
+          lastFocusRef.current.focus();
+        }
+      } catch { /* ignore */ }
+    };
+    // item.id 가 바뀌면 새 모달 → effect 재실행.
+  }, [item.id]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="site-dialog-overlay" ref={overlayRef} onClick={onBackdrop}>
+      <div
+        ref={boxRef}
+        className={'site-dialog-box' + (item.type === 'csv-preview' ? ' site-dialog-box--wide' : '')}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

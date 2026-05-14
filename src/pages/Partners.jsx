@@ -186,7 +186,6 @@ function SignupForm({ onDone }) {
     setBusy(true);
     setErr('');
     try {
-      const { api } = await import('../lib/api.js');
       const r = await api.post('/api/partners/apply', {
         company_name: form.company || '',
         contact_name: form.person || '',
@@ -379,6 +378,8 @@ function Shop({ partner, onSubmitted }) {
   const [cart, setCart] = useState({}); // sku → qty
   const [note, setNote] = useState('');
   const [search, setSearch] = useState('');
+  // 발주 제출 중 — 빠른 더블 클릭으로 중복 발주 + 쿠폰 이중 소비 차단.
+  const [submitting, setSubmitting] = useState(false);
   // 쿠폰 입력/검증 상태
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null); // { coupon, discount }
@@ -462,7 +463,10 @@ function Shop({ partner, onSubmitted }) {
   };
 
   const submit = async () => {
+    if (submitting) return;  // 빠른 더블 클릭 차단.
     if (!items.length) { alert('상품을 1개 이상 담아주세요.'); return; }
+    setSubmitting(true);
+    try {
     const summary = items.length === 1
       ? items[0].name
       : `${items[0].name} 외 ${items.length - 1}종`;
@@ -545,6 +549,9 @@ function Shop({ partner, onSubmitted }) {
     alert(`발주가 접수되었습니다 (데모 모드 — 브라우저 로컬 저장).\n총 ${items.length}종 / ${totalQty}개${couponLine2}`);
     setCart({}); setNote(''); setAppliedCoupon(null); setCouponInput(''); setCouponMsg({ kind: '', text: '' });
     onSubmitted && onSubmitted();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // 검색어 필터 (상품명/SKU/단위) — catalog는 storage 변경 시 자동 갱신됨
@@ -735,7 +742,10 @@ function Shop({ partner, onSubmitted }) {
             <textarea value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="배송 메모, 요청사항 (선택)" rows={3}
               style={{width:'100%',padding:10,fontFamily:'inherit',fontSize:12,border:'1px solid #d7d4cf',background:'#fff',marginBottom:12,resize:'vertical',boxSizing:'border-box'}} />
-            <button type="button" onClick={submit} className="btn" style={{width:'100%'}}>발주 제출</button>
+            <button type="button" onClick={submit} disabled={submitting} aria-busy={submitting}
+              className="btn" style={{width:'100%', opacity: submitting ? 0.6 : 1, cursor: submitting ? 'wait' : 'pointer'}}>
+              {submitting ? '발주 처리 중…' : '발주 제출'}
+            </button>
           </>
         )}
       </aside>
@@ -1012,7 +1022,7 @@ function OrderCard({ order, onReorder, onCancel }) {
         {items ? (
           <div>
             {items.map((it, i) => (
-              <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',fontSize:13,borderBottom: i < items.length - 1 ? '1px dashed #e6e3dd' : 'none'}}>
+              <div key={(it.sku || it.name || '') + ':' + i} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',fontSize:13,borderBottom: i < items.length - 1 ? '1px dashed #e6e3dd' : 'none'}}>
                 <span><span style={{color:'#8c867d',fontSize:11,marginRight:8}}>{it.sku}</span>{it.name}</span>
                 <span style={{color:'#6f6b68'}}>{it.qty} × {it.price.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>
                 <span style={{minWidth:90,textAlign:'right',color:'#111',fontWeight:500}}>{(it.qty * it.price).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}원</span>

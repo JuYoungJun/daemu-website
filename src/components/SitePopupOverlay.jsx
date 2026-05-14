@@ -16,23 +16,42 @@ import { safeUrl, safeMediaUrl } from '../lib/safe.js';
 export default function SitePopupOverlay({ popup }) {
   const [shown, setShown] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [closed, setClosed] = useState(false);
   const [skip, setSkip] = useState(false);
   const overlayRef = useRef(null);
+  const closeTimerRef = useRef(null);
 
+  // popup prop 이 바뀌면 모든 내부 state 를 reset 해야 새 팝업이 정상 노출됨.
   useEffect(() => {
     if (!popup) return;
+    setClosed(false);
+    setClosing(false);
+    setShown(false);
+    setSkip(false);
     const t = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(t);
+    return () => {
+      cancelAnimationFrame(t);
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
   }, [popup]);
 
   if (!popup) return null;
+  // close 후 transition 종료되면 portal 완전 제거 — DOM 에 잔존하던
+  // 투명 overlay 가 nav/page 클릭을 가로채던 회귀 차단.
+  if (closed) return null;
 
   const close = () => {
     dismissPopup(popup, skip);
     setClosing(true);
     setShown(false);
-    setTimeout(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
       setClosing(false);
+      setClosed(true);
+      closeTimerRef.current = null;
     }, 320);
   };
 
