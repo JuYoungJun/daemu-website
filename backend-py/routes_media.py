@@ -113,7 +113,10 @@ async def create_media(
     if user.role not in {"admin", "developer"}:
         raise HTTPException(403, detail="media write 권한이 없습니다.")
     asset = MediaAsset(
-        url=payload.url.strip()[:500],
+        # url 은 base64 inline (1MB ≈ 1.4M chars) 도 수용 — VARCHAR(500)
+        # 시점에 만든 [:500] truncation 이 base64 응답을 잘라 이미지가
+        # 깨지던 P0 회귀. column 은 migration 으로 LONGTEXT 변환됨.
+        url=payload.url.strip(),
         name=(payload.name or payload.original_name or "").strip()[:190],
         original_name=(payload.original_name or "").strip()[:190],
         content_type=(payload.content_type or "").strip()[:120],

@@ -165,7 +165,9 @@ class Work(Base):
     category: Mapped[str] = mapped_column(String(60), default="")
     summary: Mapped[str] = mapped_column(String(500), default="")
     content_md: Mapped[str] = mapped_column(Text, default="")
-    hero_image_url: Mapped[str] = mapped_column(String(500), default="")
+    # base64 inline 이미지 (data:image/...;base64,...) 가 1MB 까지 들어가므로
+    # MySQL LONGTEXT + SQLite TEXT. mail_templates.body 와 같은 패턴.
+    hero_image_url: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     gallery: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     tags: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     location: Mapped[str] = mapped_column(String(120), default="")
@@ -221,7 +223,8 @@ class SitePopup(Base):
     page_key: Mapped[str] = mapped_column(String(40), default="all", index=True)
     title: Mapped[str] = mapped_column(String(190), default="")
     body: Mapped[str] = mapped_column(Text, default="")
-    image_url: Mapped[str] = mapped_column(String(500), default="")
+    # base64 inline 이미지 수용 — MySQL LONGTEXT + SQLite TEXT.
+    image_url: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     cta_label: Mapped[str] = mapped_column(String(60), default="")
     cta_href: Mapped[str] = mapped_column(String(500), default="")
     placement: Mapped[str] = mapped_column(String(40), default="center")
@@ -591,7 +594,8 @@ class Product(Base):
     stock_count: Mapped[int] = mapped_column(Integer, default=0)
     low_stock_threshold: Mapped[int] = mapped_column(Integer, default=10)
     description: Mapped[str] = mapped_column(Text, default="")
-    image_url: Mapped[str] = mapped_column(String(500), default="")
+    # base64 inline 이미지 수용 — MySQL LONGTEXT + SQLite TEXT.
+    image_url: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -641,7 +645,8 @@ class Announcement(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(16), default="notice", index=True)  # notice / promo / urgent
     target: Mapped[str] = mapped_column(String(24), default="partner_portal", index=True)  # all / partner_portal
-    image_url: Mapped[str] = mapped_column(String(500), default="")
+    # base64 inline 이미지 수용 — MySQL LONGTEXT + SQLite TEXT.
+    image_url: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     cta_label: Mapped[str] = mapped_column(String(60), default="")
     cta_href: Mapped[str] = mapped_column(String(500), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -660,7 +665,8 @@ class PartnerBrand(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(190))
-    logo: Mapped[str] = mapped_column(String(500), default="")  # 로고 URL (외부 또는 미디어 라이브러리)
+    # base64 inline 이미지 수용 — MySQL LONGTEXT + SQLite TEXT.
+    logo: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")  # 로고 URL (외부 또는 미디어 라이브러리)
     url: Mapped[str] = mapped_column(String(500), default="")   # 클릭 시 이동할 외부 링크
     sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -682,7 +688,9 @@ class MediaAsset(Base):
     __tablename__ = "media_assets"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    url: Mapped[str] = mapped_column(String(500), index=True)  # 절대/상대 URL
+    # base64 inline 이미지 수용 — MySQL LONGTEXT (인덱스는 prefix(191), migration 2.5.1).
+    # SQLite 는 Text 무제한.
+    url: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"))
     name: Mapped[str] = mapped_column(String(190), default="")  # 사용자 표기 이름
     original_name: Mapped[str] = mapped_column(String(190), default="")  # 업로드 당시 파일명
     content_type: Mapped[str] = mapped_column(String(120), default="")  # image/png 등

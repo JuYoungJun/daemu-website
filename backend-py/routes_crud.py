@@ -845,24 +845,30 @@ async def consume_promotion(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """쿠폰 사용량 atomic 증가. partner-scoped JWT 권장 (식별/감사용) — 미인증도
-    동작 (시연 모드 호환) 하지만 partner_id 가 NULL 로 기록됨.
+    """쿠폰 사용량 atomic 증가. **partner-scoped JWT 필수** — 익명 DoS
+    (attacker 가 임의 promotion_id 를 한도까지 부풀리기) 차단.
 
     동시성: `UPDATE ... WHERE usage_count < usage_limit` 으로 race-safe.
     멱등성: `PromotionConsumption(promotion_id, client_event_id)` UniqueConstraint
     가 같은 발주 제출의 재시도를 +1 한 번만 카운트.
     """
-    # partner-scoped JWT 디코드 (선택). 토큰 있으면 partner_id 기록.
-    partner_id: int | None = None
+    # partner-scoped JWT 필수 — 미인증 호출은 401 (보안 감사 P0 권고).
     auth = request.headers.get("authorization") or ""
-    if auth.lower().startswith("bearer "):
-        try:
-            from routes_partner_auth import decode_partner_token
-            claims = decode_partner_token(auth.split(" ", 1)[1].strip())
-            if claims and claims.get("scope") == "partner":
-                partner_id = int(claims["sub"])
-        except Exception:  # noqa: BLE001
-            partner_id = None  # 잘못된 토큰 — 익명 사용으로 진행.
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, detail="partner token required")
+    try:
+        from routes_partner_auth import decode_partner_token
+        claims = decode_partner_token(auth.split(" ", 1)[1].strip())
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        claims = None
+    if not claims or claims.get("scope") != "partner":
+        raise HTTPException(401, detail="partner token required")
+    try:
+        partner_id = int(claims["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(401, detail="invalid partner token") from None
 
     # 1) 멱등 가드 — 같은 client_event_id 가 이미 있으면 그대로 200.
     existing = await session.execute(
