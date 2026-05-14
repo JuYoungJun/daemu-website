@@ -358,6 +358,10 @@ def issue_token(user: AdminUser) -> str:
         "sub": str(user.id),
         "email": user.email,
         "role": user.role,
+        # scope='admin' — partner JWT (scope='partner') / totp-reset JWT
+        # (purpose='totp_reset') 가 admin endpoint 에 통과 못하게 격리하는 핵심
+        # 클레임. _resolve_user 가 scope!='admin' 또는 purpose 가 있으면 401.
+        "scope": "admin",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=JWT_TTL_HOURS)).timestamp()),
     }
@@ -378,7 +382,20 @@ async def _resolve_user(authorization: str | None, session: AsyncSession) -> Adm
         raise HTTPException(401, detail="인증이 필요합니다. 로그인 후 다시 시도해 주세요.")
     token = authorization[7:].strip()
     claims = decode_token(token)
-    user = await session.get(AdminUser, int(claims["sub"]))
+    # Cross-scope token confusion 차단 — partner JWT (scope='partner') 또는
+    # totp-reset JWT (purpose='totp_reset') 가 admin endpoint 에 통과 못 하게.
+    # 옛 admin token (scope 클레임 없음) 호환 — 12h TTL 안에서 자연 만료, 또는
+    # 사용자 재로그인 시 새 scope='admin' token 발급.
+    scope = claims.get("scope")
+    if scope and scope != "admin":
+        raise HTTPException(401, detail="invalid token scope")
+    if claims.get("purpose"):
+        raise HTTPException(401, detail="purpose-scoped token cannot be used for general auth")
+    try:
+        sub_id = int(claims["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(401, detail="invalid token subject") from None
+    user = await session.get(AdminUser, sub_id)
     if not user or not user.active:
         raise HTTPException(401, detail="비활성화된 계정입니다. 운영자에게 문의하세요.")
     if user.role not in ALL_ROLES:
@@ -1228,6 +1245,8 @@ async def delete_user(user_id: int, request: Request, session: AsyncSession = De
         session, request,
         action="user.delete",
         actor_user=me_user,
-        meta={"target_user_id": target.id, "target_email": target.email, "target_role": target.role},
+        target_type="admin_user",
+        target_id=str(target.id),
+        detail={"target_email": target.email, "target_role": target.role},
     )
     await session.delete(target)

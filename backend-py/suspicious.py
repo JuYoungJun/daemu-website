@@ -89,18 +89,19 @@ async def record_async(
         detail=detail or {},
         evidence=False,
     )
-    session.add(ev)
+    # INSERT 는 호출자 session 과 분리된 *별도* session 으로 격리. 호출자
+    # session 에서 INSERT 후 rollback 하면 같은 트랜잭션의 다른 audit row
+    # (login.throttled 등) 까지 같이 사라져 forensic loss 발생. 별도 session
+    # 으로 격리하면 SuspiciousEvent INSERT 가 실패해도 호출자 트랜잭션 영향 없음.
+    from db import SessionLocal
     try:
-        await session.flush()
-    except Exception as _e:  # noqa: BLE001
-        # SuspiciousEvent INSERT 실패는 보안 모듈 자체에서 silent fail —
-        # 호출자(login handler 등) 의 본 흐름을 막아선 안 됨.
-        try:
-            await session.rollback()
-        except Exception:
-            pass
+        async with SessionLocal() as iso_session:
+            iso_session.add(ev)
+            await iso_session.commit()
+        return ev
+    except Exception:  # noqa: BLE001
+        # 자체 fail-soft — 호출자에 영향 0.
         return None
-    return ev
 
 
 def record(

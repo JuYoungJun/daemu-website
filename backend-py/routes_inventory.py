@@ -134,9 +134,15 @@ async def list_products(
     page_size = min(max(1, page_size), 500)
     stmt = select(Product).order_by(desc(Product.created_at))
     if q:
-        like = f"%{q.strip()}%"
+        # LIKE wildcard escape — 사용자 `%`/`_` 입력이 literal 처리되도록.
+        q_clean = q.strip()[:80]
+        q_escaped = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{q_escaped}%"
         from sqlalchemy import or_
-        stmt = stmt.where(or_(Product.sku.ilike(like), Product.name.ilike(like)))
+        stmt = stmt.where(or_(
+            Product.sku.ilike(like, escape="\\"),
+            Product.name.ilike(like, escape="\\"),
+        ))
     if category:
         stmt = stmt.where(Product.category_code == category.upper())
     if low_stock_only:

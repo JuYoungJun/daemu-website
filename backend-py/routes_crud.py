@@ -44,6 +44,7 @@ from models import (
     Partner,
     PartnerBrand,
     Promotion,
+    PromotionConsumption,
     SitePopup,
     Work,
 )
@@ -598,10 +599,17 @@ class PartnerSetPasswordIn(BaseModel):
 async def set_partner_password(
     partner_id: int,
     payload: PartnerSetPasswordIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     _u: AdminUser = Depends(require_perm("partners", "write")),
 ):
-    from auth import hash_password as _hash_pw
+    from auth import hash_password as _hash_pw, validate_password_strength
+    from audit import log_event
+    # 강도 검증 — Pydantic min_length=8 외에 admin 비번 설정과 동일한 정책 적용
+    # (영문 대소문자/숫자/특수문자 포함). 약한 비번 차단.
+    err = validate_password_strength(payload.password)
+    if err:
+        raise HTTPException(400, detail=err)
     partner = await session.get(Partner, partner_id)
     if not partner:
         raise HTTPException(404, detail="해당 파트너를 찾을 수 없습니다.")
@@ -621,6 +629,24 @@ async def set_partner_password(
     mail_result = {"status": "skipped", "error": "", "outbox_id": None}
     if was_pending:
         mail_result = await _send_partner_mail(session, kind="partner-approved", partner=partner)
+    # audit — admin 이 어느 파트너의 비번을 set 했는지 추적 (forensic).
+    # 비밀번호 자체는 절대 로깅 안 함 (detail 에 partner 식별 정보만).
+    try:
+        await log_event(
+            session, request,
+            action="partner.password.set",
+            actor_user=_u,
+            target_type="partner",
+            target_id=str(partner.id),
+            detail={
+                "partner_email": partner.email,
+                "was_pending": was_pending,
+                "status_after": partner.status,
+            },
+        )
+    except Exception as _e:  # noqa: BLE001
+        # audit 실패가 비번 설정 자체를 막지 않게 silent fail.
+        pass
     return {
         "ok": True,
         "partner_id": partner.id,
@@ -803,6 +829,111 @@ async def list_visible_promotions(
             "active": p.active,
         })
     return {"ok": True, "items": items}
+
+
+# 쿠폰 사용량 +1 — partner 가 발주 제출 시 호출. atomic UPDATE 로 race
+# condition 차단 + PromotionConsumption row INSERT 로 멱등 보장.
+class ConsumePromotionIn(BaseModel):
+    promotion_id: int
+    client_event_id: str = Field(min_length=1, max_length=80)
+    quantity: int = Field(1, ge=1, le=10)
+
+
+@router.post("/promotions/consume")
+async def consume_promotion(
+    payload: ConsumePromotionIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """쿠폰 사용량 atomic 증가. partner-scoped JWT 권장 (식별/감사용) — 미인증도
+    동작 (시연 모드 호환) 하지만 partner_id 가 NULL 로 기록됨.
+
+    동시성: `UPDATE ... WHERE usage_count < usage_limit` 으로 race-safe.
+    멱등성: `PromotionConsumption(promotion_id, client_event_id)` UniqueConstraint
+    가 같은 발주 제출의 재시도를 +1 한 번만 카운트.
+    """
+    # partner-scoped JWT 디코드 (선택). 토큰 있으면 partner_id 기록.
+    partner_id: int | None = None
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        try:
+            from routes_partner_auth import decode_partner_token
+            claims = decode_partner_token(auth.split(" ", 1)[1].strip())
+            if claims and claims.get("scope") == "partner":
+                partner_id = int(claims["sub"])
+        except Exception:  # noqa: BLE001
+            partner_id = None  # 잘못된 토큰 — 익명 사용으로 진행.
+
+    # 1) 멱등 가드 — 같은 client_event_id 가 이미 있으면 그대로 200.
+    existing = await session.execute(
+        select(PromotionConsumption).where(
+            PromotionConsumption.promotion_id == payload.promotion_id,
+            PromotionConsumption.client_event_id == payload.client_event_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        promo = await session.get(Promotion, payload.promotion_id)
+        return {
+            "ok": True,
+            "idempotent": True,
+            "usage_count": (promo.usage_count if promo else 0),
+            "remaining": (
+                max(0, (promo.usage_limit or 0) - (promo.usage_count or 0))
+                if promo and promo.usage_limit else None
+            ),
+        }
+
+    # 2) atomic UPDATE — race condition 차단. usage_limit=0 (무제한) 도 +1 허용.
+    from sqlalchemy import update as _update
+    stmt = (
+        _update(Promotion)
+        .where(Promotion.id == payload.promotion_id)
+        .where(Promotion.active == True)  # noqa: E712
+        .where(
+            (Promotion.usage_limit == 0) |
+            (Promotion.usage_count < Promotion.usage_limit)
+        )
+        .values(usage_count=Promotion.usage_count + 1)
+    )
+    res = await session.execute(stmt)
+    if (getattr(res, "rowcount", 0) or 0) == 0:
+        # 한도 초과 / inactive / not found — 어느 쪽이든 사용 불가.
+        promo = await session.get(Promotion, payload.promotion_id)
+        if not promo:
+            raise HTTPException(404, detail="해당 쿠폰을 찾을 수 없습니다.")
+        if not promo.active:
+            raise HTTPException(409, detail="비활성 쿠폰입니다.")
+        raise HTTPException(409, detail="쿠폰 사용 한도를 초과했습니다.")
+
+    # 3) 멱등 키 INSERT — UniqueConstraint 가 race 시점에 중복 INSERT 차단.
+    try:
+        session.add(PromotionConsumption(
+            promotion_id=payload.promotion_id,
+            client_event_id=payload.client_event_id,
+            partner_id=partner_id,
+        ))
+        await session.flush()
+    except Exception:  # noqa: BLE001
+        # UniqueConstraint 충돌 = 동시 race 의 다른 worker 가 먼저 처리 = 멱등.
+        # 그러나 우리는 이미 usage_count +1 했으므로 -1 보정 필요.
+        await session.rollback()
+        # rollback 후 다시 멱등 응답.
+        promo2 = await session.get(Promotion, payload.promotion_id)
+        return {
+            "ok": True,
+            "idempotent": True,
+            "usage_count": (promo2.usage_count if promo2 else 0),
+        }
+
+    promo3 = await session.get(Promotion, payload.promotion_id)
+    return {
+        "ok": True,
+        "usage_count": (promo3.usage_count if promo3 else 0),
+        "remaining": (
+            max(0, (promo3.usage_limit or 0) - (promo3.usage_count or 0))
+            if promo3 and promo3.usage_limit else None
+        ),
+    }
 
 
 _crud(Order, "orders",
