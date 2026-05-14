@@ -55,7 +55,11 @@ def _model_to_dict(asset: MediaAsset) -> dict[str, Any]:
 
 
 class MediaCreateIn(BaseModel):
-    url: str = Field(min_length=1, max_length=500)
+    # url 은 외부 URL (≤500자) 또는 data:image/...;base64,... data URL
+    # (1MB ≈ 1.4M base64 chars) 둘 다 허용. /api/upload 가 작은 이미지를
+    # base64 inline 으로 응답하므로 frontend 가 그 응답을 그대로 POST 함.
+    # cap 은 backend INLINE_CAP=1MB 대비 여유 (base64 4/3 + 헤더).
+    url: str = Field(min_length=1, max_length=1_600_000)
     name: str = ""
     original_name: str = ""
     content_type: str = ""
