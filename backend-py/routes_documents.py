@@ -67,7 +67,12 @@ def template_to_dict(t: DocumentTemplate) -> dict[str, Any]:
 
 
 def _public_doc_dict(d: Document, *, include_body: bool = True) -> dict[str, Any]:
-    """공개 서명 페이지용 — 민감 메타데이터(history, created_by 등)는 빼고 보냅니다."""
+    """공개 서명 페이지용 — 민감 메타데이터(history, created_by, recipient
+    이메일 등) 노출 안 함. 토큰 알아도 다른 수신자 정보 정찰 불가능.
+
+    recipients 가 응답에 포함되면 attacker 가 sign_token 만 가지고 다른
+    수신자 이메일을 수집 가능 — privacy 위반. 빈 list 로 반환.
+    """
     return {
         "id": d.id,
         "kind": d.kind,
@@ -75,7 +80,9 @@ def _public_doc_dict(d: Document, *, include_body: bool = True) -> dict[str, Any
         "subject": d.subject,
         "body": d.body if include_body else "",
         "status": d.status,
-        "recipients": d.recipients or [],
+        # recipients 절대 노출 안 함 — 서명자는 본인 이메일을 직접 입력하고,
+        # 검증은 backend 의 POST /sign/{token} 에서 (B1 수정).
+        "recipients_count": len(d.recipients or []) if isinstance(d.recipients, list) else 0,
         "signed_at": d.signed_at.isoformat() if d.signed_at else None,
     }
 

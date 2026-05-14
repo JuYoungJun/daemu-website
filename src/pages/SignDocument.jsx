@@ -60,10 +60,18 @@ export default function SignDocument() {
   if (doc.status === 'signed') {
     return (
       <CenterMsg>
-        ✅ 이 문서는 이미 서명이 완료되었습니다.<br />
-        <span style={{ fontSize: 12, color: '#8c867d', display: 'block', marginTop: 8 }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
+        <strong style={{ fontSize: 16, color: '#231815' }}>서명이 완료되었습니다.</strong>
+        <p style={{ fontSize: 13, color: '#5f5b57', margin: '14px 0 6px', lineHeight: 1.7 }}>
+          {doc.title}
+        </p>
+        <span style={{ fontSize: 12, color: '#8c867d', display: 'block', marginTop: 4 }}>
           서명 시각: {doc.signed_at ? new Date(doc.signed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
         </span>
+        <p style={{ fontSize: 12, color: '#6f6b68', marginTop: 16, lineHeight: 1.7 }}>
+          별도 작업 없이 이 페이지를 닫으셔도 됩니다.<br />
+          관련 문의는 <strong>daemu_office@naver.com</strong> 또는 <strong>061-335-1239</strong> 로 연락해 주세요.
+        </p>
       </CenterMsg>
     );
   }
@@ -73,6 +81,8 @@ export default function SignDocument() {
 
 function SignForm({ doc, token, onDone }) {
   const canvasRef = useRef(null);
+  const strokesRef = useRef([]);  // 캔버스 reflow 시 다시 그리기 위한 stroke 보존.
+  const currentStrokeRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
   const [hasInk, setHasInk] = useState(false);
   const [name, setName] = useState('');
@@ -81,19 +91,42 @@ function SignForm({ doc, token, onDone }) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
 
-  useEffect(() => {
+  // 캔버스를 현재 viewport 크기에 맞춰 (Retina DPR 반영) 다시 그림.
+  // resize / 회전 (orientationchange) 마다 호출되어, 이전에 그린 stroke 도 보존.
+  const setupCanvas = () => {
     const c = canvasRef.current;
     if (!c) return;
-    // Match physical pixels for sharp signature on Retina screens.
     const dpr = window.devicePixelRatio || 1;
     const rect = c.getBoundingClientRect();
-    c.width = rect.width * dpr;
-    c.height = rect.height * dpr;
+    if (rect.width <= 0 || rect.height <= 0) return;
+    c.width = Math.round(rect.width * dpr);
+    c.height = Math.round(rect.height * dpr);
     const ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.strokeStyle = '#231815';
+    // 기존 stroke 재생.
+    for (const stroke of strokesRef.current) {
+      if (!stroke || stroke.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
+      ctx.stroke();
+    }
+  };
+
+  useEffect(() => {
+    setupCanvas();
+    const onResize = () => setupCanvas();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getPos = (e) => {
@@ -111,6 +144,7 @@ function SignForm({ doc, token, onDone }) {
     setDrawing(true);
     const ctx = canvasRef.current.getContext('2d');
     const p = getPos(e);
+    currentStrokeRef.current = [p];
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
   };
@@ -119,42 +153,87 @@ function SignForm({ doc, token, onDone }) {
     e.preventDefault();
     const ctx = canvasRef.current.getContext('2d');
     const p = getPos(e);
+    if (currentStrokeRef.current) currentStrokeRef.current.push(p);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     setHasInk(true);
   };
-  const stop = () => setDrawing(false);
+  const stop = () => {
+    if (currentStrokeRef.current && currentStrokeRef.current.length >= 2) {
+      strokesRef.current.push(currentStrokeRef.current);
+    }
+    currentStrokeRef.current = null;
+    setDrawing(false);
+  };
 
   const clear = () => {
     const c = canvasRef.current;
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, c.width, c.height);
+    strokesRef.current = [];
+    currentStrokeRef.current = null;
     setHasInk(false);
   };
 
+  // 캔버스가 사실상 비어있는지 픽셀 단위 검증 — 모든 픽셀이 alpha=0 이면 빈 서명.
+  // hasInk 만 신뢰하면 사용자가 점 한 개 찍고 제출하는 사실상 빈 서명 통과 가능.
+  const isCanvasEffectivelyEmpty = () => {
+    const c = canvasRef.current;
+    if (!c) return true;
+    try {
+      const ctx = c.getContext('2d');
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      // 0~3 픽셀이상에 alpha 값이 있어야 의미 있는 서명. 작은 dust 는 무시.
+      let inkPixels = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 0) inkPixels++;
+        if (inkPixels > 50) return false;
+      }
+      return inkPixels <= 50;
+    } catch { return false; }  // canvas tainted (cross-origin) — frontend 검증 skip.
+  };
+
   const submit = async () => {
+    if (submitting) return;  // 더블 클릭 차단.
     setErr('');
-    if (!name.trim()) { setErr('이름을 입력해 주세요.'); return; }
-    if (!email.trim()) { setErr('이메일을 입력해 주세요.'); return; }
+    const nameTrim = name.trim();
+    const emailTrim = email.trim().toLowerCase();
+    if (!nameTrim) { setErr('이름을 입력해 주세요.'); return; }
+    if (!emailTrim) { setErr('이메일을 입력해 주세요.'); return; }
+    // 단순 이메일 형식 — backend EmailStr 와 일치하는 정도만.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+      setErr('이메일 형식이 올바르지 않습니다.'); return;
+    }
     if (!hasInk) { setErr('서명을 그려 주세요.'); return; }
+    if (isCanvasEffectivelyEmpty()) {
+      setErr('서명이 비어있습니다. 충분히 그려 주세요.'); return;
+    }
     if (!consented) { setErr('약관 동의가 필요합니다.'); return; }
     setSubmitting(true);
     try {
       const dataUrl = canvasRef.current.toDataURL('image/png');
       const r = await api.post('/api/sign/' + encodeURIComponent(token), {
-        signer_name: name.trim(),
-        signer_email: email.trim(),
+        signer_name: nameTrim,
+        signer_email: emailTrim,
         signature_data: dataUrl,
         consented: true,
         consent_text: '본인은 본 전자 서명이 본인의 진정한 의사 표시임을 확인하며, 본 문서의 내용에 동의합니다.',
       });
       if (r.ok) {
         onDone(r.document);
+      } else if (r.status === 403) {
+        setErr('이 이메일은 본 문서의 서명 권한이 없습니다. 문서를 받은 메일 주소와 동일한지 확인해 주세요.');
+      } else if (r.status === 409) {
+        setErr('이미 서명이 완료된 문서입니다. 페이지를 새로고침해 주세요.');
+      } else if (r.status === 410) {
+        setErr('이 문서는 취소되었습니다. 발송자에게 문의해 주세요.');
+      } else if (r.status === 413) {
+        setErr('서명 이미지가 너무 큽니다. "지우고 다시 그리기" 후 더 작게 서명해 주세요.');
       } else {
-        setErr(r.error || '서명에 실패했습니다.');
+        setErr(r.error || '서명에 실패했습니다. 잠시 후 다시 시도해 주세요.');
       }
     } catch (e) {
-      setErr(String(e));
+      setErr('네트워크 오류로 서명에 실패했습니다. 잠시 후 다시 시도해 주세요.');
     } finally {
       setSubmitting(false);
     }
@@ -182,10 +261,14 @@ function SignForm({ doc, token, onDone }) {
         </div>
 
         <h2 style={{ fontSize: 14, marginTop: 30, marginBottom: 10 }}>서명자 정보</h2>
+        <p style={{ fontSize: 12, color: '#8c867d', margin: '0 0 10px', lineHeight: 1.6 }}>
+          본 문서를 <strong>수신하신 이메일 주소</strong>로 입력해 주세요. 등록된 수신자만 서명할 수 있습니다.
+        </p>
         <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
-          <input type="text" placeholder="성함 (필수)" value={name} onChange={(e) => setName(e.target.value)}
+          <input type="text" autoComplete="name" placeholder="성함 (필수)" value={name} onChange={(e) => setName(e.target.value)}
             style={{ padding: 12, border: '1px solid #d7d4cf', fontSize: 14, fontFamily: 'inherit' }} />
-          <input type="email" placeholder="이메일 (필수)" value={email} onChange={(e) => setEmail(e.target.value)}
+          <input type="email" autoComplete="email" inputMode="email"
+            placeholder="문서를 받은 이메일 (필수)" value={email} onChange={(e) => setEmail(e.target.value)}
             style={{ padding: 12, border: '1px solid #d7d4cf', fontSize: 14, fontFamily: 'inherit' }} />
         </div>
 
