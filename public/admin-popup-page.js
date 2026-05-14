@@ -86,10 +86,16 @@ async function pickFromLibrary() {
     renderThumb();
   }
 }
+// base64 data URL 우회 처리 + onerror fallback.
+const _POPUP_SAFE_DATA = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
+function _popupSafeImgSrc(s) {
+  const v = String(s || '');
+  return _POPUP_SAFE_DATA.test(v) ? v.replace(/"/g, '&quot;').replace(/[\r\n]/g, '') : escUrl(v);
+}
 function renderThumb() {
   const wrap = document.getElementById("f-thumb");
   if (pendingImage) {
-    wrap.innerHTML = `<div class="adm-thumb"><img src="${escUrl(pendingImage)}" alt=""><button type="button" class="x" onclick="removeImage()">×</button></div>`;
+    wrap.innerHTML = `<div class="adm-thumb"><img src="${_popupSafeImgSrc(pendingImage)}" alt="" onerror="this.style.opacity='0.2'"><button type="button" class="x" onclick="removeImage()">×</button></div>`;
   } else {
     wrap.innerHTML = "";
   }

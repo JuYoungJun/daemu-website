@@ -102,13 +102,21 @@
     );
   }
 
+  // base64 data URL 은 escUrl 의 옛 캐시 (data: 차단) 우회를 위해 직접 처리.
+  // XSS 안전 — image|video|audio base64 alphabet 만 매칭.
+  const _SAFE_DATA_RE = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
+  function _safeImgSrc(s) {
+    const v = String(s || '');
+    return _SAFE_DATA_RE.test(v) ? v.replace(/"/g, '&quot;').replace(/[\r\n]/g, '') : escUrl(v);
+  }
+
   function render() {
     const data = filtered();
     document.getElementById("count").textContent = data.length + "건";
     document.getElementById("list").innerHTML = data.length ? data.map(d => {
       const heroSrc = d.hero || (d.images && d.images[0] && d.images[0].src) || '';
       const thumb = heroSrc
-        ? `<span class="adm-thumb-cell"><img src="${escUrl(heroSrc)}" alt=""></span>`
+        ? `<span class="adm-thumb-cell"><img src="${_safeImgSrc(heroSrc)}" alt="" onerror="this.style.opacity='0.2'"></span>`
         : `<span class="adm-thumb-cell"></span>`;
       const galleryCount = d.images ? d.images.length : 0;
       const slug = d.slug || '#'+String(d.id).slice(-6);
@@ -129,7 +137,7 @@
 
   function renderThumbs() {
     document.getElementById("f-thumbs").innerHTML = pendingImages.map((img, i) =>
-      `<div class="adm-thumb"><img src="${escUrl(img.src)}" alt=""><button type="button" class="x" onclick="removeImage(${i})">×</button></div>`
+      `<div class="adm-thumb"><img src="${_safeImgSrc(img.src)}" alt="" onerror="this.style.opacity='0.2'"><button type="button" class="x" onclick="removeImage(${i})">×</button></div>`
     ).join("");
   }
 
@@ -137,7 +145,7 @@
     const wrap = document.getElementById("f-hero-thumb");
     if (!wrap) return;
     if (pendingHero) {
-      wrap.innerHTML = `<div class="adm-thumb"><img src="${escUrl(pendingHero)}" alt=""><button type="button" class="x" onclick="removeHero()">×</button></div>`;
+      wrap.innerHTML = `<div class="adm-thumb"><img src="${_safeImgSrc(pendingHero)}" alt="" onerror="this.style.opacity='0.2'"><button type="button" class="x" onclick="removeHero()">×</button></div>`;
     } else {
       wrap.innerHTML = '';
     }

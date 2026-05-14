@@ -82,14 +82,25 @@ function renderGrid() {
     const k = kindOf(d);
     const name = d.name || "";
     const display = name.length > 22 ? name.substring(0, 22) + "…" : name;
-    // 빈 src 일 때 <img src=""> / <video src=""> 만들면 브라우저가 현재
-    // 페이지를 src 로 해석해서 자기 자신을 GET (404). placeholder 표시.
+    // 빈 src 일 때 <img src=""> 만들면 브라우저가 현재 페이지를 src 로
+    // 해석해서 자기 자신을 GET (404). placeholder 표시.
+    // 정상 src 라도 (Render 휘발 URL 등) 로드 실패 가능 — onerror fallback 으로
+    // ⚠️ 깨진 이미지 안내 노출.
     const srcStr = (d.src || '').trim();
+    // base64 data URL 은 escUrl 의 옛 캐시 (data: 차단) 우회를 위해 직접 처리.
+    // XSS 안전 — image|video|audio base64 alphabet 만 통과시키는 명시적 검증.
+    const SAFE_DATA_RE_LOCAL = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
+    const safeSrcAttr = (s) => SAFE_DATA_RE_LOCAL.test(s)
+      ? s.replace(/"/g, '&quot;').replace(/[\r\n]/g, '')
+      : escUrl(s);
+    const emptyPlaceholder = `<div class="adm-thumb-empty" style="display:flex;align-items:center;justify-content:center;height:140px;background:#f6f4f0;color:#8c867d;font-size:11px;flex-direction:column;gap:4px"><span style="font-size:24px">📦</span><span>파일 정보 누락</span></div>`;
+    const errorPlaceholder = `<div class="adm-thumb-error" style="display:none;align-items:center;justify-content:center;height:140px;background:#fdf2f0;color:#c0392b;font-size:11px;flex-direction:column;gap:4px"><span style="font-size:24px">⚠️</span><span>이미지 로드 실패 — 다시 업로드해 주세요</span></div>`;
+    const onerr = "this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex';";
     const preview = !srcStr
-      ? `<div class="adm-thumb-empty" style="display:flex;align-items:center;justify-content:center;height:140px;background:#f6f4f0;color:#8c867d;font-size:11px;flex-direction:column;gap:4px"><span style="font-size:24px">📦</span><span>파일 정보 누락</span></div>`
+      ? emptyPlaceholder
       : k === "video"
-        ? `<video src="${escUrl(srcStr)}" controls preload="metadata" style="width:100%;height:140px;object-fit:cover;background:#000"></video>`
-        : `<img src="${escUrl(srcStr)}" alt="${escAttr(name)}" loading="lazy">`;
+        ? `<video src="${safeSrcAttr(srcStr)}" controls preload="metadata" style="width:100%;height:140px;object-fit:cover;background:#000" onerror="${onerr}"></video>${errorPlaceholder}`
+        : `<img src="${safeSrcAttr(srcStr)}" alt="${escAttr(name)}" loading="lazy" onerror="${onerr}">${errorPlaceholder}`;
     return `<div class="adm-media-item" data-kind="${escAttr(k)}">
       ${preview}
       <div class="adm-media-meta">

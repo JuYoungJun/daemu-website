@@ -4,6 +4,16 @@ const STORAGE_KEY = "orders";
 let editingId = null;
 let pendingAttachments = []; // [{ filename, content (base64), mimeType, previewUrl, isImage }]
 
+// base64 data URL 직접 passthrough — escUrl 의 옛 캐시(data: 차단) 우회.
+// XSS 안전 — image|video|audio base64 alphabet 만 통과시키는 명시적 검증.
+const _ORDERS_SAFE_DATA = /^data:(image|video|audio)\/[a-z0-9+.\-]+;base64,[A-Za-z0-9+/=\s]+$/i;
+function _ordersSafeImgSrc(s) {
+  s = String(s || '').trim();
+  if (!s) return '';
+  if (_ORDERS_SAFE_DATA.test(s)) return s.replace(/"/g, '&quot;').replace(/[\r\n]/g, '');
+  return escUrl(s);
+}
+
 // ── 백엔드 ↔ localStorage 매핑 ──────────────────────────────────
 // backend Order 의 items 는 JSON 배열 — 우리는 단일 product/qty/price 만 쓰니
 // items[0] 으로 압축. 다중 라인 발주는 V2 에서 확장.
@@ -336,7 +346,7 @@ function renderAttachments() {
   if (!wrap) return;
   wrap.innerHTML = pendingAttachments.map((a, i) => {
     if (a.isImage && a.previewUrl) {
-      return `<div class="adm-thumb"><img src="${escUrl(a.previewUrl)}" alt=""><button type="button" class="x" onclick="removeOrderAttachment(${i})">×</button></div>`;
+      return `<div class="adm-thumb"><img src="${_ordersSafeImgSrc(a.previewUrl)}" alt="" onerror="this.style.opacity='0.2'"><button type="button" class="x" onclick="removeOrderAttachment(${i})">×</button></div>`;
     }
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f6f4f0;border:1px solid #d7d4cf;font-size:12px">📎 ${escHtml(a.filename)} <button type="button" onclick="removeOrderAttachment(${i})" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:13px">×</button></div>`;
   }).join('');
