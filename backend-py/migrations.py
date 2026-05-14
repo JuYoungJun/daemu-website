@@ -313,6 +313,44 @@ def run_pending_migrations(conn: Connection) -> list[str]:
             except Exception as e:  # noqa: BLE001
                 print(f"[migration] skip {clause!r}: {e!r}")
 
+    # 2.6) 이미지 URL 경로 정규화 — `assets/foo.png` (앞 `/` 없음) →
+    # `/assets/foo.png`. SPA 가 sub-path 에 deploy 될 때 (GitHub Pages
+    # /daemu-website/) 상대 path 가 현재 라우트 기준으로 해석되어 깨지는
+    # 회귀 회피. frontend 의 safeMediaUrl / escUrl 이 base prefix 부착하지만
+    # 데이터 자체가 정규화되어 있으면 어떤 코드 경로에서도 안전.
+    # idempotent — 이미 `/assets/` 또는 absolute URL (`http(s)://...`,
+    # `data:`) 인 row 는 건드리지 않음.
+    image_normalize_targets = [
+        ("works", "hero_image_url"),
+        ("announcements", "image_url"),
+        ("site_popups", "image_url"),
+        ("partner_brands", "logo"),
+        ("products", "image_url"),
+        ("media_assets", "url"),
+    ]
+    for table, column in image_normalize_targets:
+        if not _table_exists(conn, table):
+            continue
+        try:
+            # `assets/` 로 시작하지만 `/assets/` 가 아닌 row 만 갱신.
+            # MySQL/PostgreSQL/SQLite 모두 호환되는 단순 LIKE 필터.
+            stmt = (
+                f"UPDATE {table} SET {column} = CONCAT('/', {column}) "
+                f"WHERE {column} LIKE 'assets/%' AND {column} NOT LIKE '/%'"
+            )
+            if conn.dialect.name == "sqlite":
+                stmt = (
+                    f"UPDATE {table} SET {column} = '/' || {column} "
+                    f"WHERE {column} LIKE 'assets/%' AND {column} NOT LIKE '/%'"
+                )
+            res = conn.execute(text(stmt))
+            n = getattr(res, "rowcount", 0) or 0
+            if n:
+                applied.append(f"normalize {table}.{column} ({n} rows)")
+                print(f"[migration] normalized {table}.{column}: {n} rows ('assets/...' → '/assets/...')")
+        except Exception as e:  # noqa: BLE001
+            print(f"[migration] skip normalize {table}.{column}: {e!r}")
+
     # 3) ORM 모델 ↔ 실제 테이블 자동 정렬 — schema drift 보강.
     #    (mutation 영향 받는 모델만 — admin_users / outbox / mail_templates 등은
     #    전용 entry 가 PENDING_COLUMNS 에 이미 있으므로 중복 skip 됨.)

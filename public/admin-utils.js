@@ -22,7 +22,13 @@
     if (v.startsWith('/') || v.startsWith('#') || v.startsWith('?')) return escAttr(v);
     // Allowed schemes (case-insensitive)
     const m = /^([a-z][a-z0-9+.-]*):/i.exec(v);
-    if (!m) return escAttr(v); // no scheme = treat as relative
+    if (!m) {
+      // SPA sub-path 배포 (GitHub Pages: /daemu-website/) 에서 상대 path
+      // (예: `assets/work-...png`) 가 현재 라우트 기준으로 해석되어 깨지는
+      // 회귀 차단 — window.DAEMU_BASE prefix 자동 부착.
+      const base = (typeof window !== 'undefined' && window.DAEMU_BASE) || '/';
+      return escAttr(base.replace(/\/+$/, '') + '/' + v.replace(/^\/+/, ''));
+    }
     const scheme = m[1].toLowerCase();
     if (scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel') {
       return escAttr(v);
