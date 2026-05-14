@@ -14,6 +14,7 @@
 
 import { DB } from './db.js';
 import { api } from './api.js';
+import { PartnerAuth } from './partnerAuth.js';
 
 // backend `/api/promotions/visible` 응답 → 통합 coupon 형태로 정규화.
 // backend 는 visible 단계에서 active=true + 유효기간 + 사용한도 미만 만 반환
@@ -40,7 +41,11 @@ export async function findCoupon(code) {
   if (!target) return null;
   if (api.isConfigured()) {
     try {
-      const r = await api.get('/api/promotions/visible');
+      // partner-scoped JWT 첨부 — backend 가 partner token 필수로 잠금.
+      const r = await api.get('/api/promotions/visible', {
+        skipAuth: true,
+        headers: PartnerAuth.authHeader(),
+      });
       if (r && r.ok && Array.isArray(r.items)) {
         const hit = r.items.find((p) => (p.code || '').toLowerCase() === target);
         if (hit) return _adaptBackend(hit);

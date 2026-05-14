@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import desc, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,25 +39,26 @@ def _to_dict(obj: Announcement) -> dict[str, Any]:
 # Public — 파트너 포털 / 공개 사이트 가 active + scheduled 범위 안 항목만 받음
 
 @router.get("/announcements/visible")
-async def list_visible(target: str = Query("all", pattern=r"^(all|partner_portal)$")):
-    """현재 노출 중인 공지/프로모션. 인증 X — 파트너 포털 + 공개 사이트가 호출."""
-    async with get_session_context() as session:
-        now = datetime.now(timezone.utc)
-        stmt = select(Announcement).where(Announcement.active == True)  # noqa: E712
-        if target == "partner_portal":
-            # 파트너 포털은 partner_portal + all 둘 다 표시
-            stmt = stmt.where(or_(Announcement.target == "partner_portal",
-                                  Announcement.target == "all"))
-        else:
-            # 공개 사이트는 all 만
-            stmt = stmt.where(Announcement.target == "all")
-        stmt = stmt.where(or_(Announcement.scheduled_start == None,  # noqa: E711
-                              Announcement.scheduled_start <= now))
-        stmt = stmt.where(or_(Announcement.scheduled_end == None,  # noqa: E711
-                              Announcement.scheduled_end >= now))
-        stmt = stmt.order_by(desc(Announcement.created_at)).limit(50)
-        rows = (await session.execute(stmt)).scalars().all()
-        return {"ok": True, "items": [_to_dict(r) for r in rows]}
+async def list_visible(
+    request: "Request",
+    target: str = Query("all", pattern=r"^(all|partner_portal)$"),
+):
+    """현재 노출 중인 공지/프로모션. 정책 (2026-05):
+    - target='all'           → 공개 사이트가 호출. 인증 없음.
+    - target='partner_portal'→ 파트너 포털 전용. **partner-scoped JWT 필수**.
+      비로그인 호출은 401 — 쿠폰/공지가 공개 사이트에 노출되지 않도록 보호.
+    """
+    # target=partner_portal 은 partner token 필수.
+    if target == "partner_portal":
+        from routes_partner_auth import decode_partner_token
+        auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+        token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else ""
+        try:
+            claims = decode_partner_token(token) if token else None
+        except Exception:
+            claims = None
+        if not claims:
+            raise HTTPException(status_code=401, detail="partner token required")
 
 
 # Helper for unauthenticated read (we still want session_scope)

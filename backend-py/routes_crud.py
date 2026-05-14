@@ -399,12 +399,15 @@ async def list_inquiries(
         # DB-08 DoS guard: bounded so an attacker can't force a
         # gigabyte-scan via the LIKE %x...x% pattern.
         q = q[:80]
-        like = f"%{q}%"
+        # LIKE wildcard escape — 사용자 입력의 `%`/`_`/`\` 을 literal 로 처리.
+        # escape 안 하면 사용자가 `%` 입력 시 모든 row 매칭 (의도 외 결과).
+        q_escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{q_escaped}%"
         stmt = stmt.where(
-            (Inquiry.name.ilike(like))
-            | (Inquiry.email.ilike(like))
-            | (Inquiry.brand_name.ilike(like))
-            | (Inquiry.message.ilike(like))
+            (Inquiry.name.ilike(like, escape="\\"))
+            | (Inquiry.email.ilike(like, escape="\\"))
+            | (Inquiry.brand_name.ilike(like, escape="\\"))
+            | (Inquiry.message.ilike(like, escape="\\"))
         )
     total = (await session.execute(count_stmt)).scalar_one()
     page = max(1, page)
@@ -646,6 +649,35 @@ async def _order_pre_update(session, obj, payload, request, _u):
     await _validate_stock_for_items(session, items)
 
 
+async def _order_post_create(session, obj, payload, request, _u):
+    """admin /api/orders POST 후 실제 LOT 차감. _order_pre_create 가 검증만
+    했고 차감은 안 했으므로 여기서 reserve_stock_for_order 호출."""
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        return
+    from routes_inventory import reserve_stock_for_order
+    actor_id = getattr(_u, "id", None) if _u else None
+    await reserve_stock_for_order(
+        session, items=items, order_id=obj.id, actor_user_id=actor_id,
+    )
+
+
+async def _order_post_update(session, obj, payload, request, _u, prev_values):
+    """admin 이 발주 status 를 '취소' 로 바꾸면 stock 복구. 다른 status
+    변경은 stock 영향 없음."""
+    new_status = payload.get("status")
+    if not new_status:
+        return
+    prev_status = prev_values.get("status") if isinstance(prev_values, dict) else None
+    if prev_status == "취소":
+        return  # 이미 취소된 발주 — 중복 release 안 함.
+    if new_status != "취소":
+        return
+    from routes_inventory import release_stock_for_order
+    actor_id = getattr(_u, "id", None) if _u else None
+    await release_stock_for_order(session, order_id=obj.id, actor_user_id=actor_id)
+
+
 async def _validate_stock_for_items(session, items: list):
     """각 item 의 sku 별 가용 재고를 합계로 검증. Product.stock_count 사용
     (StockLot 까지는 V2 에서 FIFO 차감으로 확장).
@@ -722,8 +754,14 @@ async def list_visible_partner_brands(session: AsyncSession = Depends(get_sessio
 
 
 @router.get("/promotions/visible")
-async def list_visible_promotions(session: AsyncSession = Depends(get_session)):
-    """공개/파트너 페이지의 PromotionBanner / PartnerPromotions 가 호출. 인증 없음.
+async def list_visible_promotions(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """파트너 포털 의 PartnerPromotions 가 호출. **partner-scoped JWT 필수.**
+
+    정책 (2026-05): 쿠폰/공지는 partner portal 로그인 후만 노출. 공개 사이트
+    (Home, About 등) 에는 표시 금지. backend = source of truth.
 
     노출 조건:
       · active = True
@@ -731,10 +769,19 @@ async def list_visible_promotions(session: AsyncSession = Depends(get_session)):
       · valid_to   미설정 또는 현재 시각 이전
       · usage_limit > 0 인 경우 usage_count < usage_limit
     응답 필드는 *공개 가시 항목만* (id/title/code/discount_*/valid_*). usage_count
-    같은 운영 메타는 미노출. code 는 사용자가 직접 입력하는 값이라 노출이 의도됨.
-    backend = source of truth — frontend 의 옛 localStorage 'promotions' 시드는
-    더 이상 신뢰하지 않음.
+    같은 운영 메타는 미노출.
     """
+    # partner-scoped JWT 검증 — 비로그인 호출은 401.
+    from routes_partner_auth import decode_partner_token
+    auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else ""
+    try:
+        claims = decode_partner_token(token) if token else None
+    except Exception:
+        claims = None
+    if not claims:
+        raise HTTPException(status_code=401, detail="partner token required")
+
     now = datetime.now(timezone.utc)
     stmt = select(Promotion).where(Promotion.active == True)  # noqa: E712
     stmt = stmt.where(or_(Promotion.valid_from.is_(None), Promotion.valid_from <= now))
@@ -760,7 +807,8 @@ async def list_visible_promotions(session: AsyncSession = Depends(get_session)):
 
 _crud(Order, "orders",
       allowed_fields={"partner_id", "title", "status", "amount", "items", "due_date", "note"},
-      pre_create=_order_pre_create, pre_update=_order_pre_update)
+      pre_create=_order_pre_create, post_create=_order_post_create,
+      pre_update=_order_pre_update, post_update=_order_post_update)
 
 _crud(Work, "works",
       allowed_fields={"slug", "title", "category", "summary", "content_md", "hero_image_url",

@@ -206,8 +206,10 @@ class RecipientIn(BaseModel):
 class DocumentIn(BaseModel):
     template_id: int | None = None
     kind: str = Field("contract", pattern=r"^(contract|purchase_order)$")
-    title: str = Field(..., min_length=1, max_length=255)
-    subject: str = ""
+    # title/subject 는 발송 시 이메일 헤더(Subject) 로 들어가므로 CRLF 차단.
+    # `\r` 또는 `\n` 이 들어가면 SMTP/Resend payload 에서 헤더 주입 가능.
+    title: str = Field(..., min_length=1, max_length=255, pattern=r"^[^\r\n]+$")
+    subject: str = Field("", max_length=255, pattern=r"^[^\r\n]*$")
     body: str = ""
     variables: dict[str, Any] = {}
     recipients: list[RecipientIn] = []
@@ -475,7 +477,9 @@ async def send_document_doc(
                              error=err, payload={"documentId": d.id})
 
     if sent:
-        d.status = "sent"
+        # 부분 발송 (일부 수신자 실패) 은 'partial_sent' 로 구분 — UI 가
+        # "발송 완료" 로 오인하지 않게. 어드민이 실패 수신자를 별도 처리하도록.
+        d.status = "partial_sent" if failed else "sent"
         d.sent_at = datetime.now(timezone.utc)
         push_history(d, "sent", by=user.email,
                      detail={"sent": sent, "failed": failed, "sign_required": payload.sign_required})
@@ -550,6 +554,25 @@ async def public_post_signdoc(
         raise HTTPException(410, detail="취소된 문서에는 서명할 수 없습니다.")
     if d.status == "signed":
         raise HTTPException(409, detail="이미 서명이 완료된 문서입니다.")
+
+    # signer_email 이 문서의 recipients 안에 등록된 'signer' 인지 검증.
+    # 토큰만 알면 임의 이메일로 서명 가능했던 P0 결함 차단.
+    try:
+        recipients = list(d.recipients or [])
+    except Exception:
+        recipients = []
+    signer_email_lc = str(payload.signer_email).lower().strip()
+    signer_allowed = False
+    for r in recipients:
+        if not isinstance(r, dict):
+            continue
+        if (r.get("role") or "signer") != "signer":
+            continue
+        if str(r.get("email") or "").lower().strip() == signer_email_lc:
+            signer_allowed = True
+            break
+    if not signer_allowed:
+        raise HTTPException(403, detail="서명 권한이 없는 이메일입니다.")
 
     sig = DocumentSignature(
         document_id=d.id,

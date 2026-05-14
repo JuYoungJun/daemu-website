@@ -22,6 +22,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { PartnerAuth } from '../lib/partnerAuth.js';
 
 function promotionIsLive(p) {
   if ((p.status || (p.active ? 'active' : 'paused') || 'active') !== 'active') return false;
@@ -46,9 +47,12 @@ export default function PartnerPromotions() {
         setPromotions([]); setAnnouncements([]);
         return;
       }
+      // partner-scoped JWT 첨부 — backend 가 두 endpoint 모두 partner token
+      // 필수로 잠금 (정책: 쿠폰/공지 = partner portal only).
+      const partnerHeaders = { skipAuth: true, headers: PartnerAuth.authHeader() };
       const [pr, ar] = await Promise.all([
-        api.get('/api/promotions/visible'),
-        api.get('/api/announcements/visible?target=partner_portal'),
+        api.get('/api/promotions/visible', partnerHeaders),
+        api.get('/api/announcements/visible?target=partner_portal', partnerHeaders),
       ]);
       if (!alive) return;
       if (pr && pr.ok && Array.isArray(pr.items)) setPromotions(pr.items);

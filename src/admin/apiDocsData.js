@@ -470,7 +470,7 @@ export const DB_GROUPS = [
           { col: 'image_url / cta_label / cta_href', type: 'varchar' },
           { col: 'created_by', type: 'int FK→admin_users.id' },
         ],
-        usedBy: ['/admin/announcements', 'GET /api/announcements/visible (공개)'],
+        usedBy: ['/admin/announcements', 'GET /api/announcements/visible (target=all 공개 / target=partner_portal 은 partner-scoped JWT 필수)'],
         pii: '없음.',
       },
       {
