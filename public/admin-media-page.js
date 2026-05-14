@@ -82,9 +82,14 @@ function renderGrid() {
     const k = kindOf(d);
     const name = d.name || "";
     const display = name.length > 22 ? name.substring(0, 22) + "…" : name;
-    const preview = k === "video"
-      ? `<video src="${escUrl(d.src)}" controls preload="metadata" style="width:100%;height:140px;object-fit:cover;background:#000"></video>`
-      : `<img src="${escUrl(d.src)}" alt="${escAttr(name)}" loading="lazy">`;
+    // 빈 src 일 때 <img src=""> / <video src=""> 만들면 브라우저가 현재
+    // 페이지를 src 로 해석해서 자기 자신을 GET (404). placeholder 표시.
+    const srcStr = (d.src || '').trim();
+    const preview = !srcStr
+      ? `<div class="adm-thumb-empty" style="display:flex;align-items:center;justify-content:center;height:140px;background:#f6f4f0;color:#8c867d;font-size:11px;flex-direction:column;gap:4px"><span style="font-size:24px">📦</span><span>파일 정보 누락</span></div>`
+      : k === "video"
+        ? `<video src="${escUrl(srcStr)}" controls preload="metadata" style="width:100%;height:140px;object-fit:cover;background:#000"></video>`
+        : `<img src="${escUrl(srcStr)}" alt="${escAttr(name)}" loading="lazy">`;
     return `<div class="adm-media-item" data-kind="${escAttr(k)}">
       ${preview}
       <div class="adm-media-meta">

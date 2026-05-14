@@ -22,7 +22,11 @@
   function escAttr(s) { return escHtml(s); }
   function escUrl(s) {
     const v = String(s == null ? '' : s).trim();
-    if (!v) return '';
+    // 빈 입력 → '#' 반환. <img src=""> 가 현재 페이지를 src 로 해석해서
+    // 페이지 자체를 GET 하는 HTML 표준 동작 차단 (referer 가 같은 페이지인
+    // image GET 404 가 사용자에게 보이는 console error 의 직접 원인).
+    // '#' 은 fragment-only — 브라우저가 새 fetch 안 함, broken icon 표시.
+    if (!v) return '#';
     // Relative path or fragment is fine
     if (v.startsWith('/') || v.startsWith('#') || v.startsWith('?')) return escAttr(v);
     // data:image|video|audio base64 — escHtml 만 통과 (& 등 인코딩) 안 함.
