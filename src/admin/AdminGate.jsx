@@ -124,13 +124,15 @@ export default function AdminGate() {
     // 폴링 60s 가 보강.)
     const onChange = () => { if (alive) refreshKpi(); };
     window.addEventListener('daemu-db-change', onChange);
-    // 가벼운 폴링 — *visible 일 때만*. 백그라운드 탭에서 호출이 누적되지
-    // 않도록. 60s 주기는 admin KPI 신선도와 backend 부하 사이의 합의.
+    window.addEventListener('focus', onChange);
+    // 폴링 — visible 일 때만 (백그라운드 탭에서 호출 누적 방지).
+    // 사용자 요청 실시간성 강화로 60s → 15s 단축 (대시보드 카드는 매우 자주 보는
+    // 영역이라 신선도 우선).
     const id = setInterval(() => {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshKpi();
       }
-    }, 60_000);
+    }, 15_000);
     // 탭이 다시 visible 이 되는 순간 즉시 1회 (60s 다 기다리지 않게).
     const onVis = () => {
       if (alive && typeof document !== 'undefined' && !document.hidden) refreshKpi();
