@@ -83,12 +83,14 @@
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) _refreshAllCached();
       });
-      // visible 일 때만 60s 폴링 — cross-device sync 보강.
+      // visible 일 때만 15s 폴링 — 사용자 요청 실시간성 강화 (옛 60s).
+      // 모든 raw admin 페이지 (orders/partners/popup/promotion/campaign/crm/
+      // inquiries/works/media) 가 본 폴링으로 cross-device sync 됨.
       setInterval(() => {
         if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
           _refreshAllCached();
         }
-      }, 60_000);
+      }, 15_000);
     }
   }
 
