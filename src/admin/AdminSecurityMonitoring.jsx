@@ -4,9 +4,10 @@
 // 모아 30초 주기로 자동 갱신한다. 의심 IP / 인증 실패 / 보안 이벤트 / 외부
 // 보안 endpoint(추후 카페24·Render Starter 등 결제 서버) 연동 설정.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
+import EventStreamPanel from '../components/EventStreamPanel.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 import AdminGuideModal, { GuideSection, GuideTable, guideListStyle } from './AdminGuideModal.jsx';
 import { downloadCSV } from '../lib/csv.js';
@@ -280,6 +281,18 @@ export default function AdminSecurityMonitoring() {
               </div>
             )}
           </div>
+
+          <SecurityToolsStatus />
+
+          <EventStreamPanel
+            defaultKindFilter="suspicious"
+            height={420}
+            description={
+              <>backend 가 자동 탐지한 보안 이벤트 (suspicious_events) 만 시간 순으로 표시.
+              auth 인증 흐름의 audit log 도 보고 싶으면 위 필터를 <code>audit</code> 또는
+              <code>전체</code>로 변경. 5초 polling 으로 거의 실시간.</>
+            }
+          />
         </section>
       </main>
     </AdminShell>
@@ -291,6 +304,128 @@ function Card({ label, value, color }) {
     <div style={{ background: '#fff', border: '1px solid #e6e3dd', padding: '10px 14px' }}>
       <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8c867d' }}>{label}</div>
       <div style={{ fontSize: 18, color, marginTop: 4, fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
+
+// 보안 자동 도구 상태 카드 — backend 의 SuspiciousEvent 자동 기록 도구가
+// 어떤 reason 으로 어떤 빈도로 동작 중인지 운영자가 한 눈에 본다.
+//
+// status 분류:
+//   · active   — 24h 안에 실제 trigger 됨 (1건 이상)
+//   · enabled  — backend 코드에 호출 site 가 있지만 24h 안에 trigger 없음 (조용)
+//   · inactive — 코드에 호출 site 자체가 없음. 운영 단계에서 추가 예정.
+const SECURITY_TOOLS = [
+  // backend/suspicious.py REASON_LABELS + auth.py 의 실제 호출 site 매핑.
+  { reason: 'brute_force_login',          label: '브루트포스 로그인',     wired: true,  desc: '동일 IP 가 15회/15분 내 로그인 실패 시 자동 high 기록.' },
+  { reason: 'scrape_pattern',             label: '스크래핑 의심 트래픽',  wired: false, desc: 'enum 정의만. 운영 단계 nginx + middleware 연결 예정.' },
+  { reason: 'csrf_violation',             label: 'CSRF 토큰 불일치',      wired: false, desc: 'enum 정의만. CSRF 미들웨어 도입 시 연결.' },
+  { reason: 'unauthorized_admin_attempt', label: '비인가 어드민 접근',    wired: false, desc: 'enum 정의만. require_admin 거부 시점에 연결 예정.' },
+  { reason: 'abnormal_payload',           label: '비정상 페이로드',       wired: false, desc: 'enum 정의만. Pydantic ValidationError 시점에 연결 예정.' },
+  { reason: 'rate_limit_exceeded',        label: 'Rate limit 초과',       wired: false, desc: 'enum 정의만. slowapi/제어 미들웨어 도입 시 연결.' },
+  { reason: 'geo_anomaly',                label: '비정상 지리 변화',      wired: false, desc: 'enum 정의만. GeoIP 비교 로직 도입 시 연결.' },
+  { reason: 'uploaded_malware_signature', label: '업로드 악성 시그니처',  wired: false, desc: 'enum 정의만. ClamAV 등 백엔드 스캐너 도입 시 연결.' },
+];
+
+function _statusOf(wired, count24h) {
+  if (count24h > 0) return 'active';
+  if (wired) return 'enabled';
+  return 'inactive';
+}
+
+function _statusColor(s) {
+  if (s === 'active') return { bg: '#fef3e7', fg: '#b87333', border: '#f0d586' };
+  if (s === 'enabled') return { bg: '#eef6ee', fg: '#2e7d32', border: '#cfe2cf' };
+  return { bg: '#f5f2ec', fg: '#8c867d', border: '#d7d4cf' };
+}
+
+function _statusLabel(s) {
+  if (s === 'active') return '🟠 활성 (24h 발생)';
+  if (s === 'enabled') return '🟢 대기 (코드 연결 완료)';
+  return '⚪ 비활성 (코드 연결 안 됨)';
+}
+
+function SecurityToolsStatus() {
+  const [counts, setCounts] = useState({});      // reason → 24h count
+  const [lastSeen, setLastSeen] = useState({});  // reason → ISO ts
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const aliveRef = useRef(true);
+
+  const fetchOnce = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (!api.isConfigured()) {
+      if (aliveRef.current) { setLoading(false); setError('백엔드 미연결'); }
+      return;
+    }
+    // 24h 안의 suspicious_events 200건 fetch — reason 별 group by.
+    const sinceIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const r = await api.get(`/api/suspicious-events?limit=200&since=${encodeURIComponent(sinceIso)}`);
+    if (!aliveRef.current) return;
+    setLoading(false);
+    if (!r?.ok || !Array.isArray(r.items)) {
+      setError(r?.error || '도구 상태 조회 실패');
+      return;
+    }
+    const byReason = {};
+    const tsByReason = {};
+    for (const it of r.items) {
+      byReason[it.reason] = (byReason[it.reason] || 0) + 1;
+      if (!tsByReason[it.reason] || it.ts > tsByReason[it.reason]) {
+        tsByReason[it.reason] = it.ts;
+      }
+    }
+    setCounts(byReason);
+    setLastSeen(tsByReason);
+    setError(null);
+  };
+
+  useEffect(() => {
+    aliveRef.current = true;
+    fetchOnce();
+    const id = setInterval(fetchOnce, 30_000);  // 30초 주기 — 도구 상태는 자주 안 변함
+    return () => { aliveRef.current = false; clearInterval(id); };
+  }, []);
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <h3 className="admin-section-title">보안 자동 도구 상태</h3>
+      <p style={{ fontSize: 12, color: '#8c867d', marginTop: 4 }}>
+        backend 의 <code>suspicious_events</code> 테이블에 자동 기록되는 보안 탐지 도구 8개의 상태.
+        <strong>🟠 활성</strong> 은 24시간 안에 실제 trigger 가 발생한 도구, <strong>🟢 대기</strong>
+        는 코드 연결이 완료돼 trigger 만 기다리는 도구, <strong>⚪ 비활성</strong> 은 enum 정의만 있고
+        운영 단계에서 trigger 코드를 추가할 도구. 30초 주기 갱신.
+      </p>
+      {error && (
+        <div style={{ padding: 10, marginBottom: 8, background: '#fdf2f0', color: '#c0392b',
+          border: '1px solid #f0c5c0', fontSize: 12 }}>오류: {error}</div>
+      )}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+        gap: 10, marginTop: 12,
+      }}>
+        {SECURITY_TOOLS.map((tool) => {
+          const c = counts[tool.reason] || 0;
+          const status = _statusOf(tool.wired, c);
+          const colors = _statusColor(status);
+          return (
+            <div key={tool.reason} style={{
+              border: `1px solid ${colors.border}`, background: '#fff',
+              padding: '10px 14px', borderLeft: `3px solid ${colors.fg}`,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#231815' }}>{tool.label}</div>
+                <div style={{ fontSize: 11, color: colors.fg }}>{_statusLabel(status)}</div>
+              </div>
+              <div style={{ fontSize: 11, color: '#5a544c', marginTop: 4, lineHeight: 1.5 }}>{tool.desc}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: '#8c867d' }}>
+                <span><code>{tool.reason}</code></span>
+                <span>{loading ? '…' : `24h: ${c}건`}{lastSeen[tool.reason] && ` · 최근 ${new Date(lastSeen[tool.reason]).toLocaleTimeString('ko-KR', { hour12: false })}`}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
