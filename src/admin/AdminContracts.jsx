@@ -336,8 +336,8 @@ export default function AdminContracts() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null); // doc id for detail drawer
 
-  const reload = async () => {
-    setLoading(true); setError('');
+  const reload = async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(''); }
     try {
       if (api.isConfigured()) {
         const [t, d] = await Promise.all([
@@ -346,20 +346,35 @@ export default function AdminContracts() {
         ]);
         setTemplates(t.ok ? (t.items || []) : []);
         setDocuments(d.ok ? (d.items || []) : []);
-        if (!t.ok) setError(t.error || '템플릿을 불러올 수 없습니다.');
-      } else {
+        if (!t.ok && !silent) setError(t.error || '템플릿을 불러올 수 없습니다.');
+      } else if (!silent) {
         // Demo mode — localStorage
         setTemplates(localStore('document_templates', []));
         setDocuments(localStore('documents', []));
       }
     } catch (e) {
-      setError(String(e));
+      if (!silent) setError(String(e));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  useEffect(() => { reload(); /* eslint-disable-line */ }, []);
+  useEffect(() => {
+    reload();
+    // 실시간성 — 15초 폴링 + visible 시 즉시 refetch.
+    const silentReload = () => { if (!document.hidden) reload({ silent: true }); };
+    document.addEventListener('visibilitychange', silentReload);
+    window.addEventListener('focus', silentReload);
+    window.addEventListener('daemu-db-change', silentReload);
+    const id = setInterval(silentReload, 15_000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', silentReload);
+      window.removeEventListener('focus', silentReload);
+      window.removeEventListener('daemu-db-change', silentReload);
+    };
+    /* eslint-disable-next-line */
+  }, []);
 
   return (
     <AdminShell>

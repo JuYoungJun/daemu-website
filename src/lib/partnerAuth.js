@@ -22,13 +22,62 @@ const PARTNER_TOKEN_STORAGE_KEY = 'daemu_partner_token';
 const PARTNER_USER_STORAGE_KEY = 'daemu_partner_user';
 const PARTNER_SESSION_STORAGE_KEY = 'daemu_partner_session';  // legacy alias
 const PARTNER_LOGIN_STORAGE_KEY = 'partner_logins';  // dev/demo fallback only
+const PARTNER_ACTIVITY_STORAGE_KEY = 'daemu_partner_last_activity';
 
 const SESSION_KEY = PARTNER_SESSION_STORAGE_KEY;
 
-function authHeader() {
+// admin 과 동일한 60분 inactivity 타임아웃. backend JWT TTL(12h) 보다 보수적.
+export const PARTNER_INACTIVITY_MS = 60 * 60 * 1000;
+
+// JWT payload 의 exp 클레임만 디코드 (서명 검증 X — backend 가 매 호출에서 검증).
+// 브라우저 측 자동 만료 감지가 목적. 토큰 형식 깨졌으면 null 반환.
+function _decodeJwtExp(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    const json = atob(b64 + pad);
+    const payload = JSON.parse(json);
+    return Number.isFinite(payload?.exp) ? payload.exp : null;
+  } catch { return null; }
+}
+
+function _isExpired() {
   try {
     const t = localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY);
+    if (!t) return false;  // 토큰 없으면 만료 판정 의미 없음
+    const exp = _decodeJwtExp(t);
+    if (exp && exp * 1000 <= Date.now()) return true;  // JWT 자체 만료
+    const last = parseInt(localStorage.getItem(PARTNER_ACTIVITY_STORAGE_KEY) || '0', 10);
+    if (last && Date.now() - last > PARTNER_INACTIVITY_MS) return true;  // 60분 무활동
+    return false;
+  } catch { return false; }
+}
+
+function _touchActivity() {
+  try {
+    if (localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY)) {
+      localStorage.setItem(PARTNER_ACTIVITY_STORAGE_KEY, String(Date.now()));
+    }
+  } catch { /* ignore */ }
+}
+
+function _clearSession() {
+  try {
+    localStorage.removeItem(PARTNER_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(PARTNER_USER_STORAGE_KEY);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(PARTNER_ACTIVITY_STORAGE_KEY);
+  } catch { /* ignore */ }
+}
+
+function authHeader() {
+  try {
+    if (_isExpired()) { _clearSession(); return {}; }
+    const t = localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY);
     if (!t) return {};
+    _touchActivity();  // partner API 호출 = 활동 신호 → inactivity 리셋.
     return { Authorization: `Bearer ${t}` };
   } catch { return {}; }
 }
@@ -104,6 +153,7 @@ export const PartnerAuth = {
           localStorage.setItem(PARTNER_TOKEN_STORAGE_KEY, r.token);
           localStorage.setItem(PARTNER_USER_STORAGE_KEY, JSON.stringify(r.partner));
           localStorage.setItem(SESSION_KEY, String(r.partner.id));
+          localStorage.setItem(PARTNER_ACTIVITY_STORAGE_KEY, String(Date.now()));
         } catch { /* ignore */ }
         // adapter shape — Partners.jsx 가 partner.name / partner.email 등 사용.
         const mustChange = !!r.partner.must_change_password;
@@ -151,17 +201,23 @@ export const PartnerAuth = {
   },
 
   logout() {
-    try {
-      localStorage.removeItem(PARTNER_TOKEN_STORAGE_KEY);
-      localStorage.removeItem(PARTNER_USER_STORAGE_KEY);
-      localStorage.removeItem(SESSION_KEY);
-    } catch { /* ignore */ }
+    _clearSession();
     // backend 측 logout 은 stateless 라 별도 호출 불필요.
   },
 
-  /** 현재 로그인된 파트너 정보. backend token 우선, 없으면 dev/demo localStorage. */
+  /** 세션이 자동 만료(JWT exp 또는 60분 inactivity)인지. UI 안내용. */
+  isExpired() { return _isExpired(); },
+
+  /** 현재 로그인된 파트너 정보. backend token 우선, 없으면 dev/demo localStorage.
+   *  토큰 JWT exp 만료 또는 60분 inactivity 시 자동 logout 후 null 반환 —
+   *  새로고침/탭 재오픈 시점에 즉시 만료 감지되어 로그인 화면으로 전환된다. */
   current() {
     try {
+      if (_isExpired()) {
+        _clearSession();
+        try { window.dispatchEvent(new Event('daemu-db-change')); } catch { /* ignore */ }
+        return null;
+      }
       const token = localStorage.getItem(PARTNER_TOKEN_STORAGE_KEY);
       const userStr = localStorage.getItem(PARTNER_USER_STORAGE_KEY);
       if (token && userStr) {

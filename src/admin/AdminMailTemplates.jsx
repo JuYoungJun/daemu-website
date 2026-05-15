@@ -413,7 +413,7 @@ export default function AdminMailTemplates() {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         reloadFromBackend();
       }
-    }, 60_000);
+    }, 15_000);
     return () => {
       alive = false;
       window.removeEventListener('daemu-db-change', onChange);

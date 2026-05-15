@@ -181,6 +181,15 @@ export default function AdminAnalytics() {
           </PageActions>
           <h1 className="page-title">마케팅 분석</h1>
 
+          <div style={{
+            background: '#fff8e6', border: '1px solid #f0d586', color: '#7a5b00',
+            padding: '10px 14px', marginTop: 14, marginBottom: 6, fontSize: 13, lineHeight: 1.6,
+          }}>
+            <strong>안내</strong> — 이 페이지는 <strong>현재 보고 있는 브라우저 자신</strong> 에서 수집한
+            이벤트만 보여줍니다. 다른 사용자/방문자의 트래픽은 포함되지 않습니다. 전체 방문자 KPI 가
+            필요하면 Plausible 또는 GA4 환경변수를 등록해 외부 analytics 와 연동하세요.
+          </div>
+
           <AdminHelp title="마케팅 분석 사용 안내" items={[
             '본인 브라우저에서 수집된 익명 이벤트(페이지뷰, 체류시간, scroll depth, CTA 클릭, UTM 등)를 보여줍니다.',
             'PII(이름·이메일·IP·정확한 디바이스 ID 등)는 수집하지 않으며, 30일이 지난 이벤트는 자동 삭제됩니다.',

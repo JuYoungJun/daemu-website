@@ -218,12 +218,14 @@ export default function AdminMonitoring() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  // 어드민 KPI 카운트 — backend /api/admin/stats 단일 호출 (60초 주기).
-  // 인증 / 권한 / 백엔드 미연결 시 친절한 한국어 에러 표시. localStorage
-  // fallback 은 일부러 제거 — 서비스 데이터의 source-of-truth 는 Aiven MySQL.
+  // 어드민 KPI 카운트 — backend /api/admin/stats 호출 (15초 주기, 실시간급).
+  // 사용자 요청으로 60초 → 15초 단축. document.hidden 일 때 skip (Render free
+  // 사용량 절약). 인증/권한/백엔드 미연결 시 친절한 한국어 에러 표시.
+  // localStorage fallback 은 일부러 제거 — 데이터의 source-of-truth 는 Aiven MySQL.
   useEffect(() => {
     let alive = true;
     const fetchStats = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (!api.isConfigured()) {
         if (alive) {
           setStatsLoading(false);
@@ -247,8 +249,17 @@ export default function AdminMonitoring() {
       }
     };
     fetchStats();
-    const id = setInterval(fetchStats, 60_000);
-    return () => { alive = false; clearInterval(id); };
+    // 60s → 15s 단축. visibilitychange / focus 이벤트 즉시 refetch.
+    const onVisible = () => { if (!document.hidden) fetchStats(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    const id = setInterval(fetchStats, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, []);
 
   // 사이트 전체 API 가용성 probe — 15초 주기, mount 시 즉시 1회.

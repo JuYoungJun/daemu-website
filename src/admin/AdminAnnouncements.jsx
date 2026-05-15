@@ -43,14 +43,29 @@ export default function AdminAnnouncements() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const r = await api.get('/api/announcements?include_inactive=1');
-    setLoading(false);
-    if (!r.ok) { siteAlert(r.error || '불러오기 실패'); return; }
+    if (!silent) setLoading(false);
+    if (!r.ok) { if (!silent) siteAlert(r.error || '불러오기 실패'); return; }
     setItems(r.items || []);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // 실시간성 — 15초 폴링 + 탭 visible 시 즉시 refetch + 변이 후 자동 refetch.
+    const silentReload = () => { if (!document.hidden) load({ silent: true }); };
+    document.addEventListener('visibilitychange', silentReload);
+    window.addEventListener('focus', silentReload);
+    window.addEventListener('daemu-db-change', silentReload);
+    const id = setInterval(silentReload, 15_000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', silentReload);
+      window.removeEventListener('focus', silentReload);
+      window.removeEventListener('daemu-db-change', silentReload);
+    };
+    /* eslint-disable-next-line */
+  }, []);
 
   const onSave = async () => {
     if (!form.title.trim()) { siteAlert('제목을 입력하세요.'); return; }

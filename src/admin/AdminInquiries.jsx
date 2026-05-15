@@ -82,7 +82,7 @@ export default function AdminInquiries() {
   //   · mount 시 1회
   //   · 같은 탭 내 다른 admin 화면 mutation → daemu-db-change 즉시 갱신
   //   · 백그라운드 갔다가 visible 복귀 시 즉시 갱신
-  //   · visible 일 때만 60초 주기 폴링 (cross-tab/cross-device 보강)
+  //   · visible 일 때만 15초 주기 폴링 (사용자 요청 실시간성 강화, 옛 60s)
   // 백엔드 source of truth — 옛 localStorage 캐시 의존 없음.
   useEffect(() => {
     let alive = true;
@@ -93,7 +93,7 @@ export default function AdminInquiries() {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         reload();
       }
-    }, 60_000);
+    }, 15_000);
     const onVis = () => {
       if (alive && typeof document !== 'undefined' && !document.hidden) reload();
     };

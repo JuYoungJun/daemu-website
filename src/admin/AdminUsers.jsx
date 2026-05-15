@@ -77,7 +77,22 @@ export default function AdminUsers() {
     setError('');
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    load();
+    // 실시간성 — 15초 주기 폴링 + 탭 visible 시 즉시 refetch + 변이 후 자동 refetch.
+    const onVisible = () => { if (!document.hidden) load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('daemu-db-change', load);
+    const id = setInterval(() => { if (!document.hidden) load(); }, 15_000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('daemu-db-change', load);
+    };
+    /* eslint-disable-next-line */
+  }, []);
 
   // KPI 계산
   const kpi = useMemo(() => ({

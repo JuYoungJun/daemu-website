@@ -106,14 +106,29 @@ function ProductsTab() {
   const [form, setForm] = useState({ category: 'BAK', name: '', unit: '개', price: 0, stock_count: 0, sku: '' });
   const [skuPreview, setSkuPreview] = useState('');
 
-  const load = async () => {
-    setLoading(true);
+  const load = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const r = await api.get('/api/products?page_size=500');
-    setLoading(false);
-    if (!r.ok) { siteAlert(r.error || '불러오기 실패'); return; }
+    if (!silent) setLoading(false);
+    if (!r.ok) { if (!silent) siteAlert(r.error || '불러오기 실패'); return; }
     setProducts(r.items || []);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // 실시간성 — 15초 폴링 + visible 시 refetch + 변이 이벤트 refetch.
+    const silentReload = () => { if (!document.hidden) load({ silent: true }); };
+    document.addEventListener('visibilitychange', silentReload);
+    window.addEventListener('focus', silentReload);
+    window.addEventListener('daemu-db-change', silentReload);
+    const id = setInterval(silentReload, 15_000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', silentReload);
+      window.removeEventListener('focus', silentReload);
+      window.removeEventListener('daemu-db-change', silentReload);
+    };
+    /* eslint-disable-next-line */
+  }, []);
 
   const previewSku = async (category) => {
     const r = await api.post('/api/inventory/sku/preview', { category_code: category });
@@ -285,17 +300,31 @@ function LotsTab() {
   // backend 자동 생성 lot_number preview — SKU/생산일 변경 시 갱신.
   const [lotPreviewBusy, setLotPreviewBusy] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const params = new URLSearchParams();
     if (filter.sku) params.set('sku', filter.sku);
     if (filter.within_days) params.set('within_days', filter.within_days);
     const r = await api.get('/api/inventory/lots' + (params.toString() ? `?${params}` : ''));
-    setLoading(false);
-    if (!r.ok) { siteAlert(r.error || '불러오기 실패'); return; }
+    if (!silent) setLoading(false);
+    if (!r.ok) { if (!silent) siteAlert(r.error || '불러오기 실패'); return; }
     setLots(r.items || []);
   };
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    load();
+    const silentReload = () => { if (!document.hidden) load({ silent: true }); };
+    document.addEventListener('visibilitychange', silentReload);
+    window.addEventListener('focus', silentReload);
+    window.addEventListener('daemu-db-change', silentReload);
+    const id = setInterval(silentReload, 15_000);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', silentReload);
+      window.removeEventListener('focus', silentReload);
+      window.removeEventListener('daemu-db-change', silentReload);
+    };
+    /* eslint-disable-next-line */
+  }, [filter]);
 
   // 상품 목록 1회 로드 — SKU select 의 데이터 source.
   useEffect(() => {

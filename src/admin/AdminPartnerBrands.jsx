@@ -71,11 +71,13 @@ export default function AdminPartnerBrands() {
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  // mount 시 backend hydrate — Mac/Windows 양쪽에서 같은 데이터.
+  // mount 시 backend hydrate + 15초 폴링 — Mac/Windows 양쪽에서 같은 데이터,
+  // 그리고 다른 어드민 변경이 최대 15초 안에 화면 반영.
   useEffect(() => {
     let alive = true;
-    (async () => {
-      if (!api.isConfigured()) { setLoading(false); return; }
+    const fetchOnce = async () => {
+      if (!api.isConfigured()) { if (alive) setLoading(false); return; }
+      if (typeof document !== 'undefined' && document.hidden) return;
       const r = await api.get('/api/partner-brands?page_size=200');
       if (!alive) return;
       setLoading(false);
@@ -85,8 +87,18 @@ export default function AdminPartnerBrands() {
         saveCache(mapped);
       }
       // 실패 시 localStorage 캐시 유지 (silent)
-    })();
-    return () => { alive = false; };
+    };
+    fetchOnce();
+    const onVisible = () => { if (!document.hidden) fetchOnce(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    const id = setInterval(fetchOnce, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, []);
 
   useEffect(() => {

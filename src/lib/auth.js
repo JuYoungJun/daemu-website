@@ -27,6 +27,20 @@ export const ADMIN_INACTIVITY_MS = 60 * 60 * 1000;
 
 function _now() { return Date.now(); }
 
+// JWT payload 의 exp 클레임만 디코드 (서명 검증 X — backend 가 매 호출 검증).
+// 브라우저 측 자동 만료 감지가 목적. 토큰 형식 깨졌으면 null 반환.
+function _decodeJwtExp(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    const json = atob(b64 + pad);
+    const payload = JSON.parse(json);
+    return Number.isFinite(payload?.exp) ? payload.exp : null;
+  } catch { return null; }
+}
+
 // 과거 빌드는 sessionStorage 에 토큰을 보관했음. 빌드 업데이트로 로그인 세션이
 // 끊기는 일을 막기 위해 1회 마이그레이션.
 function _migrateFromSession() {
@@ -51,6 +65,15 @@ export const Auth = {
     const tok = localStorage.getItem(TOKEN_KEY);
     const flag = localStorage.getItem(LEGACY_KEY);
     if (!tok && flag !== '1') return false;
+    // JWT exp 자체 만료 — backend TTL (기본 12h) 도달 시 자동 logout.
+    // backend 가 401 응답을 줄 때까지 기다리지 않고 frontend 가 선제 정리.
+    if (tok) {
+      const exp = _decodeJwtExp(tok);
+      if (exp && exp * 1000 <= _now()) {
+        this.logout();
+        return false;
+      }
+    }
     const last = parseInt(localStorage.getItem(ACTIVITY_KEY) || '0', 10);
     if (last && _now() - last > ADMIN_INACTIVITY_MS) {
       this.logout();

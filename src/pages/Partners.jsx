@@ -31,9 +31,14 @@ export default function Partners() {
     };
     window.addEventListener('daemu-db-change', onChange);
     window.addEventListener('storage', onChange);
+    // 60초 주기로 세션 만료 자동 감지 — JWT exp 또는 60분 inactivity 도달 시
+    // current() 가 자동 logout + null 반환 → 화면이 즉시 로그인 폼으로 전환.
+    // 이전엔 끄고 켜도 12h 까지 로그인 상태 그대로 떠 있던 회귀를 차단.
+    const id = setInterval(onChange, 60 * 1000);
     return () => {
       window.removeEventListener('daemu-db-change', onChange);
       window.removeEventListener('storage', onChange);
+      clearInterval(id);
     };
   }, []);
 
