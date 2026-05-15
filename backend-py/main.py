@@ -645,6 +645,10 @@ app.include_router(pdf_router)
 from routes_audit import router as audit_router  # noqa: E402
 app.include_router(audit_router)
 
+# 의심 이벤트 list — /admin/monitoring 의 실시간 로그 패널 보조.
+from routes_suspicious import router as suspicious_router  # noqa: E402
+app.include_router(suspicious_router)
+
 # 공지/프로모션 — 어드민 작성 → 공개 사이트 + 파트너 포털 노출.
 from routes_announcements import router as announcements_router  # noqa: E402
 app.include_router(announcements_router)
