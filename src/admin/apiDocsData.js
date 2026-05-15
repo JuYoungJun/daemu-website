@@ -308,14 +308,28 @@ export const DB_GROUPS = [
       },
       {
         name: 'promotions',
-        purpose: '쿠폰 코드 + 사용량 추적.',
+        purpose: '쿠폰 코드 + 사용량 추적. 발급-사용 분리 모델 (consume 은 별도 테이블).',
         columns: [
           { col: 'id / code / type / discount', type: 'misc' },
           { col: 'valid_from / valid_until', type: 'date' },
-          { col: 'max_uses / used / active', type: 'int / bool' },
+          { col: 'usage_limit / usage_count / active', type: 'int / bool', note: 'usage_count 는 atomic UPDATE 로 증감 (race condition 방지)' },
         ],
-        usedBy: ['/admin/promotion'],
+        usedBy: ['/admin/promotion', 'POST /api/promotions/consume (partner-scoped)'],
         pii: '없음.',
+      },
+      {
+        name: 'promotion_consumptions',
+        purpose: '쿠폰 사용 이벤트 — `/api/promotions/consume` 호출 시 INSERT. 멱등 보장.',
+        columns: [
+          { col: 'id', type: 'int PK' },
+          { col: 'promotion_id', type: 'int FK→promotions.id ON DELETE CASCADE' },
+          { col: 'client_event_id', type: 'varchar(80)', note: '재시도 중복 차단용 client UUID' },
+          { col: 'partner_id', type: 'int? FK→partners.id ON DELETE SET NULL' },
+          { col: 'created_at', type: 'datetime' },
+        ],
+        constraints: ['UNIQUE(promotion_id, client_event_id) — 같은 발주 제출의 재시도가 두 번 카운트되지 않음'],
+        usedBy: ['POST /api/promotions/consume', 'promotions.usage_count 감사'],
+        pii: '없음 (partner_id 만 외래키).',
       },
     ],
   },
@@ -479,13 +493,28 @@ export const DB_GROUPS = [
         columns: [
           { col: 'id', type: 'int PK' },
           { col: 'name', type: 'varchar(190)' },
-          { col: 'logo', type: 'varchar(500)', note: '로고 URL (외부 또는 미디어 라이브러리)' },
+          { col: 'logo', type: 'LONGTEXT', note: '로고 URL 또는 base64 data URL (`data:image/...`). 옛 VARCHAR(500)→LONGTEXT 마이그레이션 완료.' },
           { col: 'url', type: 'varchar(500)', note: '클릭 시 이동' },
           { col: 'sort_order', type: 'int INDEX' },
           { col: 'active', type: 'bool INDEX' },
         ],
         usedBy: ['/admin/partner-brands', 'Home.jsx 의 파트너 섹션'],
         pii: '없음.',
+      },
+      {
+        name: 'media_assets',
+        purpose: '미디어 라이브러리 메타데이터. 업로드 자체는 `/api/upload` 가 처리하고, 메타 1행이 본 테이블에 INSERT.',
+        columns: [
+          { col: 'id', type: 'int PK' },
+          { col: 'url', type: 'LONGTEXT INDEX(url(191))', note: '외부 URL 또는 base64 data URL (~1MB). 인덱스는 prefix length 191 (utf8mb4 4×191<767 키 한도).' },
+          { col: 'name / original_name', type: 'varchar(255)' },
+          { col: 'content_type', type: 'varchar(120)' },
+          { col: 'size', type: 'bigint', note: '바이트' },
+          { col: 'alt / tags', type: 'varchar / JSON' },
+          { col: 'created_at', type: 'datetime INDEX' },
+        ],
+        usedBy: ['/admin/media', 'works.hero_image_url 등 다른 모델 참조'],
+        pii: '없음 (업로더 정보 없음).',
       },
     ],
   },
@@ -507,6 +536,7 @@ export const PERMISSION_MATRIX = [
   { resource: 'promotions',      admin: 'ALL', tester: '—',    developer: '—'   },
   { resource: 'outbox',          admin: 'ALL', tester: 'READ', developer: 'READ' },
   { resource: 'mail-template',   admin: 'ALL', tester: 'READ', developer: 'ALL' },
+  { resource: 'mail-templates',  admin: 'ALL', tester: 'READ', developer: 'ALL' },
   { resource: 'content',         admin: 'ALL', tester: '—',    developer: 'ALL' },
   { resource: 'partner-brands',  admin: 'ALL', tester: 'READ', developer: 'ALL' },
   { resource: 'newsletter',      admin: 'ALL', tester: 'READ', developer: '—'   },
@@ -519,6 +549,7 @@ export const PERMISSION_MATRIX = [
   { resource: 'contracts',       admin: 'ALL', tester: 'READ', developer: '—'   },
   { resource: 'announcements',   admin: 'ALL', tester: 'READ', developer: 'ALL' },
   { resource: 'inventory',       admin: 'ALL', tester: 'READ', developer: '—'   },
+  { resource: 'media',           admin: 'ALL', tester: 'READ', developer: 'ALL' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -562,6 +593,11 @@ export const DEPLOY_GROUPS = [
             ['ADMIN_EMAIL/PASSWORD',  '시드 default',         '신규 setup 시 설정',                '첫 부팅 default 어드민'],
             ['ENV',                   '미설정',               'prod',                              '운영 모드 분기'],
             ['VITE_API_BASE_URL (frontend)', 'daemu-py.onrender.com', 'api.본인도메인.kr',         'frontend 가 호출할 backend'],
+            ['SITE_BASE_URL',         'GH Pages URL',         '본인 도메인',                       '계약서/발주서 서명 메일 sign_url base'],
+            ['PUBLIC_SITE_URL',       'GH Pages URL',         '본인 도메인',                       '파트너 승인 메일의 /partners URL base'],
+            ['DAEMU_MEMORY_CAP_MB',   '미설정 (1024)',        '1800 (Cafe24 2GB VPS 기준)',        'resource warning 임계'],
+            ['JWT_TTL_HOURS',         '12 (기본)',            '12~24 (어드민 작업 흐름 고려)',     'JWT 만료 시간'],
+            ['RETENTION_PERIOD_SECONDS', '21600 (6h)',        '21600 또는 86400 (24h)',            '데이터 보존 sweep cron 주기'],
           ],
         },
       },
@@ -667,6 +703,23 @@ ssh daemu@daemu.kr 'sudo journalctl -u daemu-backend -n 20'
 
 # 5) 백업 cron
 ssh daemu@daemu.kr 'cat /etc/cron.d/daemu-backup'`,
+      },
+      {
+        title: '8단계 — Frontend 도메인 swap (선택)',
+        body: `클라이언트가 자체 도메인 (예: daemu.kr) 을 산 후 frontend 도 그쪽으로 옮기는 경우. backend 와 같은 host 일 때:`,
+        code: `# 옵션 A — 같은 Cafe24 서버에서 frontend 도 서빙
+# nginx 가 / → /srv/daemu/frontend/dist 정적 파일,  /api → backend 로 분기.
+# deploy/cafe24/nginx.conf 에 이미 두 location 포함됨.
+# build 결과 동기화는 deploy.sh 가 처리 (rsync dist → /srv/daemu/frontend/).
+
+# 옵션 B — frontend 는 GH Pages 유지, backend 만 Cafe24
+# .github/workflows/deploy-pages.yml 의 VITE_API_BASE_URL secret 을 변경:
+# Settings → Secrets and variables → Actions → VITE_API_BASE_URL = https://daemu.kr
+# 그 후 새 deploy 가 frontend 빌드 시 새 backend URL 로 묶음.
+
+# 옵션 C — frontend 만 다른 host (Vercel, Netlify 등)
+# 해당 host 의 env 에 VITE_API_BASE_URL=https://daemu.kr 설정 후 deploy.
+# backend ALLOWED_ORIGINS 에 frontend 도메인 추가 필수.`,
       },
       {
         title: '재배포 / 롤백',

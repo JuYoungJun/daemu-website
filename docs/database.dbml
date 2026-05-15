@@ -280,9 +280,23 @@ Table promotions {
   valid_until date
   max_uses int
   used int [default: 0]
+  usage_limit int [default: 0, note: 'atomic UPDATE 로 차감']
+  usage_count int [default: 0, note: 'atomic — race-condition-safe']
   active boolean [default: true]
   note text
   created_at datetime [default: `current_timestamp`]
+}
+
+Table promotion_consumptions {
+  id int [pk, increment]
+  promotion_id int [ref: > promotions.id, note: 'ON DELETE CASCADE']
+  client_event_id varchar(80) [note: '재시도 멱등 보장 client UUID']
+  partner_id int [null, ref: > partners.id, note: 'ON DELETE SET NULL']
+  created_at datetime [default: `current_timestamp`]
+
+  indexes {
+    (promotion_id, client_event_id) [unique, name: 'uq_promotion_consumption_event']
+  }
 }
 
 // ───────── CRM ─────────
@@ -423,7 +437,7 @@ Table announcements {
 Table partner_brands {
   id int [pk, increment]
   name varchar(190)
-  logo varchar(500) [default: '', note: '로고 URL (외부 또는 미디어 라이브러리)']
+  logo longtext [note: '로고 URL 또는 base64 data URL (옛 VARCHAR(500)→LONGTEXT 마이그레이션)']
   url varchar(500) [default: '', note: '클릭 시 이동']
   sort_order int [default: 0]
   active boolean [default: true]
@@ -448,17 +462,17 @@ Table stock_history {
 
 Table media_assets {
   id int [pk, increment]
-  url varchar(500) [note: '/uploads/<file> 또는 외부 storage 절대 URL']
+  url longtext [note: '외부 URL 또는 base64 data URL (~1MB). INDEX(url(191)) — MySQL utf8mb4 키 한도 회피용 prefix length.']
   name varchar(190) [default: '']
   original_name varchar(190) [default: '']
   content_type varchar(120) [default: '', note: 'image/png 등']
-  size int [default: 0, note: 'bytes']
+  size bigint [default: 0, note: 'bytes']
   alt varchar(255) [default: '', note: '접근성 alt 텍스트']
   tags json
   uploaded_by int [ref: > admin_users.id]
   created_at datetime [default: `current_timestamp`]
   updated_at datetime [default: `current_timestamp`]
-  Note: '/admin/media 라이브러리 메타. /api/upload 가 파일 저장 후 /api/media POST 로 행 1건 추가. Render disk 휘발성 — 운영 단계에서 외부 storage(S3/R2/Cafe24) 이전 필수.'
+  Note: '/admin/media 라이브러리 메타. /api/upload 가 파일 저장(또는 base64 inline) 후 /api/media POST 로 행 1건 추가. base64 inline 정책은 Render free 휘발 disk 회피용 — Cafe24 이전 후 외부 storage(S3/R2) 로 이전 권장.'
 }
 
 // 관계는 위의 각 컬럼 정의에서 [ref: > target.id] 인라인으로 모두 명시.

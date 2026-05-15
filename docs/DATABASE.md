@@ -43,7 +43,8 @@
 - **mail_template_lib** — 단체 발송용 템플릿 라이브러리.
 - **campaigns** — 이메일/SMS/카카오 캠페인 레코드.
 - **outbox** — 모든 발송 이력 (sent/failed/error/simulated).
-- **promotions** — 쿠폰 코드.
+- **promotions** — 쿠폰 코드. `usage_count` 는 atomic UPDATE.
+- **promotion_consumptions** — 쿠폰 사용 이벤트. `UNIQUE(promotion_id, client_event_id)` 로 같은 발주 재시도의 두 번 카운트 방지. `partner_id` 는 SET NULL.
 
 ### 6) CRM
 - **crm_customers** — lead → qualified → customer → lost 파이프라인.
@@ -57,10 +58,18 @@
 - **suspicious_events** — 의심 이벤트 (brute_force_login / token_leak / rate_limit_exceeded / scrape_pattern). login throttle lock 도달 시 자동 기록. 운영자 검토 후 resolve. **자동 sweep cron** 적용 (90일 / evidence=true 365일).
 
 ### 9) 커머스 / 재고
-- **products** — 발주 카탈로그 상품. SKU 표준 형식 `DAEMU-{CAT}-NNNN-LL` (CAT=BAK/CAF/EQP/PCK/MSC). `stock_count < 10` 시 알림.
+- **products** — 발주 카탈로그 상품. SKU 표준 형식 `DAEMU-{CAT}-NNNN-LL` (CAT=BAK/CAF/EQP/PCK/MSC). `stock_count < 10` 시 알림. `image_url` LONGTEXT (base64 inline 1MB까지).
 - **stock_lots** — LOT 단위 입고 + 유통기한. FIFO 차감 (expires_at 빠른 LOT 부터). 만료 시 자동 `quarantined=true`.
-- **announcements** — 공지/프로모션. kind=notice/promo/urgent, target=all/public/partner_portal.
-- **partner_brands** — Home 의 "함께하는 파트너사" 로고 카드. Partner (로그인 계정) 와 별도 디스플레이용.
+- **announcements** — 공지/프로모션. kind=notice/promo/urgent, target=all/public/partner_portal. `image_url` LONGTEXT.
+- **partner_brands** — Home 의 "함께하는 파트너사" 로고 카드. Partner (로그인 계정) 와 별도 디스플레이용. `logo` LONGTEXT (옛 VARCHAR(500)→LONGTEXT 마이그레이션).
+- **media_assets** — 미디어 라이브러리 메타. `url` LONGTEXT + 인덱스 prefix 191 (utf8mb4 키 한도). 업로드 자체는 `/api/upload` 가, 메타는 `/api/media` POST.
+
+### 10) LONGTEXT 컬럼 (이미지 base64 inline) 정리
+Render free tier 휘발 디스크 회피 + 업로드 결과 영속성 보장을 위해 모든 이미지 컬럼은 LONGTEXT (~4GB). 마이그레이션 (`backend-py/migrations.py` 2.5) 가 자동 실행.
+
+- `works.hero_image_url`, `announcements.image_url`, `site_popups.image_url`
+- `partner_brands.logo`, `products.image_url`, `media_assets.url`
+- `mail_templates.body / html`, `mail_template_lib.body`
 
 ## 외래 키 / 관계
 
