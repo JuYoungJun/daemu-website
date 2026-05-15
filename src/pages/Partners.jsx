@@ -829,7 +829,7 @@ function History({ partner, onReorder }) {
       if (alive && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchOrders();
       }
-    }, 60_000);
+    }, 15_000);
     return () => {
       alive = false;
       window.removeEventListener('daemu-db-change', onChange);

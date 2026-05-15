@@ -131,6 +131,12 @@ engine = create_async_engine(
     pool_pre_ping=True,
     # MySQL wait_timeout(기본 28800s) 보다 짧게 — stale 연결 회피.
     pool_recycle=1800,
+    # pool_size + max_overflow 명시 — 어드민 KPI 15s 폴링 cadence + 다수
+    # 동시 어드민 사용자 시나리오 대비. SQLAlchemy default(5+10=15)는 동시 7~8명
+    # 사용자가 polling + mutation 겹칠 때 부족 가능. Aiven free tier
+    # max_connections=200 안에서 안전한 상한 (10+20=30).
+    pool_size=10,
+    max_overflow=20,
     connect_args=connect_args,
 )
 
