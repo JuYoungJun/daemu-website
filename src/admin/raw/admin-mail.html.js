@@ -1,6 +1,6 @@
 export default `<main class="page fade-up">
     <section class="wide">
-      <a href="admin.html" class="adm-back">← Dashboard</a>
+      <a href="../admin" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Auto-Reply</h1>
       <p class="adm-section-desc">Contact 폼 / 상담 / 파트너 신청·승인 시 자동 발송되는 회신 메일을 카테고리별로 관리합니다.<br>본문에 삽입한 이미지는 <strong>메일 본문 안에 그대로 박혀</strong> 발송됩니다 (파일 첨부 형태가 아님).</p>
 

@@ -72,14 +72,26 @@ FROM_EMAIL = os.environ.get(
     "DAEMU 베이커리·카페 컨설팅 <onboarding@resend.dev>",
 )
 PUBLIC_BASE = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
-ALLOWED_ORIGINS = [
-    o.strip()
-    for o in os.environ.get(
-        "ALLOWED_ORIGINS",
-        "http://localhost:8765,http://localhost:5173,http://localhost:8766",
-    ).split(",")
-    if o.strip()
-]
+_ALLOWED_ORIGINS_DEFAULT = "http://localhost:8765,http://localhost:5173,http://localhost:8766"
+_ALLOWED_ORIGINS_RAW = os.environ.get("ALLOWED_ORIGINS", _ALLOWED_ORIGINS_DEFAULT)
+ALLOWED_ORIGINS = [o.strip() for o in _ALLOWED_ORIGINS_RAW.split(",") if o.strip()]
+
+# Prod guard — ENV=prod 인데 ALLOWED_ORIGINS env 가 비었거나 localhost 만
+# 들어있으면 startup 거부. 이전엔 silent 하게 default(localhost) 로 fallback
+# 되어 운영 frontend 의 CORS 가 모두 403 으로 막힌 후에야 운영자가 인지했음.
+# 사고 회피 차원에서 부팅 자체를 막는 게 안전 (사용자 경험 0 보다 fail-fast
+# 가 낫다).
+def _is_localhost_only(origins: list[str]) -> bool:
+    return all(("localhost" in o) or ("127.0.0.1" in o) or ("0.0.0.0" in o) for o in origins) if origins else True
+
+_ENV_NAME = os.environ.get("ENV", "").strip().lower()
+if _ENV_NAME in {"prod", "production"} and _is_localhost_only(ALLOWED_ORIGINS):
+    raise SystemExit(
+        "[daemu-backend-py] FATAL — ENV=prod 인데 ALLOWED_ORIGINS env 가 "
+        "localhost 만 가지고 있습니다. 운영 frontend 도메인을 ALLOWED_ORIGINS "
+        "환경변수에 콤마로 등록한 뒤 재배포하세요. 예: "
+        "ALLOWED_ORIGINS=https://juyoungjun.github.io,https://daemu.kr"
+    )
 
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -384,6 +396,24 @@ async def lifespan(_app: FastAPI):
                     print(f"[seeds] auto-seed failed: {e!r}")
         except Exception as e:  # noqa: BLE001
             print(f"[bootstrap] session 단계 실패: {e!r}")
+
+    # P0 #7 — 운영자가 email 키 박지 않고 prod 진입하면 contact form / 파트너
+    # 회신 / 발주 메일 모두 silent 시뮬레이션 (outbox 에 simulated 로 기록
+    # 되지만 실 발송 X). 고객 문의가 안 가서야 운영자가 인지하는 사고 패턴.
+    # prod 면 CRITICAL 로그 + admin health 의 emailProvider 에 'none' 노출.
+    try:
+        _provider = email_provider()
+        if _provider == "none":
+            if is_prod():
+                print("[daemu-backend-py] ⚠⚠ CRITICAL — ENV=prod 인데 email provider 가 'none'. "
+                      "RESEND_API_KEY 또는 SENDGRID_API_KEY+SENDGRID_FROM 또는 SMTP_HOST/USER/PASS 중 하나 등록 필수. "
+                      "현재 상태: 모든 메일 발송은 outbox 에 'simulated' 로 기록만 되고 실제 전송되지 않음.")
+            else:
+                print("[daemu-backend-py] (dev) email provider = none — outbox 시뮬레이션 모드.")
+        else:
+            print(f"[daemu-backend-py] ✓ email provider = {_provider}")
+    except Exception as _e:  # noqa: BLE001
+        print(f"[daemu-backend-py] email provider check failed: {_e!r}")
 
     print(f"[daemu-backend-py] startup 완료 (db_alive={db_alive})")
 

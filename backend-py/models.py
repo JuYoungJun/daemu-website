@@ -141,7 +141,9 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # FK 인덱스 — _crud(Order) 의 list 가 partner_id 별 필터 가능 + Partner 의
     # relationship orders 양방향 join 성능.
-    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True, index=True)
+    # ondelete SET NULL — Partner row 삭제 시 발주 이력은 보존 (회계/감사
+     # 목적), partner_id 만 NULL 로. CASCADE 하면 회계 기록까지 날아감.
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(190))
     status: Mapped[str] = mapped_column(String(24), default="접수", index=True)
     amount: Mapped[int] = mapped_column(Integer, default=0)
@@ -353,10 +355,13 @@ class Document(Base):
     # FK 인덱스 — Document 가 4개 entity 와 연결되며 어드민에서 "이 partner/
     # crm/order/work 에 발급된 문서들" 식으로 자주 lookup. 인덱스 없으면 큰
     # documents 테이블에서 full scan.
-    crm_id: Mapped[int | None] = mapped_column(ForeignKey("crm_customers.id"), nullable=True, index=True)
-    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id"), nullable=True, index=True)
-    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
-    work_id: Mapped[int | None] = mapped_column(ForeignKey("works.id"), nullable=True, index=True)
+    # ondelete SET NULL — 연결된 partner/crm/order/work 가 삭제돼도 문서
+    # 본문/서명 이력은 보존 (계약 증빙 책임). CASCADE 하면 서명된 계약까지
+    # 사라져 법적 리스크.
+    crm_id: Mapped[int | None] = mapped_column(ForeignKey("crm_customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    work_id: Mapped[int | None] = mapped_column(ForeignKey("works.id", ondelete="SET NULL"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     # status: draft | sent | viewed | signed | canceled
     sign_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default="")

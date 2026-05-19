@@ -1,6 +1,6 @@
 export default `<main class="page fade-up">
     <section class="wide">
-      <a href="admin.html" class="adm-back">← Dashboard</a>
+      <a href="../admin" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Works</h1>
       <p class="adm-section-desc">프로젝트(작업사례)를 등록·수정합니다. 구조형 모드는 work-detail 페이지의 슬롯에 정확히 매핑되어 즉시 반영됩니다.<br>등록한 프로젝트는 /work/&lt;슬러그&gt; 상세 페이지에 노출됩니다.</p>
 

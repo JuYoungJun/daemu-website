@@ -356,6 +356,65 @@ def run_pending_migrations(conn: Connection) -> list[str]:
         except Exception as e:  # noqa: BLE001
             print(f"[migration] skip media_assets.url LONGTEXT: {e!r}")
 
+    # 2.5.2) FK ON DELETE SET NULL 보강 — Partner / Document 의 부모 row 가
+    # 삭제될 때 자식 row 의 FK 컬럼만 NULL 로 바꾸도록. 모델 정의 (models.py)
+    # 의 `ondelete="SET NULL"` 은 신규 schema 에만 반영되고, 기존 운영 DB 의
+    # 옛 constraint 는 기본 RESTRICT 로 남아있어 Partner 삭제 시 IntegrityError.
+    #
+    # MySQL 은 constraint 이름이 자동 생성 (orders_ibfk_1 등) 이라
+    # information_schema.referential_constraints 로 동적 lookup 후 DROP + ADD.
+    # SQLite 는 ALTER 로 FK 변경 불가 — 새 schema 부팅엔 create_all 이
+    # SET NULL 로 반영되므로 SQLite 환경에선 skip (운영은 MySQL).
+    fk_set_null_targets = [
+        # (table, column, ref_table, ref_column)
+        ("orders", "partner_id", "partners", "id"),
+        ("documents", "partner_id", "partners", "id"),
+        ("documents", "crm_id", "crm_customers", "id"),
+        ("documents", "order_id", "orders", "id"),
+        ("documents", "work_id", "works", "id"),
+    ]
+    if conn.dialect.name != "sqlite":
+        for table, column, ref_table, ref_column in fk_set_null_targets:
+            if not _table_exists(conn, table) or not _table_exists(conn, ref_table):
+                continue
+            try:
+                # 현재 FK constraint 찾기 — 이름은 자동 생성이라 동적 lookup.
+                fk_row = conn.execute(text(
+                    "SELECT k.constraint_name, rc.delete_rule "
+                    "FROM information_schema.key_column_usage k "
+                    "JOIN information_schema.referential_constraints rc "
+                    "  ON k.constraint_name = rc.constraint_name "
+                    " AND k.constraint_schema = rc.constraint_schema "
+                    "WHERE k.table_schema = DATABASE() "
+                    "  AND k.table_name = :t "
+                    "  AND k.column_name = :c "
+                    "  AND k.referenced_table_name = :rt "
+                    "  AND k.referenced_column_name = :rc "
+                ), {"t": table, "c": column, "rt": ref_table, "rc": ref_column}).first()
+                if not fk_row:
+                    # constraint 부재 — create_all 이 새로 만들 때 ondelete 반영됨.
+                    continue
+                constraint_name, delete_rule = fk_row[0], (fk_row[1] or "").upper()
+                if delete_rule == "SET NULL":
+                    continue  # 이미 SET NULL — idempotent skip.
+                # DROP 후 재생성. constraint 이름 SQL injection 회피 — DB
+                # 가 자동 부여한 식별자만 들어옴 (운영자 입력 아님), 정규식
+                # 검증 추가로 방어 깊이.
+                import re as _re
+                if not _re.fullmatch(r"[A-Za-z0-9_]+", constraint_name):
+                    print(f"[migration] skip FK SET NULL — suspicious constraint name: {constraint_name!r}")
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} DROP FOREIGN KEY {constraint_name}"))
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} "
+                    f"FOREIGN KEY ({column}) REFERENCES {ref_table}({ref_column}) "
+                    f"ON DELETE SET NULL"
+                ))
+                applied.append(f"{table}.{column} FK → SET NULL (was {delete_rule})")
+                print(f"[migration] applied: {table}.{column} FK → ON DELETE SET NULL (was {delete_rule})")
+            except Exception as e:  # noqa: BLE001
+                print(f"[migration] skip FK SET NULL on {table}.{column}: {e!r}")
+
     # 2.6) 이미지 URL 경로 정규화 — `assets/foo.png` (앞 `/` 없음) →
     # `/assets/foo.png`. SPA 가 sub-path 에 deploy 될 때 (GitHub Pages
     # /daemu-website/) 상대 path 가 현재 라우트 기준으로 해석되어 깨지는

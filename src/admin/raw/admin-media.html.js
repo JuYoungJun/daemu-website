@@ -1,6 +1,6 @@
 export default `<main class="page fade-up">
     <section class="wide">
-      <a href="admin.html" class="adm-back">← Dashboard</a>
+      <a href="../admin" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Media</h1>
       <p class="adm-section-desc">이미지·영상을 업로드하고 라이브러리를 관리합니다. 다른 어드민 페이지에서도 이 라이브러리에서 자산을 선택해 재사용할 수 있습니다.</p>
 

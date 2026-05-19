@@ -584,13 +584,36 @@ async def ensure_demo_superadmin(session: AsyncSession) -> None:
     superadmin@daemu.kr / Daemu@Test2026Final! 로 즉시 로그인할 수 있게
     합니다.
     """
+    DEMO_EMAIL = os.environ.get("DEMO_SUPERADMIN_EMAIL", "superadmin@daemu.kr")
+
+    # P0 #8 — 운영자가 "현재 데모 환경도 ENV=prod 로 박아두고 클라이언트
+    # 테스트용으로 demo superadmin 을 일부러 살려둠" 정책. 그래서 ENV=prod
+    # 라고 무조건 row 를 건드리는 건 위험 (의도된 데모 동작 깨짐). 대신
+    # 명시적 lockdown flag `DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true` 가 설정된
+    # 진짜 운영 cutover 시점에만 자동 비활성화. ENV=prod 만 있으면 row 가
+    # 살아있다는 사실을 WARN 으로 알리기만 함 → 운영자가 보고 본인이 액션.
     if os.environ.get("ENV", "").lower() in {"prod", "production"}:
+        lockdown = os.environ.get("DAEMU_LOCKDOWN_DEMO_ACCOUNTS", "").strip().lower() in {"1", "true", "yes"}
+        try:
+            res = await session.execute(select(AdminUser).where(AdminUser.email == DEMO_EMAIL))
+            existing = res.scalar_one_or_none()
+            if existing and existing.active:
+                if lockdown:
+                    existing.active = False
+                    existing.must_change_password = True
+                    await session.commit()
+                    print(f"[seeds] ⚠⚠ DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true — demo superadmin "
+                          f"({DEMO_EMAIL}) 자동 비활성화. 영구 삭제는 /admin/users 에서.")
+                else:
+                    print(f"[seeds] ℹ ENV=prod + demo superadmin ({DEMO_EMAIL}) row 살아있음. "
+                          f"데모 테스트용으로 의도된 상태면 무시. 진짜 운영 cutover 시점에는 "
+                          f"DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true 박거나 /admin/users 에서 직접 삭제.")
+        except Exception as _e:  # noqa: BLE001
+            print(f"[seeds] demo superadmin prod-guard check failed: {_e!r}")
         return
 
     # auth 모듈을 lazy import해 순환 import 방지
     from auth import hash_password, ROLE_ADMIN
-
-    DEMO_EMAIL = os.environ.get("DEMO_SUPERADMIN_EMAIL", "superadmin@daemu.kr")
     DEMO_PASSWORD = os.environ.get("DEMO_SUPERADMIN_PASSWORD", "Daemu@Test2026Final!")
 
     DISPLAY_NAME = "슈퍼 관리자"

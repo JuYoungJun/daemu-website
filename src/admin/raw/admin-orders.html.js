@@ -1,6 +1,6 @@
 export default `<main class="page fade-up">
     <section class="wide">
-      <a href="admin.html" class="adm-back">← Dashboard</a>
+      <a href="../admin" class="adm-back">← Dashboard</a>
       <h1 class="page-title">Orders</h1>
       <p class="adm-section-desc">파트너 발주를 등록·수정하고 출고 상태와 정산 금액을 관리합니다.<br>발주서·계약서 본문과 파일(PDF/이미지)을 함께 작성해 파트너 이메일로 발송할 수 있습니다.</p>
 
