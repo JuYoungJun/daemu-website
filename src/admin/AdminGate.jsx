@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminShell from '../components/AdminShell.jsx';
 import { Auth } from '../lib/auth.js';
-import { DB } from '../lib/db.js';
 import { api } from '../lib/api.js';
 import ChangePasswordForm from './ChangePasswordForm.jsx';
 import TwoFactorPanel from './TwoFactorPanel.jsx';

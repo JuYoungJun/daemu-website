@@ -17,9 +17,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Lint (informational — 기존 누적 이슈 단계적 cleanup)
+      - name: Lint (strict — 누적 이슈 cleanup 완료, 새 regression 차단)
         run: npm run lint
-        continue-on-error: true    # 도입 초기 — 누적 이슈 점진 해결 후 false 로 승격.
       - name: Format check (informational only)
         run: npm run format:check
         continue-on-error: true    # prettier 미포맷도 빌드 막진 않음 — 점진 도입.

@@ -13,6 +13,7 @@ import AdminHelp from '../components/AdminHelp.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 import { api } from '../lib/api.js';
 import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
+import LastSyncBadge from '../components/LastSyncBadge.jsx';
 import { downloadCSV } from '../lib/csv.js';
 
 const KIND_OPTIONS = [
@@ -42,13 +43,21 @@ export default function AdminAnnouncements() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
 
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     const r = await api.get('/api/announcements?include_inactive=1');
     if (!silent) setLoading(false);
-    if (!r.ok) { if (!silent) siteAlert(r.error || '불러오기 실패'); return; }
+    if (!r.ok) {
+      setFetchError(r.error || '불러오기 실패');
+      if (!silent) siteAlert(r.error || '불러오기 실패');
+      return;
+    }
     setItems(r.items || []);
+    setLastSyncAt(Date.now());
+    setFetchError(null);
   };
   useEffect(() => {
     load();
@@ -123,7 +132,10 @@ export default function AdminAnnouncements() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">공지 / 프로모션 관리</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>공지 / 프로모션 관리</h1>
+            <LastSyncBadge loading={loading} lastSyncAt={lastSyncAt} error={fetchError} label="공지" />
+          </div>
 
           <PageActions>
             <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"

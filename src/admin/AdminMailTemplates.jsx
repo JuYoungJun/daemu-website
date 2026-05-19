@@ -23,9 +23,8 @@ import { api } from '../lib/api.js';
 import { isEmailEnabled } from '../lib/email.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js';
-import { DB } from '../lib/db.js';
 import { COMPANY_FOOTER_LINE } from '../lib/companyInfo.js';
-import { renderInlineMarkdown, renderMailBody } from '../components/MailBodyRenderer.jsx';
+import { renderMailBody } from '../components/MailBodyRenderer.jsx';
 import MailTemplatesGuide from './MailTemplatesGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
 

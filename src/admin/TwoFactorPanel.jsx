@@ -16,7 +16,8 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 
-const Q_PIX = 7;  // px per QR module — placeholder size; we render text-only QR alternative
+// px per QR module — 추후 inline QR rendering 도입 시 활성화.
+const _Q_PIX = 7;
 
 export default function TwoFactorPanel({ user, onClose }) {
   // step: 'idle' | 'setup' | 'verify' | 'recovery' | 'disable' | 'enabled'
@@ -25,7 +26,9 @@ export default function TwoFactorPanel({ user, onClose }) {
   // 새 8개 코드를 1회 표시 (이후 평문 재조회 불가).
   const [step, setStep] = useState(user?.totp_enabled ? 'enabled' : 'idle');
   const [secret, setSecret] = useState('');
-  const [otpauthUri, setOtpauthUri] = useState('');
+  // otpauthUri value 는 현재 사용 X (QR 이미지 본문은 qrPng base64 로 전달).
+  // setter 만 backend response 저장용. 추후 QR 텍스트 fallback 표시 시 활용.
+  const [_otpauthUri, setOtpauthUri] = useState('');
   const [qrPng, setQrPng] = useState('');
   const [code, setCode] = useState('');
   const [appLabel, setAppLabel] = useState('Google Authenticator');

@@ -12,9 +12,12 @@ import { downloadCSV } from '../lib/csv.js';
 import { siteAlert, siteConfirm } from '../lib/dialog.js';
 import { formatPhone, normalizeEmail } from '../lib/inputFormat.js';
 import InquiriesGuide from './InquiriesGuide.jsx';
-import { PageActions, GuideButton, RawPageCsvButton } from './PageGuides.jsx';
+import LastSyncBadge from '../components/LastSyncBadge.jsx';
+import { PageActions, GuideButton } from './PageGuides.jsx';
 
-const STORAGE_KEY = 'inquiries';
+// localStorage 캐시 키 — backend 가 source-of-truth 가 된 후로 미사용.
+// 추후 admin offline 모드 도입 시 복원 예정.
+const _STORAGE_KEY = 'inquiries';
 
 const STATUS_OPTIONS = ['신규', '처리중', '답변완료'];
 const STATUS_FROM_API = { new: '신규', pending: '처리중', replied: '답변완료' };
@@ -49,6 +52,7 @@ export default function AdminInquiries() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
@@ -66,6 +70,7 @@ export default function AdminInquiries() {
       const r = await api.get('/api/inquiries?page=1&page_size=500');
       if (r.ok && Array.isArray(r.items)) {
         setItems(r.items.map(adaptFromBackend));
+        setLastSyncAt(Date.now());
       } else {
         setError(r.error || '백엔드에서 문의 목록을 불러올 수 없습니다.');
         setItems([]);
@@ -219,7 +224,10 @@ export default function AdminInquiries() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">상담/문의</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>상담/문의</h1>
+            <LastSyncBadge loading={loading} lastSyncAt={lastSyncAt} error={error} label="문의" />
+          </div>
 
           <PageActions>
             <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"

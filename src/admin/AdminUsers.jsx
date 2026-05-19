@@ -23,6 +23,7 @@ import { siteAlert, siteConfirm, sitePrompt } from '../lib/dialog.js';
 import { normalizeEmail } from '../lib/inputFormat.js';
 import UsersGuide from './UsersGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
+import LastSyncBadge from '../components/LastSyncBadge.jsx';
 
 const ROLE_LABEL = { admin: '슈퍼 관리자', tester: '서브 관리자', developer: '개발자' };
 const ROLE_COLOR = { admin: '#c0392b', tester: '#1f5e7c', developer: '#b87333' };
@@ -48,6 +49,7 @@ export default function AdminUsers() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [form, setForm] = useState({ email: '', password: '', name: '', role: 'tester' });
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,6 +77,7 @@ export default function AdminUsers() {
     }
     setItems(r.items || []);
     setError('');
+    setLastSyncAt(Date.now());
   }
 
   useEffect(() => {
@@ -251,7 +254,10 @@ export default function AdminUsers() {
       <main className="page">
         <section className="wide admin-page">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">사용자 권한 관리</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>사용자 권한 관리</h1>
+            <LastSyncBadge loading={loading} lastSyncAt={lastSyncAt} error={error} label="계정" />
+          </div>
 
           <PageActions>
             <button type="button" className="adm-page-action-btn adm-page-action-btn--csv"

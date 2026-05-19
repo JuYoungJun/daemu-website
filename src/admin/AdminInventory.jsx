@@ -33,7 +33,8 @@ const TABS = [
   { key: 'bestsellers', label: 'TOP 30일' },
 ];
 
-function fmtDate(s) {
+// fmtDateOnly 만 사용 중. fmtDate (시각 포함) 는 추후 디테일 view 에서 활성화.
+function _fmtDate(s) {
   if (!s) return '';
   try { return new Date(s).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }); }
   catch { return String(s); }

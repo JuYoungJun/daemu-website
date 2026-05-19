@@ -18,6 +18,7 @@ import { extractTextFromPdf, fileToDataUrl } from '../lib/pdfExtract.js';
 import { rasterizePdf } from '../lib/pdfRasterize.js';
 import ContractsGuide from './ContractsGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
+import LastSyncBadge from '../components/LastSyncBadge.jsx';
 import {
   formatPhone, formatBizNo, formatCurrencyTyping, unformatNumber, normalizeEmail,
 } from '../lib/inputFormat.js';
@@ -27,7 +28,8 @@ const STATUS_LABEL = {
   draft: '초안', sent: '발송됨', viewed: '열람됨',
   signed: '서명완료', canceled: '취소됨',
 };
-const STATUS_COLOR = {
+// 상태별 색상 매핑 — 추후 list view 의 색상 뱃지로 사용 예정 (현재 미사용).
+const _STATUS_COLOR = {
   draft: '#6f6b68', sent: '#2e7d32', viewed: '#b87333',
   signed: '#1f5e7c', canceled: '#c0392b',
 };
@@ -295,8 +297,8 @@ const TEMPLATE_PO = `발주서 (Purchase Order)
 
 발주처 담당자: {{managerName}}`;
 
-// 종류 → (라벨, 기본 템플릿) 매핑
-const TEMPLATE_PRESETS = [
+// 종류 → (라벨, 기본 템플릿) 매핑 — 추후 신규 문서 생성 시 preset 선택 UI 부활 예정.
+const _TEMPLATE_PRESETS = [
   { id: 'service-contract',  label: '용역 계약서 (표준)',  kind: 'contract',        body: TEMPLATE_SERVICE_CONTRACT },
   { id: 'supply-contract',   label: '공급 계약서 (표준)',  kind: 'contract',        body: TEMPLATE_SUPPLY_CONTRACT },
   { id: 'nda',               label: '비밀유지 계약서(NDA)',kind: 'contract',        body: TEMPLATE_NDA },
@@ -338,6 +340,7 @@ export default function AdminContracts() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [selected, setSelected] = useState(null); // doc id for detail drawer
 
   const reload = async ({ silent = false } = {}) => {
@@ -350,6 +353,7 @@ export default function AdminContracts() {
         ]);
         setTemplates(t.ok ? (t.items || []) : []);
         setDocuments(d.ok ? (d.items || []) : []);
+        if (t.ok && d.ok) setLastSyncAt(Date.now());
         if (!t.ok && !silent) setError(t.error || '템플릿을 불러올 수 없습니다.');
       } else if (!silent) {
         // Demo mode — localStorage
@@ -385,7 +389,10 @@ export default function AdminContracts() {
       <main className="page fade-up">
         <section className="wide">
           <Link to="/admin" className="adm-back">← Dashboard</Link>
-          <h1 className="page-title">계약서 / 발주서</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>계약서 / 발주서</h1>
+            <LastSyncBadge loading={loading} lastSyncAt={lastSyncAt} error={error} label="문서" />
+          </div>
 
           <PageActions>
 
@@ -454,7 +461,8 @@ export default function AdminContracts() {
 function TemplatesPane({ templates, onChange, isAdmin }) {
   const [editing, setEditing] = useState(null);
 
-  const startFromPreset = (preset) => setEditing({
+  // _TEMPLATE_PRESETS 부활 시 함께 활성화.
+  const _startFromPreset = (preset) => setEditing({
     name: preset.label,
     kind: preset.kind,
     subject: preset.kind === 'contract'
@@ -977,7 +985,6 @@ function TabBtn({ active, onClick, disabled, children }) {
 
 // 변환 결과를 A4-style 흰 종이 미리보기로 — 조항 자동 강조.
 function ConvertedPaper({ extracted, compact }) {
-  const lines = String(extracted || '').split('\n');
   const truncated = extracted.length > 8000;
   const display = truncated ? extracted.slice(0, 8000) : extracted;
   return (

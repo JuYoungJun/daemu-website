@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFadeUp } from '../hooks/useFadeUp.js';
 import { PartnerAuth, defaultPasswordHint } from '../lib/partnerAuth.js';
-import { PRODUCT_CATALOG, findProduct, getActiveCatalog } from '../lib/partnerProducts.js';
+import { findProduct, getActiveCatalog } from '../lib/partnerProducts.js';
 import { DB } from '../lib/db.js';
 import { useSeo } from '../hooks/useSeo.js';
 import { breadcrumbLd } from '../lib/seo.js';
