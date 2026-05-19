@@ -59,9 +59,9 @@ const SAFE_REL_PREFIX = /^(\/|\?|#)/;
 
 // SPA 가 sub-path 에 배포되는 경우 (GitHub Pages: /daemu-website/) 상대경로
 // 이미지가 현재 라우트 기준으로 해석되어 404 가 됨. 예: /work/beclassy-naju
-// 에서 `<img src="assets/foo.png">` → /work/beclassy-naju/assets/foo.png.
+// 에서 `<img src="assets/foo.webp">` → /work/beclassy-naju/assets/foo.webp.
 // Vite 의 BASE_URL 기반으로 base prefix 부착해서 어느 라우트에서든 동일하게
-// public/assets/foo.png 가 잡히도록 normalize.
+// public/assets/foo.webp 가 잡히도록 normalize.
 function _baseUrl() {
   try {
     const b = (import.meta && import.meta.env && import.meta.env.BASE_URL) || '/';

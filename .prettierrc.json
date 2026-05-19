@@ -1,0 +1,12 @@
+{
+  "_comment": "DAEMU 프론트엔드 포맷 규약. 기존 코드 스타일에 맞춰 single quote + 세미콜론 + 줄당 100자.",
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "bracketSpacing": true,
+  "arrowParens": "always",
+  "endOfLine": "lf"
+}

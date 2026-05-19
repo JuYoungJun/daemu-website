@@ -74,14 +74,18 @@ const BIZNO_KEYS = new Set(['clientBizNo', 'companyBizNo']);
 const EMAIL_KEYS = new Set(['managerEmail', 'clientEmail']);
 
 // 당사 정보 기본값 (대무 기본 정보) — 새 문서 생성 시 자동 prefill.
+// 단일 source: src/lib/companyInfo.js. 운영자가 한 번 입력 후 저장하면
+// 그 후엔 contract row 의 variables 가 우선되므로 영향 없음.
+import { COMPANY } from '../lib/companyInfo.js';
+
 const COMPANY_DEFAULTS = {
-  companyName: '대무 (DAEMU)',
-  companyAddress: '전라남도 나주시 황동 3길 8',
+  companyName: `${COMPANY.nameKr} (${COMPANY.name})`,
+  companyAddress: COMPANY.address,
   companyCEO: '',
   companyBizNo: '',
   managerName: '',
-  managerEmail: 'daemu_office@naver.com',
-  managerPhone: '061-335-1239',
+  managerEmail: COMPANY.email,
+  managerPhone: COMPANY.phone,
   warrantyPeriod: '6개월',
   today: new Date().toISOString().slice(0, 10),
 };
@@ -1623,7 +1627,7 @@ function DocumentDrawer({ docId, onClose, onChange, templates, isAdmin }) {
 
     const brand = wDoc.createElement('div');
     brand.className = 'brand';
-    brand.textContent = '대무 (DAEMU) · daemu_office@naver.com · 061-335-1239';
+    brand.textContent = `${COMPANY.nameKr} (${COMPANY.name}) · ${COMPANY.email} · ${COMPANY.phone}`;
     body.appendChild(brand);
 
     // Trigger print after layout settles. Hooked via the parent window so we
@@ -1896,8 +1900,8 @@ function DocPaperPreview({ kind, title, subject, body, recipients, status, creat
           </div>
         )}
         <footer className="adm-paper-foot">
-          <div>대무 (DAEMU) · 전라남도 나주시 황동 3길 8</div>
-          <div>daemu_office@naver.com · 061-335-1239</div>
+          <div>{COMPANY.nameKr} ({COMPANY.name}) · {COMPANY.address}</div>
+          <div>{COMPANY.email} · {COMPANY.phone}</div>
         </footer>
       </div>
     </div>

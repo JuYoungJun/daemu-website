@@ -1,0 +1,24 @@
+# EditorConfig — 에디터별 포맷 차이 흡수. CLAUDE.md 의 한국어 주석 정책
+# (UTF-8 + LF) 도 여기서 보장. VSCode, JetBrains, Vim 등 모두 자동 인식.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Python — 표준 PEP 8 (4 space)
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# Markdown — trailing space 가 줄바꿈 (의미 있음) 이라 trim 비활성.
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefile — 탭 강제.
+[Makefile]
+indent_style = tab

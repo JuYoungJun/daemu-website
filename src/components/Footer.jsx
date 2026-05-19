@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useFadeUp } from '../hooks/useFadeUp.js';
+import { COMPANY } from '../lib/companyInfo.js';
 
 export default function Footer() {
   useFadeUp([]);
@@ -34,10 +35,10 @@ export default function Footer() {
             <div className="footer-group">
               <h3>Contact</h3>
               <ul>
-                <li><a href="mailto:daemu_office@naver.com">daemu_office@naver.com</a></li>
-                <li><a href="tel:0613351239">061-335-1239</a></li>
-                <li>MON - FRI / 09:00 - 18:00</li>
-                <li>Naju, Korea</li>
+                <li><a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a></li>
+                <li><a href={`tel:${COMPANY.phoneRaw}`}>{COMPANY.phone}</a></li>
+                <li>{COMPANY.bizHoursEn}</li>
+                <li>{COMPANY.addressEn}</li>
               </ul>
             </div>
 

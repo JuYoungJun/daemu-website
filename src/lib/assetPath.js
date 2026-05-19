@@ -1,6 +1,6 @@
 // Runtime asset-path rewriter.
 // Inline HTML strings (src/pages/raw/*.html.js) and external public scripts
-// (public/*.js) hard-code paths like /assets/foo.png. When Vite is configured
+// (public/*.js) hard-code paths like /assets/foo.webp. When Vite is configured
 // with a non-root base (e.g. /daemu-website/ for GitHub Pages), those absolute
 // paths break. We rewrite at injection time.
 

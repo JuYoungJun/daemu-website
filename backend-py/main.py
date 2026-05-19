@@ -233,6 +233,59 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
                         print(f"[retention] purged {r3.rowcount or 0} suspicious / {r4.rowcount or 0} expired-evidence")
             except Exception as exc:  # noqa: BLE001
                 print(f"[retention] suspicious sweep failed: {exc!r}")
+
+            # P1 #13 — admin_email_otp 만료 row 정리. expires_at 지나면 검증
+            # 가치 0 + PII (이메일 = subject identifier). 즉시 delete.
+            try:
+                from models import AdminEmailOtp
+                async with SessionLocal() as otp_session:
+                    r5 = await otp_session.execute(delete(AdminEmailOtp).where(
+                        AdminEmailOtp.expires_at < datetime.now(timezone.utc),
+                    ))
+                    await otp_session.commit()
+                    if (r5.rowcount or 0):
+                        print(f"[retention] purged {r5.rowcount} expired admin_email_otp rows")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] admin_email_otp sweep failed: {exc!r}")
+
+            # P1 #13 — Newsletter unsubscribe 후 90일 익명화 (PIPA 제14조 파기).
+            # hard delete 대신 email/name 만 redact → 통계 (unsub 추세) 보존.
+            try:
+                from models import NewsletterSubscriber
+                from sqlalchemy import update as _sa_update
+                anon_days = int(os.environ.get("NEWSLETTER_ANONYMIZE_DAYS", "90"))
+                cutoff_anon = datetime.now(timezone.utc) - timedelta(days=anon_days)
+                async with SessionLocal() as nl_session:
+                    r6 = await nl_session.execute(
+                        _sa_update(NewsletterSubscriber)
+                        .where(NewsletterSubscriber.unsubscribed_at != None)  # noqa: E711
+                        .where(NewsletterSubscriber.unsubscribed_at < cutoff_anon)
+                        .where(NewsletterSubscriber.email != "")
+                        .values(email="", name="")
+                    )
+                    await nl_session.commit()
+                    if (r6.rowcount or 0):
+                        print(f"[retention] anonymized {r6.rowcount} newsletter rows (>90d unsubscribed)")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] newsletter anonymize failed: {exc!r}")
+
+            # P2 #24 — audit_logs 5년 retention. 무한 누적 회피.
+            # 보안 사고 조사용 5년 보존 (운영자 의도된 정책) 후 일괄 삭제.
+            # 월 1회 정도면 충분하지만 6h 주기 sweep 에서 함께 검사해도
+            # overhead 작음 (cutoff 조건 매번 같음, index 활용).
+            try:
+                from models import AuditLog
+                audit_days = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS", "1825"))  # 5y
+                cutoff_audit = datetime.now(timezone.utc) - timedelta(days=audit_days)
+                async with SessionLocal() as al_session:
+                    r7 = await al_session.execute(delete(AuditLog).where(
+                        AuditLog.created_at < cutoff_audit,
+                    ))
+                    await al_session.commit()
+                    if (r7.rowcount or 0):
+                        print(f"[retention] purged {r7.rowcount} audit_logs (>5y)")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] audit_logs sweep failed: {exc!r}")
         except Exception as exc:  # noqa: BLE001
             print(f"[retention] sweep failed: {exc!r}")
 

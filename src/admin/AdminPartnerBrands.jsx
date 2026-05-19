@@ -26,6 +26,7 @@ import { siteAlert, siteConfirm, siteToast } from '../lib/dialog.js';
 import { ensureHttps } from '../lib/inputFormat.js';
 import { PageActions, GuideButton, PartnerBrandsGuide } from './PageGuides.jsx';
 import { api } from '../lib/api.js';
+import LastSyncBadge from '../components/LastSyncBadge.jsx';
 
 const STORAGE_KEY = 'daemu_partner_brands';
 
@@ -70,9 +71,12 @@ export default function AdminPartnerBrands() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
 
   // mount 시 backend hydrate + 15초 폴링 — Mac/Windows 양쪽에서 같은 데이터,
   // 그리고 다른 어드민 변경이 최대 15초 안에 화면 반영.
+  // sync 결과는 lastSyncAt / fetchError state 로 LastSyncBadge 가 표시.
   useEffect(() => {
     let alive = true;
     const fetchOnce = async () => {
@@ -85,8 +89,12 @@ export default function AdminPartnerBrands() {
         const mapped = r.items.map(fromBackend);
         setBrands(mapped);
         saveCache(mapped);
+        setLastSyncAt(Date.now());
+        setFetchError(null);
+      } else {
+        // 실패 시 localStorage 캐시 유지 + 사용자에게 stale 알림.
+        setFetchError(r?.error || '백엔드 응답을 받지 못했습니다');
       }
-      // 실패 시 localStorage 캐시 유지 (silent)
     };
     fetchOnce();
     const onVisible = () => { if (!document.hidden) fetchOnce(); };
@@ -221,6 +229,7 @@ export default function AdminPartnerBrands() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '14px 0 18px' }}>
             <span className="adm-doc-pill" style={{ borderColor: '#6f6b68', color: '#6f6b68' }}>전체 {brands.length}</span>
             <span className="adm-doc-pill" style={{ borderColor: '#2e7d32', color: '#2e7d32' }}>노출 {activeCount}</span>
+            <LastSyncBadge loading={loading} lastSyncAt={lastSyncAt} error={fetchError} label="파트너사" />
             <span style={{ flex: 1 }} />
             <button type="button" className="adm-btn-sm"
               onClick={() => downloadCSV(

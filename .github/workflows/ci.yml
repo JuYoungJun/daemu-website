@@ -17,6 +17,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      - name: Lint (no errors blocking; warnings 표시)
+        run: npm run lint
+        continue-on-error: false   # error 면 PR 막음. warn 은 통과.
+      - name: Format check (informational only)
+        run: npm run format:check
+        continue-on-error: true    # prettier 미포맷도 빌드 막진 않음 — 점진 도입.
       - name: Build
         run: npm run build
       - name: npm audit (high+critical only)

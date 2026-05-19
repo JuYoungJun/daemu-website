@@ -24,6 +24,7 @@ import { isEmailEnabled } from '../lib/email.js';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { siteAlert, siteConfirm, sitePrompt, siteToast } from '../lib/dialog.js';
 import { DB } from '../lib/db.js';
+import { COMPANY_FOOTER_LINE } from '../lib/companyInfo.js';
 import { renderInlineMarkdown, renderMailBody } from '../components/MailBodyRenderer.jsx';
 import MailTemplatesGuide from './MailTemplatesGuide.jsx';
 import { PageActions, GuideButton } from './PageGuides.jsx';
@@ -129,8 +130,7 @@ DAEMU`,
 
 문의 사항은 본 메일에 회신해 주세요.
 
-대무 (DAEMU)
-daemu_office@naver.com · 061-335-1239`,
+${COMPANY_FOOTER_LINE}`,
     active: true,
   },
   {
@@ -161,7 +161,7 @@ daemu_office@naver.com · 061-335-1239`,
 
 대무가 새로 큐레이션한 이번 시즌 메뉴를 소개드립니다.
 
-![](https://juyoungjun.github.io/daemu-website/assets/work-croissants.png)
+![](https://juyoungjun.github.io/daemu-website/assets/work-croissants.webp)
 
   · 봄 시그니처 — 딸기 크렘 다누아즈
   · 한정 베이커리 — 무화과 크림 브리오슈
@@ -269,8 +269,7 @@ daemu_office@naver.com · 061-335-1239`,
 택배사 운영이 정상화되는 즉시 출고가 진행됩니다.
 긴급한 상품의 경우 {{긴급연락처}} 로 연락 부탁드리며, 가능한 범위 내에서 대안을 안내드리겠습니다.
 
-대무 (DAEMU)
-daemu_office@naver.com · 061-335-1239`,
+${COMPANY_FOOTER_LINE}`,
     active: true,
   },
   {

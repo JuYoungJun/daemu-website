@@ -6,6 +6,7 @@ import { breadcrumbLd, faqLd } from '../lib/seo.js';
 import { PartnerBrandLogoImg, PartnerBrandLink } from '../components/PartnerBrandLogo.jsx';
 import { safeMediaUrl, validateOutboundUrl } from '../lib/safe.js';
 import { api } from '../lib/api.js';
+import { STATS } from '../lib/companyInfo.js';
 
 // 공개 사이트의 "함께하는 파트너사" — backend Aiven `partner_brands` 가 source.
 // `/api/partner-brands/visible` 가 active=True 만 sort_order ASC 반환.
@@ -62,7 +63,7 @@ export default function Home() {
     const link = document.createElement('link');
     link.rel = 'preload';
     link.as = 'image';
-    link.href = base + 'assets/home-hero-flower.png';
+    link.href = base + 'assets/home-hero-flower.webp';
     link.fetchPriority = 'high';
     document.head.appendChild(link);
     return () => { try { link.remove(); } catch { /* ignore */ } };
@@ -138,7 +139,7 @@ export default function Home() {
 
           <div className="hero-visual-wrap">
             <div className="hero-visual-frame">
-              <img src={import.meta.env.BASE_URL + 'assets/home-hero-flower.png'}
+              <img src={import.meta.env.BASE_URL + 'assets/home-hero-flower.webp'}
                 alt="흰 장미 정물 — 대무 브랜드 비주얼"
                 className="hero-visual-img"
                 width="800" height="600"
@@ -250,7 +251,7 @@ export default function Home() {
           <div className="work-showcase" data-work-showcase="">
             <Link to="/work/beclassy-naju" className="work-card work-card--lg" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-beclassy-1.png'} alt="Be Classy project" loading="lazy" decoding="async" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-beclassy-1.webp'} alt="Be Classy project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -267,7 +268,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-croissants.png'} alt="bakery project" loading="lazy" decoding="async" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-croissants.webp'} alt="bakery project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -279,7 +280,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-desserts.png'} alt="dessert project" loading="lazy" decoding="async" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-desserts.webp'} alt="dessert project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -291,7 +292,7 @@ export default function Home() {
 
             <Link to="/work" className="work-card" data-work-card="">
               <div className="work-card-media">
-                <img src={import.meta.env.BASE_URL + 'assets/work-morif.png'} alt="morif project" loading="lazy" decoding="async" />
+                <img src={import.meta.env.BASE_URL + 'assets/work-morif.webp'} alt="morif project" loading="lazy" decoding="async" />
                 <div className="work-card-overlay"></div>
               </div>
               <div className="work-card-info">
@@ -321,19 +322,19 @@ export default function Home() {
 
           <div className="numbers-grid" data-counters="">
             <div className="num-item">
-              <div className="num-value serif" data-count-to="6">0</div>
-              <div className="num-label">YEARS · 6년간의 현장 경험</div>
+              <div className="num-value serif" data-count-to={STATS.years}>0</div>
+              <div className="num-label">YEARS · {STATS.years}년간의 현장 경험</div>
             </div>
             <div className="num-item">
-              <div className="num-value serif" data-count-to="40" data-suffix="+">0</div>
+              <div className="num-value serif" data-count-to={STATS.projects} data-suffix="+">0</div>
               <div className="num-label">PROJECTS · 완성된 브랜드</div>
             </div>
             <div className="num-item">
-              <div className="num-value serif" data-count-to="5">0</div>
+              <div className="num-value serif" data-count-to={STATS.stages}>0</div>
               <div className="num-label">STAGES · 전략부터 운영까지</div>
             </div>
             <div className="num-item">
-              <div className="num-value serif" data-count-to="100" data-suffix="%">0</div>
+              <div className="num-value serif" data-count-to={STATS.customPercent} data-suffix="%">0</div>
               <div className="num-label">CUSTOM · 모든 프로젝트는 맞춤형</div>
             </div>
           </div>
