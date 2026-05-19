@@ -5,7 +5,7 @@ import { api } from './api.js';
 import { sendAutoReply, sendAdminReply, sendCampaign, sendDocument, isEmailEnabled } from './email.js';
 import { uploadImage, uploadVideo, uploadMedia } from './upload.js';
 import { downloadCSV } from './csv.js';
-import { escapeHtml, safeUrl as safeUrlBase } from './safe.js';
+import { escapeHtml, safeUrl as safeUrlBase, safeMediaUrl, validateOutboundUrl } from './safe.js';
 import { nextPoNumber, nextSku } from './numbering.js';
 import { decrementStock, adjustStock, getStock } from './inventory.js';
 // 부수효과 import — raw script 가 쓸 window.openMediaPicker 등록.
@@ -33,6 +33,11 @@ if (typeof window !== 'undefined') {
   window.escHtml = escHtml;
   window.escAttr = escHtml; // alias — same escape rules cover attribute values
   window.escUrl = escUrl;
+  // public raw scripts (work.js 등) 가 backend 데이터 (외부 url / 로고) 를
+  // 렌더할 때 React 쪽과 동일한 sanitize 를 쓰도록 노출. 직접 구현 복제하면
+  // safe.js 보강 시 한쪽에만 반영되어 XSS / Open Redirect 회귀.
+  window.safeMediaUrl = safeMediaUrl;
+  window.validateOutboundUrl = validateOutboundUrl;
 
   // Email API
   window.sendAutoReply = sendAutoReply;

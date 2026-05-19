@@ -62,6 +62,10 @@
       el.style.transform = 'none';
     });
     initFilter();
+    // partner 카드 fetch + branch link 도 GSAP 와 무관. 누락 시 admin → /work
+    // 노출 불가 회귀.
+    initPartnerBrands();
+    initBranchLinks();
     return;
   }
 
@@ -220,6 +224,97 @@
   }
 
   /* ------------------------------------------------------------------
+     Partner brands — backend `partner_brands` 동기화.
+     공개 사이트(Home)와 동일한 source(`/api/partner-brands/visible`).
+     work.html.js 의 `[data-partners-grid]` 안의 마지막 "협업 파트너 모집중"
+     카드는 정적으로 남기고, backend 가 active=True 로 가진 브랜드 카드를
+     그 앞에 동적 삽입. window.safeMediaUrl / validateOutboundUrl 로 XSS +
+     Open Redirect 가드 (globals.js 에서 노출).
+     ------------------------------------------------------------------ */
+  function _loadPartnerBrands() {
+    const api = window.api;
+    if (!api || typeof api.isConfigured !== 'function' || !api.isConfigured()) {
+      return Promise.resolve([]);
+    }
+    return api.get('/api/partner-brands/visible')
+      .then((r) => {
+        if (r && r.ok && Array.isArray(r.items)) {
+          return r.items
+            .map((it) => ({
+              id: it.id,
+              name: it.name || '',
+              logo: it.logo || '',
+              url: it.url || '',
+              order: Number(it.sort_order) || 0,
+            }))
+            .sort((a, b) => a.order - b.order);
+        }
+        return [];
+      })
+      .catch(() => []);
+  }
+
+  function _renderPartnerBrands(grid, brands) {
+    // 이전에 동적으로 삽입한 카드만 제거. 정적 "모집중" 카드는 보존.
+    Array.from(grid.querySelectorAll('[data-dynamic="true"]')).forEach((n) => n.remove());
+    // 마지막 정적 카드(=tail) 기준으로 그 앞에 삽입해야 layout 순서 유지.
+    const tail = grid.querySelector('.dmwork-partner-card:not([data-dynamic="true"])');
+    brands.forEach((b) => {
+      const safeLogo = window.safeMediaUrl ? String(window.safeMediaUrl(b.logo) || '') : '';
+      const safeHref = window.validateOutboundUrl ? String(window.validateOutboundUrl(b.url) || '') : '';
+      const safeName = String(b.name == null ? '' : b.name).slice(0, 200);
+      const card = document.createElement(safeHref ? 'a' : 'div');
+      card.className = 'dmwork-partner-card';
+      card.setAttribute('data-dynamic', 'true');
+      if (safeHref) {
+        card.setAttribute('href', safeHref);
+        card.setAttribute('target', '_blank');
+        card.setAttribute('rel', 'noopener noreferrer');
+        card.style.textDecoration = 'none';
+      }
+      if (safeLogo) {
+        const img = document.createElement('img');
+        img.src = safeLogo;
+        img.alt = safeName;
+        img.loading = 'lazy';
+        img.style.maxWidth = '78%';
+        img.style.maxHeight = '64px';
+        img.style.objectFit = 'contain';
+        card.appendChild(img);
+      } else if (safeName) {
+        const p = document.createElement('p');
+        p.className = 'dmwork-partner-card-text';
+        p.style.fontFamily = "'Cormorant Garamond', Georgia, serif";
+        p.style.fontSize = '22px';
+        p.textContent = safeName; // textContent — XSS 안전.
+        card.appendChild(p);
+      }
+      if (tail) {
+        grid.insertBefore(card, tail);
+      } else {
+        grid.appendChild(card);
+      }
+    });
+  }
+
+  function initPartnerBrands() {
+    const grid = document.querySelector('[data-partners-grid]');
+    if (!grid) return;
+    let inFlight = false;
+    const refresh = () => {
+      if (inFlight) return;
+      inFlight = true;
+      _loadPartnerBrands()
+        .then((list) => _renderPartnerBrands(grid, list))
+        .finally(() => { inFlight = false; });
+    };
+    refresh();
+    // 어드민에서 파트너 브랜드 변경 시 즉시 반영 (같은 탭에서 어드민 → /work
+    // 이동 케이스). cross-tab 은 polling 대신 새로고침 의존.
+    window.addEventListener('daemu-db-change', refresh);
+  }
+
+  /* ------------------------------------------------------------------
      Branch card click → project detail page
      ------------------------------------------------------------------ */
   function initBranchLinks() {
@@ -238,6 +333,7 @@
      Run
      ------------------------------------------------------------------ */
   initFilter();
+  initPartnerBrands();
 
   afterSplash(() => {
     initHero();
