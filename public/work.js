@@ -259,21 +259,27 @@
   function _renderPartnerBrands(grid, brands) {
     // 이전에 동적으로 삽입한 카드만 제거. 정적 "모집중" 카드는 보존.
     Array.from(grid.querySelectorAll('[data-dynamic="true"]')).forEach((n) => n.remove());
-    // 마지막 정적 카드(=tail) 기준으로 그 앞에 삽입해야 layout 순서 유지.
-    const tail = grid.querySelector('.dmwork-partner-card:not([data-dynamic="true"])');
+    // 마지막 정적 카드(=tail = "모집중") 기준으로 그 앞에 삽입해야 layout 순서 유지.
+    const tail = grid.querySelector('.home-partner-card--coming, .dmwork-partner-card:not([data-dynamic="true"])');
     brands.forEach((b) => {
       const safeLogo = window.safeMediaUrl ? String(window.safeMediaUrl(b.logo) || '') : '';
       const safeHref = window.validateOutboundUrl ? String(window.validateOutboundUrl(b.url) || '') : '';
       const safeName = String(b.name == null ? '' : b.name).slice(0, 200);
-      const card = document.createElement(safeHref ? 'a' : 'div');
-      card.className = 'dmwork-partner-card';
-      card.setAttribute('data-dynamic', 'true');
+      // Home (Home.jsx PartnerBrandLink) 과 동일 DOM 구조 — wrapper(a/div) 안에
+      // home-partner-card div, 그 안에 img/텍스트. home.css 의 스타일 직접 사용.
+      const wrapper = document.createElement(safeHref ? 'a' : 'div');
+      wrapper.className = 'home-partner-card-wrapper';
+      wrapper.setAttribute('data-dynamic', 'true');
+      wrapper.style.textDecoration = 'none';
       if (safeHref) {
-        card.setAttribute('href', safeHref);
-        card.setAttribute('target', '_blank');
-        card.setAttribute('rel', 'noopener noreferrer');
-        card.style.textDecoration = 'none';
+        wrapper.setAttribute('href', safeHref);
+        wrapper.setAttribute('target', '_blank');
+        wrapper.setAttribute('rel', 'noopener noreferrer');
+        wrapper.setAttribute('data-track', 'cta_click');
+        wrapper.setAttribute('data-track-label', 'work-partner-' + (b.id != null ? String(b.id).slice(0, 64) : ''));
       }
+      const card = document.createElement('div');
+      card.className = 'home-partner-card';
       if (safeLogo) {
         const img = document.createElement('img');
         img.src = safeLogo;
@@ -285,16 +291,17 @@
         card.appendChild(img);
       } else if (safeName) {
         const p = document.createElement('p');
-        p.className = 'dmwork-partner-card-text';
+        p.className = 'home-partner-card-text';
         p.style.fontFamily = "'Cormorant Garamond', Georgia, serif";
         p.style.fontSize = '22px';
         p.textContent = safeName; // textContent — XSS 안전.
         card.appendChild(p);
       }
+      wrapper.appendChild(card);
       if (tail) {
-        grid.insertBefore(card, tail);
+        grid.insertBefore(wrapper, tail);
       } else {
-        grid.appendChild(card);
+        grid.appendChild(wrapper);
       }
     });
   }
