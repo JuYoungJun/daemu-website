@@ -255,6 +255,7 @@ body { width: 100%; }
   .num-value { font-size: 44px; }
 
   .home-partners-grid { grid-template-columns: 1fr !important; }
+  .dmwork-partners-grid { grid-template-columns: 1fr !important; }
 
   .cta-actions { flex-direction: column; gap: 10px; align-items: stretch; }
   .cta-btn { width: 100%; justify-content: center; }

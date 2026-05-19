@@ -760,13 +760,22 @@ a.dmwork-cta-btn--ghost:hover {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;
   max-width: 960px; margin: 0 auto;
 }
+/* Home(.home-partner-card) 과 스타일 통일 — solid border + 배경 + hover shadow.
+   "협업 파트너 모집중" 카드만 --coming modifier 로 dashed/투명 유지. */
 .dmwork-partner-card {
-  padding: 52px 32px; border: 1px dashed rgba(111,107,104,.25);
+  padding: 48px 32px; border: 1px solid rgba(111,107,104,.2); background: #fdfcfa;
   text-align: center; display: flex; flex-direction: column; align-items: center; gap: 18px;
-  transition: border-color .3s ease;
+  transition: border-color .3s ease, box-shadow .3s ease;
 }
-.dmwork-partner-card:hover { border-color: rgba(111,107,104,.5); }
-.dmwork-partner-card-icon { opacity: .35; }
+.dmwork-partner-card:hover {
+  border-color: rgba(111,107,104,.45);
+  box-shadow: 0 12px 32px -16px rgba(0,0,0,.12);
+}
+.dmwork-partner-card--coming {
+  border-style: dashed;
+  background: transparent;
+}
+.dmwork-partner-card-icon { opacity: .4; }
 .dmwork-partner-card-text { font-size: 14px; line-height: 1.7; color: #4a4744; margin: 0; }
 .dmwork-partner-card-link {
   font-size: 11px; letter-spacing: .18em; font-weight: 500;
