@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
+import { safeMediaUrl, validateOutboundUrl } from './lib/safe.js';
 
 // 공개 페이지의 raw-page 폼(전화·이메일 입력) 자동 포맷터 — eager 로드.
 // 가볍고(약 2KB), 모든 페이지에서 즉시 동작해야 하므로 lazy 로 둘 수 없음.
@@ -98,6 +99,14 @@ const basename = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
 // Always ends with trailing slash, e.g. '/daemu-website/' or '/'.
 if (typeof window !== 'undefined') {
   window.DAEMU_BASE = import.meta.env.BASE_URL || '/';
+  // 공개 raw script (work.js 의 파트너 카드 fetch 등) 가 globals.js 없이도
+  // backend 호출 + sanitize 할 수 있게 최소 global 노출. globals.js 전체는
+  // 어드민 경로에서만 dynamic import 되므로 공개 페이지에 70KB 끌어들이지 않고
+  // safe.js (순수 함수 ~1KB) 만 정적 import — work.js mount 시점에 race 없이
+  // 사용 가능해야 sanitizer 미장착 상태로 렌더되는 XSS 회귀 방지.
+  window.DAEMU_API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+  window.safeMediaUrl = safeMediaUrl;
+  window.validateOutboundUrl = validateOutboundUrl;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

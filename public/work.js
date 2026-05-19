@@ -232,11 +232,13 @@
      Open Redirect 가드 (globals.js 에서 노출).
      ------------------------------------------------------------------ */
   function _loadPartnerBrands() {
-    const api = window.api;
-    if (!api || typeof api.isConfigured !== 'function' || !api.isConfigured()) {
-      return Promise.resolve([]);
-    }
-    return api.get('/api/partner-brands/visible')
+    // window.api 는 /admin/* 경로에서만 globals.js 가 로드되므로 공개 /work
+    // 에서는 직접 fetch. main.jsx 가 window.DAEMU_API_BASE 에 빌드 시점의
+    // VITE_API_BASE_URL 을 노출. 미설정 시 backend 미연결 → 빈 배열.
+    const base = (typeof window !== 'undefined' && window.DAEMU_API_BASE) || '';
+    if (!base) return Promise.resolve([]);
+    return fetch(base + '/api/partner-brands/visible', { credentials: 'omit' })
+      .then((res) => (res.ok ? res.json() : null))
       .then((r) => {
         if (r && r.ok && Array.isArray(r.items)) {
           return r.items
