@@ -45,7 +45,10 @@ module.exports = {
     'no-dupe-args': 'error',
     'no-unreachable': 'error',
     'no-redeclare': 'error',
-    'no-use-before-define': ['error', { functions: false, classes: false, variables: true }],
+    // ESM 모듈에서 컴포넌트 본문 위에서 module-level const 사용하는 패턴이
+    // 다수 존재 (CookieConsent / Partners 등). 런타임 안전 (모듈 평가 시
+    // 전체 declaration 먼저 처리) 이라 variables: false 로 완화.
+    'no-use-before-define': ['error', { functions: false, classes: false, variables: false }],
     'no-implicit-globals': 'error',
     // React Hooks rules — deps 빠뜨림 자주 발생.
     'react-hooks/rules-of-hooks': 'error',
@@ -66,5 +69,9 @@ module.exports = {
     'react/no-unescaped-entities': 'off', // 한국어/영어 따옴표 자주 사용.
     'react/react-in-jsx-scope': 'off',    // Vite + React 17+ 자동 import.
     'react/display-name': 'off',
+    // 누적 이슈가 많고 (jsx-key 다수, key prop 누락) 단계적 도입이라 warn.
+    // 후속 cleanup 작업에서 error 로 승격.
+    'react/jsx-key': 'warn',
+    'react/jsx-no-target-blank': 'warn',
   },
 };

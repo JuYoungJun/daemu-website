@@ -197,10 +197,10 @@ export default function Privacy() {
             정보주체는 개인정보침해로 인한 구제를 받기 위하여 개인정보분쟁조정위원회, 한국인터넷진흥원
             개인정보침해신고센터 등에 분쟁해결이나 상담 등을 신청할 수 있습니다.
             <ul style={{ marginTop: 8, fontSize: 13 }}>
-              <li>개인정보분쟁조정위원회: <a href="https://kopico.go.kr" target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>kopico.go.kr</a> · <a href="tel:1833-6972" style={{ textDecoration: 'underline' }}>1833-6972</a></li>
-              <li>개인정보침해신고센터 (KISA): <a href="https://privacy.kisa.or.kr" target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>privacy.kisa.or.kr</a> · <a href="tel:118" style={{ textDecoration: 'underline' }}>118</a></li>
-              <li>대검찰청 사이버수사과: <a href="https://www.spo.go.kr" target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>spo.go.kr</a> · <a href="tel:1301" style={{ textDecoration: 'underline' }}>1301</a></li>
-              <li>경찰청 사이버수사국: <a href="https://ecrm.police.go.kr" target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>ecrm.police.go.kr</a> · <a href="tel:182" style={{ textDecoration: 'underline' }}>182</a></li>
+              <li>개인정보분쟁조정위원회: <a href="https://kopico.go.kr" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>kopico.go.kr</a> · <a href="tel:1833-6972" style={{ textDecoration: 'underline' }}>1833-6972</a></li>
+              <li>개인정보침해신고센터 (KISA): <a href="https://privacy.kisa.or.kr" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>privacy.kisa.or.kr</a> · <a href="tel:118" style={{ textDecoration: 'underline' }}>118</a></li>
+              <li>대검찰청 사이버수사과: <a href="https://www.spo.go.kr" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>spo.go.kr</a> · <a href="tel:1301" style={{ textDecoration: 'underline' }}>1301</a></li>
+              <li>경찰청 사이버수사국: <a href="https://ecrm.police.go.kr" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>ecrm.police.go.kr</a> · <a href="tel:182" style={{ textDecoration: 'underline' }}>182</a></li>
             </ul>
           </Section>
 
