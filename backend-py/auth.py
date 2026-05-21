@@ -704,7 +704,13 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
             from security_utils import mask_email as _me
             print(f"[auth] login: password mismatch → email={_me(payload.email)}")
     if not user or not user.active or not password_ok:
-        _login_throttle.record_failure(ip)
+        # N-2: throttle 차감은 *존재 + 활성 user 의 비번 실패* 만. 미존재/비활성
+        # user 시도까지 차감하면 정상 운영자가 같은 IP 에서 typo email 5회 후
+        # 본인 정상 계정으로도 잠금. user enumeration 차단 (timing 평탄화) 은
+        # 이미 _DUMMY_BCRYPT_HASH 로 처리됐고 (P0-1 fix), bcrypt cost (~300ms)
+        # 자체가 무한 시도에 대한 자연 rate limit 역할.
+        if user and user.active and not password_ok:
+            _login_throttle.record_failure(ip)
         await log_event(session, request, action="login.failure",
                         actor_email=payload.email,
                         detail={"reason": "bad-credentials" if user else "no-such-user"})

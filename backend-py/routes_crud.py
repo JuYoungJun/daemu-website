@@ -95,6 +95,27 @@ _inquiry_limiter = RateLimiter(max_calls=8, window_seconds=600)  # 8 req / 10 mi
 _PENDING_TASKS: set = set()
 
 
+def _task_done(task):
+    """N-4: fire-and-forget task 의 done_callback. (1) strong reference 해제,
+    (2) exception 발생 시 traceback 을 stdout 으로 명시 출력. 옛 코드는
+    set.discard 만 호출 → exception 이 silent. Resend / SMTP / Aiven 일시
+    장애로 auto-reply 발송 실패해도 운영자가 발견 못 하는 회귀 차단.
+    """
+    _PENDING_TASKS.discard(task)
+    try:
+        exc = task.exception()
+    except Exception:
+        return
+    if exc is None:
+        return
+    try:
+        import traceback as _tb
+        print(f"[task] background task failed: {type(exc).__name__}: {exc!r}")
+        _tb.print_exception(type(exc), exc, exc.__traceback__)
+    except Exception:
+        pass
+
+
 async def _record_rate_limit(session, request, *, endpoint: str) -> None:
     """Step 7-extended — rate_limit_exceeded wire site. /admin/security 의
     보안 자동 도구 카드가 🟠 활성 (24h 내 발생) 으로 전환되어 운영자가
@@ -401,7 +422,7 @@ async def create_inquiry(
     # GC'd if the reference is dropped — keep them in module-level set.
     task = asyncio.create_task(_send_auto_reply_async(**auto_args))
     _PENDING_TASKS.add(task)
-    task.add_done_callback(_PENDING_TASKS.discard)
+    task.add_done_callback(_task_done)  # N-4: exception 도 stdout 에 명시
 
     return {"ok": True, "id": inq.id, "inquiry": inquiry_dict}
 
@@ -579,12 +600,21 @@ def _crud(
 async def _partner_post_update(session, obj, payload, request, _u, prev_values):
     """status 가 '대기' / 'pending' / 'review' → '승인' / 'approved' 로 바뀐
     경우 신규파트너 환영 메일 자동 발송. 발송 실패해도 partner 상태 변경은
-    그대로 진행 (best-effort, audit log 에 결과 기록)."""
-    APPROVED = {"승인", "approved", "active", "활성"}
-    PENDING = {"대기", "pending", "review", "검토중", ""}
-    new_status = (obj.status or "").strip().lower()
-    prev_status = (str(prev_values.get("status") or "")).strip().lower()
-    if new_status in {s.lower() for s in APPROVED} and prev_status in {s.lower() for s in PENDING}:
+    그대로 진행 (best-effort, audit log 에 결과 기록).
+
+    N-3: prev_values 는 DB raw 값이라 _PARTNER_STATUS_NORMALIZE 적용 전.
+    set membership 비교 시 옛 variant (예: 'rejected', '거절' 등 PENDING 외)
+    이 누락되면 환영 메일 silent miss. 비교 전 정규화 적용해 silent bug 차단.
+    """
+    APPROVED_NORMALIZED = {"승인"}
+    PENDING_NORMALIZED = {"대기"}
+    # 정규화 표 적용 — pre_update 와 동일 dict 사용 (단일 source).
+    def _norm(s):
+        v = (str(s) if s is not None else "").strip().lower()
+        return _PARTNER_STATUS_NORMALIZE.get(v, v)
+    new_status = _norm(obj.status)
+    prev_status = _norm(prev_values.get("status"))
+    if new_status in APPROVED_NORMALIZED and prev_status in PENDING_NORMALIZED:
         # approved_at 도 함께 채움 (없으면)
         if hasattr(obj, "approved_at") and not obj.approved_at:
             from datetime import datetime as _dt, timezone as _tz
