@@ -125,20 +125,20 @@ elif DATABASE_URL.startswith("mysql"):
     # 를 default 로 둘 수 있다. 한글/이모지/중국어 4byte 문자 손실 방지.
     connect_args["charset"] = "utf8mb4"
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    # MySQL wait_timeout(기본 28800s) 보다 짧게 — stale 연결 회피.
-    pool_recycle=1800,
-    # pool_size + max_overflow 명시 — 어드민 KPI 15s 폴링 cadence + 다수
-    # 동시 어드민 사용자 시나리오 대비. SQLAlchemy default(5+10=15)는 동시 7~8명
-    # 사용자가 polling + mutation 겹칠 때 부족 가능. Aiven free tier
-    # max_connections=200 안에서 안전한 상한 (10+20=30).
-    pool_size=10,
-    max_overflow=20,
-    connect_args=connect_args,
-)
+# SQLite (dev) 는 StaticPool 만 지원해 pool_size/max_overflow/pool_recycle 인자
+# 자체를 거부 (SQLAlchemy 2.x 의 strict mode). MySQL 만 본 옵션을 받도록 분기.
+_engine_kwargs: dict = {
+    "echo": False,
+    "pool_pre_ping": True,
+    "connect_args": connect_args,
+}
+if not DATABASE_URL.startswith("sqlite"):
+    # MySQL — pool 명시. wait_timeout 보다 짧게 (stale 연결 회피).
+    # pool_size+max_overflow=30 (Aiven free max_connections=200 안에서 안전).
+    _engine_kwargs["pool_recycle"] = 1800
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 
 
 # Enable SQLite WAL mode + a generous busy timeout so concurrent writes from
