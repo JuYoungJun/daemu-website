@@ -323,14 +323,14 @@ function Card({ label, value, color }) {
 //   · inactive — 코드에 호출 site 자체가 없음. 운영 단계에서 추가 예정.
 const SECURITY_TOOLS = [
   // backend/suspicious.py REASON_LABELS + auth.py 의 실제 호출 site 매핑.
-  { reason: 'brute_force_login',          label: '브루트포스 로그인',     wired: true,  desc: '동일 IP 가 15회/15분 내 로그인 실패 시 자동 high 기록.' },
-  { reason: 'scrape_pattern',             label: '스크래핑 의심 트래픽',  wired: false, desc: 'enum 정의만. 운영 단계 nginx + middleware 연결 예정.' },
-  { reason: 'csrf_violation',             label: 'CSRF 토큰 불일치',      wired: false, desc: 'enum 정의만. CSRF 미들웨어 도입 시 연결.' },
-  { reason: 'unauthorized_admin_attempt', label: '비인가 어드민 접근',    wired: false, desc: 'enum 정의만. require_admin 거부 시점에 연결 예정.' },
-  { reason: 'abnormal_payload',           label: '비정상 페이로드',       wired: false, desc: 'enum 정의만. Pydantic ValidationError 시점에 연결 예정.' },
-  { reason: 'rate_limit_exceeded',        label: 'Rate limit 초과',       wired: false, desc: 'enum 정의만. slowapi/제어 미들웨어 도입 시 연결.' },
-  { reason: 'geo_anomaly',                label: '비정상 지리 변화',      wired: false, desc: 'enum 정의만. GeoIP 비교 로직 도입 시 연결.' },
-  { reason: 'uploaded_malware_signature', label: '업로드 악성 시그니처',  wired: false, desc: 'enum 정의만. ClamAV 등 백엔드 스캐너 도입 시 연결.' },
+  { reason: 'brute_force_login',          label: '브루트포스 로그인',     wired: true,  desc: '동일 IP 가 5회/15분 내 로그인 실패 시 자동 high 기록 (admin + partner).' },
+  { reason: 'unauthorized_admin_attempt', label: '비인가 어드민 접근',    wired: true,  desc: 'require_admin / require_perm 거부 시점에 medium 기록. role 부족 + 권한 매트릭스 외 시도.' },
+  { reason: 'abnormal_payload',           label: '비정상 페이로드',       wired: true,  desc: 'Pydantic 422 (RequestValidationError) 발생 시 low 기록. 정상 1-2회는 noise, 반복 IP 가 fuzzing 단서.' },
+  { reason: 'rate_limit_exceeded',        label: 'Rate limit 초과',       wired: true,  desc: '/api/inquiries / /api/partners/apply / /api/newsletter/subscribe 의 IP 단위 429 도달 시 low 기록.' },
+  { reason: 'scrape_pattern',             label: '스크래핑 의심 트래픽',  wired: false, desc: 'enum 정의만. 운영 단계 nginx log heuristic + middleware 연결 예정.' },
+  { reason: 'csrf_violation',             label: 'CSRF 토큰 불일치',      wired: false, desc: 'enum 정의만. 현재는 stateless JWT 라 CSRF 표면 없음. cookie 인증 전환 시 연결.' },
+  { reason: 'geo_anomaly',                label: '비정상 지리 변화',      wired: false, desc: 'enum 정의만. login 직후 GeoIP 비교 로직 도입 시 연결 (CrmCustomer.geo_cache 활용).' },
+  { reason: 'uploaded_malware_signature', label: '업로드 악성 시그니처',  wired: false, desc: 'enum 정의만. ClamAV / YARA 등 백엔드 스캐너 도입 시 연결.' },
 ];
 
 function _statusOf(wired, count24h) {

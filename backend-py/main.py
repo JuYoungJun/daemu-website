@@ -744,6 +744,11 @@ async def _validation_exception_handler(req: Request, exc: RequestValidationErro
     endpoint 에서 attacker 가 schema 까지 학습. ENV=prod 면 generic 메시지만,
     dev 에선 기존 detail 유지해 개발자 피드백 보존.
 
+    Step 7-extended — abnormal_payload 의심 이벤트 기록 (best-effort).
+    Pydantic 422 가 정상 사용자 1-2회는 발생할 수 있지만, 동일 IP/UA 가
+    반복적으로 422 를 일으키면 fuzzing 또는 enumeration 시도 패턴. low
+    severity 로 기록해 운영자가 패턴 추세 추적 가능.
+
     CORS 헤더 부착 — Starlette CORSMiddleware 가 exception handler 응답에
     자동 추가하지 않는 조합 대응 (unhandled_exception_handler 와 동일 패턴).
     """
@@ -757,6 +762,28 @@ async def _validation_exception_handler(req: Request, exc: RequestValidationErro
     if origin and origin in ALLOWED_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
+
+    # B2 wire — fire-and-forget. 422 자체는 정상 응답이라 record 실패가
+    # client 응답을 막지 않게 try/except + 별도 session.
+    try:
+        from suspicious import record_async as _sus
+        from auth import _client_ip as _ip
+        async with SessionLocal() as _ssn:
+            await _sus(
+                _ssn,
+                reason="abnormal_payload",
+                severity="low",
+                ip=_ip(req),
+                user_agent=req.headers.get("user-agent", ""),
+                path=str(req.url.path),
+                method=req.method,
+                status_code=422,
+                request_id=getattr(getattr(req, "state", None), "request_id", ""),
+                detail={"errors_count": len(exc.errors() or [])},
+            )
+            await _ssn.commit()
+    except Exception:
+        pass
     return response
 
 

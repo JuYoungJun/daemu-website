@@ -429,13 +429,43 @@ async def require_user(
     return await _resolve_user(authorization, session)
 
 
+async def _record_unauthorized_attempt(session, request, user, *, reason_detail: dict) -> None:
+    """B2 wire site (Step 7-extended): 정상 인증된 사용자가 권한 범위 밖
+    endpoint 를 시도한 경우 suspicious_events 에 medium 기록. 잘못된 토큰
+    (단순 401) 은 noise 라 제외 — 본 함수는 ID 가 확인된 user 에 대해서만.
+    best-effort (실패 시 silent) — record 실패가 원래 403 응답을 막지 않음.
+    """
+    try:
+        from suspicious import record_async as _sus
+        await _sus(
+            session,
+            reason="unauthorized_admin_attempt",
+            severity="medium",
+            ip=_client_ip(request) if request else "",
+            user_agent=request.headers.get("user-agent", "") if request else "",
+            path=str(request.url.path) if request else "",
+            method=request.method if request else "",
+            status_code=403,
+            request_id=getattr(getattr(request, "state", None), "request_id", "") if request else "",
+            actor_user_id=getattr(user, "id", None),
+            detail=reason_detail,
+        )
+    except Exception:
+        pass
+
+
 async def require_admin(
+    request: Request,
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> AdminUser:
     """Admin role only."""
     user = await _resolve_user(authorization, session)
     if user.role != ROLE_ADMIN:
+        await _record_unauthorized_attempt(
+            session, request, user,
+            reason_detail={"role": user.role, "endpoint": "require_admin"},
+        )
         raise HTTPException(403, detail="admin role required")
     return user
 
@@ -443,11 +473,16 @@ async def require_admin(
 def require_perm(resource: str, action: str):
     """Returns a FastAPI dependency that checks the permission matrix."""
     async def _dep(
+        request: Request,
         authorization: str | None = Header(default=None),
         session: AsyncSession = Depends(get_session),
     ) -> AdminUser:
         user = await _resolve_user(authorization, session)
         if not role_can(user.role, resource, action):
+            await _record_unauthorized_attempt(
+                session, request, user,
+                reason_detail={"role": user.role, "resource": resource, "action": action},
+            )
             raise HTTPException(403, detail=f"role '{user.role}' cannot {action} {resource}")
         return user
     return _dep

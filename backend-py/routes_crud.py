@@ -95,6 +95,29 @@ _inquiry_limiter = RateLimiter(max_calls=8, window_seconds=600)  # 8 req / 10 mi
 _PENDING_TASKS: set = set()
 
 
+async def _record_rate_limit(session, request, *, endpoint: str) -> None:
+    """Step 7-extended — rate_limit_exceeded wire site. /admin/security 의
+    보안 자동 도구 카드가 🟠 활성 (24h 내 발생) 으로 전환되어 운영자가
+    spike 감지 가능. best-effort (실패 silent — record 가 본 흐름 막지 않음).
+    """
+    try:
+        from suspicious import record_async as _sus
+        await _sus(
+            session,
+            reason="rate_limit_exceeded",
+            severity="low",
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent", ""),
+            path=str(request.url.path),
+            method=request.method,
+            status_code=429,
+            request_id=getattr(getattr(request, "state", None), "request_id", ""),
+            detail={"endpoint": endpoint},
+        )
+    except Exception:
+        pass
+
+
 def _client_ip(request: Request) -> str:
     """Re-uses the auth module's X-Forwarded-For policy so the rate-limit
     key matches the login-throttle key (so neither can be bypassed by
@@ -354,6 +377,7 @@ async def create_inquiry(
     SQLite writer contention with background tasks)."""
     ip = _client_ip(request)
     if not _inquiry_limiter.check(ip):
+        await _record_rate_limit(session, request, endpoint="/api/inquiries")
         raise HTTPException(429, detail="문의가 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.")
     if not payload.privacy_consent:
         raise HTTPException(400, detail="개인정보 수집·이용에 동의해 주세요.")
@@ -1253,6 +1277,7 @@ async def partner_apply(
     """
     ip = _client_ip(request)
     if not _partner_apply_limiter.check(ip):
+        await _record_rate_limit(session, request, endpoint="/api/partners/apply")
         raise HTTPException(429, detail="신청이 너무 빠르게 접수되었습니다. 잠시 후 다시 시도해 주세요.")
     if not payload.privacy_consent:
         raise HTTPException(400, detail="개인정보 수집·이용 동의가 필요합니다.")
@@ -1312,6 +1337,7 @@ async def newsletter_subscribe(
     """Public — Partners/Contact page subscribe form posts here."""
     ip = _client_ip(request)
     if not _newsletter_limiter.check(ip):
+        await _record_rate_limit(session, request, endpoint="/api/newsletter/subscribe")
         raise HTTPException(429, detail="구독 시도가 너무 빠르게 발생했습니다. 잠시 후 다시 시도해 주세요.")
     if not payload.privacy_consent:
         raise HTTPException(400, detail="개인정보 수집·이용 동의가 필요합니다.")
