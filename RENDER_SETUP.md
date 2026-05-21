@@ -13,7 +13,7 @@
 
 1. 우상단 **+ New** → **Blueprint** 클릭
 2. **Connect a repository**: `daemu-website` 검색·선택
-3. **Apply** 클릭 → Render가 `render.yaml` 읽어서 `daemu-api` 서비스 자동 생성
+3. **Apply** 클릭 → Render가 `render.yaml` 읽어서 `daemu-py` 서비스 자동 생성
 4. **환경변수 입력** 화면에서:
    - `RESEND_API_KEY`: Resend 키 붙여넣기 (시크릿 — Blueprint에 평문으로 안 들어감)
    - 나머지 변수들은 자동 설정됨 (수정 불필요)
@@ -23,7 +23,9 @@
 
 ## 3. 헬스체크
 ```bash
-curl https://daemu-api.onrender.com/api/health
+curl https://daemu-py.onrender.com/api/health
+# (옛 daemu-api 인스턴스가 Dashboard 에 남아있다면 무사용 상태이므로
+#  Suspend/Delete 권장 — render.yaml 의 Blueprint 는 daemu-py 만 정의.)
 # → {"ok":true,"runtime":"python-fastapi","resendConfigured":true, ...}
 ```
 
@@ -33,7 +35,7 @@ curl https://daemu-api.onrender.com/api/health
 
 이전에 Node.js 버전으로 배포되어 있으면:
 - 옵션 A (간편): 기존 서비스 삭제 → Blueprint 다시 적용 (URL 새로 받음)
-- 옵션 B (URL 유지): Render Dashboard → daemu-api → **Settings**:
+- 옵션 B (URL 유지): Render Dashboard → daemu-py → **Settings**:
   - Runtime: `Python`
   - Build Command: `pip install -r requirements.txt`
   - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
@@ -51,7 +53,7 @@ curl https://daemu-api.onrender.com/api/health
 
 ## 6. 환경 변수 변경 (도메인 발급 후)
 도메인 인증 후 발신자 변경하려면:
-- Render Dashboard → daemu-api → **Environment**
+- Render Dashboard → daemu-py → **Environment**
 - `FROM_EMAIL` 값을 `DAEMU <noreply@yourdomain.com>` 로 수정
 - 별도로 `PUBLIC_BASE_URL` 을 `https://api.yourdomain.com` 으로 설정하면 업로드 URL이 자기 도메인 기준으로 발급됨
 - **Save Changes** → 자동 재배포
