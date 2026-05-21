@@ -415,6 +415,74 @@ def run_pending_migrations(conn: Connection) -> list[str]:
             except Exception as e:  # noqa: BLE001
                 print(f"[migration] skip FK SET NULL on {table}.{column}: {e!r}")
 
+    # 2.5.3) FK ON DELETE 정책 강화 + 신규 FK 추가 (Step 2 — 2026-05-21).
+    # 기존 FK 의 delete_rule 만 변경하는 케이스와 (예: stock_history.lot_id,
+    # short_link_clicks.short_link_id), 컬럼은 있지만 FK constraint 자체가
+    # 없는 케이스 (예: stock_lots.sku — 자연키 참조), 그리고 신규 컬럼 +
+    # FK 케이스 (crm_customers.partner_id) 를 한 로직으로 처리.
+    #
+    # crm_customers.partner_id 컬럼 자체의 추가는 위 3) auto_align_columns 가
+    # 처리 — 본 section 은 FK constraint 만. SQLite 는 ALTER FK 불가 → skip.
+    fk_new_or_change = [
+        # (table, column, ref_table, ref_column, delete_rule)
+        ("stock_lots", "sku", "products", "sku", "CASCADE"),
+        ("stock_history", "lot_id", "stock_lots", "id", "SET NULL"),
+        ("short_link_clicks", "short_link_id", "short_links", "id", "CASCADE"),
+        ("crm_customers", "partner_id", "partners", "id", "SET NULL"),
+    ]
+    if conn.dialect.name != "sqlite":
+        import re as _re_fk
+        for table, column, ref_table, ref_column, delete_rule in fk_new_or_change:
+            if not _table_exists(conn, table) or not _table_exists(conn, ref_table):
+                continue
+            try:
+                # 컬럼 존재 확인 — auto_align 이 다음 부팅에 추가하는 케이스 회피.
+                col_row = conn.execute(text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema=DATABASE() AND table_name=:t AND column_name=:c"
+                ), {"t": table, "c": column}).first()
+                if not col_row:
+                    print(f"[migration] skip FK on {table}.{column} — column not yet present")
+                    continue
+                # 기존 FK constraint lookup.
+                fk_row = conn.execute(text(
+                    "SELECT k.constraint_name, rc.delete_rule "
+                    "FROM information_schema.key_column_usage k "
+                    "JOIN information_schema.referential_constraints rc "
+                    "  ON k.constraint_name = rc.constraint_name "
+                    " AND k.constraint_schema = rc.constraint_schema "
+                    "WHERE k.table_schema = DATABASE() "
+                    "  AND k.table_name = :t "
+                    "  AND k.column_name = :c "
+                    "  AND k.referenced_table_name = :rt "
+                    "  AND k.referenced_column_name = :rcc"
+                ), {"t": table, "c": column, "rt": ref_table, "rcc": ref_column}).first()
+                if fk_row:
+                    cname, current_rule = fk_row[0], (fk_row[1] or "").upper()
+                    if current_rule == delete_rule:
+                        continue  # idempotent skip
+                    if not _re_fk.fullmatch(r"[A-Za-z0-9_]+", cname):
+                        print(f"[migration] skip FK change — suspicious name: {cname!r}")
+                        continue
+                    conn.execute(text(f"ALTER TABLE {table} DROP FOREIGN KEY {cname}"))
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD CONSTRAINT {cname} "
+                        f"FOREIGN KEY ({column}) REFERENCES {ref_table}({ref_column}) "
+                        f"ON DELETE {delete_rule}"
+                    ))
+                    applied.append(f"{table}.{column} FK → ON DELETE {delete_rule} (was {current_rule})")
+                    print(f"[migration] applied: {table}.{column} FK → ON DELETE {delete_rule} (was {current_rule})")
+                else:
+                    # FK 자체 부재 — 신규 생성 (이름은 MySQL 자동 부여).
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD FOREIGN KEY ({column}) "
+                        f"REFERENCES {ref_table}({ref_column}) ON DELETE {delete_rule}"
+                    ))
+                    applied.append(f"{table}.{column} FK → NEW ON DELETE {delete_rule}")
+                    print(f"[migration] applied: {table}.{column} FK → NEW ON DELETE {delete_rule}")
+            except Exception as e:  # noqa: BLE001
+                print(f"[migration] skip FK on {table}.{column}: {e!r}")
+
     # 2.6) 이미지 URL 경로 정규화 — `assets/foo.png` (앞 `/` 없음) →
     # `/assets/foo.png`. SPA 가 sub-path 에 deploy 될 때 (GitHub Pages
     # /daemu-website/) 상대 path 가 현재 라우트 기준으로 해석되어 깨지는

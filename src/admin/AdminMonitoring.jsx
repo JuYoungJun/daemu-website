@@ -304,12 +304,21 @@ export default function AdminMonitoring() {
       setProbeResults(results);
       setProbeLastRun(Date.now());
       setProbeRunning(false);
-      // 작은 history (마지막 10회 평균 latency 추세용).
+      // 작은 history (마지막 10회 평균 latency 추세용). entry 수 + byte cap
+      // 둘 다 적용 — base64 body 같은 큰 payload 가 results 에 섞여 들어와도
+      // 운영 며칠 후 quota 초과로 site 마비되는 회귀 차단.
       try {
         const hist = JSON.parse(localStorage.getItem('daemu_api_probe_history') || '[]');
         hist.unshift({ ts: startedAll, results });
-        localStorage.setItem('daemu_api_probe_history', JSON.stringify(hist.slice(0, 20)));
-      } catch { /* ignore */ }
+        const trimmed = hist.slice(0, 10);
+        const serialized = JSON.stringify(trimmed);
+        if (serialized.length < 500_000) {
+          localStorage.setItem('daemu_api_probe_history', serialized);
+        } else {
+          // 1건만 보존 (most recent).
+          localStorage.setItem('daemu_api_probe_history', JSON.stringify(trimmed.slice(0, 1)));
+        }
+      } catch { /* private mode 또는 QuotaExceeded — silent (probe history 는 부가 기능) */ }
     };
     runProbes();
     // 실시간급 — 15초 주기 (이전 60초). 사용자 요청.

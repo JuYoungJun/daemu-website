@@ -163,12 +163,38 @@ export const api = {
 
 // 비밀번호·OTP·토큰류는 localStorage outbox 에 cleartext 로 절대 들어가지 않게
 // 직전에 redact. 어드민이 모니터링/CSV 로 export 해도 [REDACTED] 만 노출.
+//
+// pentest F-14: 일반 PII (email/phone/name/company_name/intro/message) 도 함께
+// 부분 마스킹. 단 운영자가 outbox 로 본인 입력값을 확인해야 하는 use case 가
+// 있으므로 hard [REDACTED] 가 아닌 부분 마스킹 (앞 2자 + *** + 도메인 등) 적용.
+// XSS 가 발생해도 attacker 가 PII 전체를 한번에 가져가지 못하도록 1차 방어.
 const REDACT_KEYS = new Set([
   'password', 'newpassword', 'currentpassword', 'old_password', 'new_password',
   'totp_code', 'totp', 'code', 'recovery_code', 'recoverycode',
   'token', 'access_token', 'refresh_token', 'authorization', 'auth',
   'otp', 'secret', 'api_key', 'apikey',
 ]);
+const MASK_PII_KEYS = new Set([
+  'email', 'phone', 'name', 'contact_name', 'company_name', 'intro',
+  'message', 'msg', 'brand_name', 'address',
+]);
+
+function _maskEmail(s) {
+  const str = String(s || '');
+  const at = str.indexOf('@');
+  if (at < 1) return str.length > 2 ? str[0] + '***' : '***';
+  return str[0] + '***@' + str.slice(at + 1);
+}
+function _maskPhone(s) {
+  const digits = String(s || '').replace(/[^0-9]/g, '');
+  if (digits.length < 4) return '***';
+  return '***-****-' + digits.slice(-4);
+}
+function _maskText(s, keepStart = 2) {
+  const str = String(s || '');
+  if (str.length <= keepStart) return '*'.repeat(str.length);
+  return str.slice(0, keepStart) + '*'.repeat(Math.min(8, str.length - keepStart));
+}
 
 function redactForLog(value, depth = 0) {
   if (depth > 6 || value == null) return value;
@@ -176,11 +202,32 @@ function redactForLog(value, depth = 0) {
   if (typeof value !== 'object') return value;
   const out = {};
   for (const k of Object.keys(value)) {
-    if (REDACT_KEYS.has(String(k).toLowerCase())) {
+    const key = String(k).toLowerCase();
+    if (REDACT_KEYS.has(key)) {
       out[k] = '[REDACTED]';
+    } else if (MASK_PII_KEYS.has(key) && typeof value[k] === 'string') {
+      if (key === 'email') out[k] = _maskEmail(value[k]);
+      else if (key === 'phone') out[k] = _maskPhone(value[k]);
+      else out[k] = _maskText(value[k]);
     } else {
       out[k] = redactForLog(value[k], depth + 1);
     }
+  }
+  return out;
+}
+
+// localStorage 총 크기 cap. 운영자가 admin 페이지를 며칠씩 켜둘 때
+// daemu_outbox 가 폭증해 QuotaExceededError 로 새 글 저장 실패하는 회귀 방지.
+// 1MB cap — 200 entries × ~5KB 평균이 일반적이지만 base64 body 가 섞이면
+// 1건이 수십 KB 가 될 수 있어 entry 수가 아닌 byte size 기준.
+const OUTBOX_BYTE_CAP = 1_000_000;
+const OUTBOX_MAX_ENTRIES = 200;
+
+function _trimOutboxBySize(arr) {
+  // newest-first 배열. 끝에서부터 (가장 오래된 항목) 잘라낸다.
+  const out = arr.slice(0, OUTBOX_MAX_ENTRIES);
+  while (out.length > 0 && JSON.stringify(out).length > OUTBOX_BYTE_CAP) {
+    out.pop();
   }
   return out;
 }
@@ -197,7 +244,17 @@ function logOutbox(path, body, status, extra = {}) {
       status,
       ...extra
     });
-    localStorage.setItem(key, JSON.stringify(log.slice(0, 200)));
+    const trimmed = _trimOutboxBySize(log);
+    try {
+      localStorage.setItem(key, JSON.stringify(trimmed));
+    } catch (storageErr) {
+      // QuotaExceededError 또는 private mode 차단. 현 항목만 유지하고 재시도.
+      try { localStorage.setItem(key, JSON.stringify([trimmed[0]].filter(Boolean))); }
+      catch { /* private mode — silent */ }
+      // 운영자가 인지하도록 console.warn (silent 한 storage failure 의 가시화).
+      // eslint-disable-next-line no-console
+      console.warn('[outbox] localStorage write failed, history truncated:', storageErr && storageErr.name);
+    }
     window.dispatchEvent(new Event('daemu-db-change'));
-  } catch (e) { /* ignore */ }
+  } catch (e) { /* ignore — outbox 자체 실패가 API 호출을 막지 않게 */ }
 }

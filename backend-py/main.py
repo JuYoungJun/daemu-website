@@ -269,6 +269,59 @@ async def _retention_cron(stop_event: asyncio.Event) -> None:
             except Exception as exc:  # noqa: BLE001
                 print(f"[retention] newsletter anonymize failed: {exc!r}")
 
+            # Step 3 (2026-05-21) — Document.sign_token 만료 무효화.
+            # 만료된 토큰을 빈 문자열로 두지 않고 'expired:{id}:{rand}' 패턴으로
+            # 채워 unique constraint 충돌 회피. /sign/{token} GET/POST 는 이미
+            # expires_at < now 체크로 410 응답하지만, 토큰 자체 무효화는
+            # 추가 방어층 (DB dump 유출 시 재사용 불가).
+            try:
+                from models import Document
+                from sqlalchemy import update as _sa_update, and_, select
+                now_utc = datetime.now(timezone.utc)
+                async with SessionLocal() as doc_session:
+                    rows = await doc_session.execute(
+                        select(Document.id, Document.sign_token).where(
+                            and_(
+                                Document.sign_token != "",
+                                Document.sign_token_expires_at != None,  # noqa: E711
+                                Document.sign_token_expires_at < now_utc,
+                                Document.status != "signed",
+                            )
+                        )
+                    )
+                    expired_count = 0
+                    for did, _tok in rows.all():
+                        new_tok = f"expired:{did}:{secrets.token_urlsafe(8)}"
+                        await doc_session.execute(
+                            _sa_update(Document)
+                            .where(Document.id == did)
+                            .values(sign_token=new_tok, sign_token_expires_at=None)
+                        )
+                        expired_count += 1
+                    await doc_session.commit()
+                    if expired_count:
+                        print(f"[retention] invalidated {expired_count} expired Document sign_tokens")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] sign_token expiry sweep failed: {exc!r}")
+
+            # Step 2 (2026-05-21) — short_link_clicks retention.
+            # PIPA 익명화 형태로만 기록 (ip_hash + ua_family + referer_host)
+            # 이지만 무한 누적은 의미 없음. ShortLink 자체가 캠페인 단위 (수
+            # 주~수개월) 이고, 통계 분석은 단기. 기본 365일 보존.
+            try:
+                from models import ShortLinkClick
+                slc_days = int(os.environ.get("SHORT_LINK_CLICK_RETENTION_DAYS", "365"))
+                cutoff_slc = datetime.now(timezone.utc) - timedelta(days=slc_days)
+                async with SessionLocal() as slc_session:
+                    r8 = await slc_session.execute(delete(ShortLinkClick).where(
+                        ShortLinkClick.clicked_at < cutoff_slc,
+                    ))
+                    await slc_session.commit()
+                    if (r8.rowcount or 0):
+                        print(f"[retention] purged {r8.rowcount} short_link_clicks (>{slc_days}d)")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[retention] short_link_clicks sweep failed: {exc!r}")
+
             # P2 #24 — audit_logs 5년 retention. 무한 누적 회피.
             # 보안 사고 조사용 5년 보존 (운영자 의도된 정책) 후 일괄 삭제.
             # 월 1회 정도면 충분하지만 6h 주기 sweep 에서 함께 검사해도
@@ -410,21 +463,36 @@ async def lifespan(_app: FastAPI):
                 except Exception as _e:  # noqa: BLE001
                     print(f"[seed] partner password backfill skipped: {_e!r}")
 
-                # testpartner@daemu.kr 데모 계정 — 강제 비밀번호 변경 면제.
-                # 어떤 경로로 must_change_password 가 True 가 되어도 부팅 시
-                # 정상화. 데모/테스트 시연 시 매번 비번 변경 화면이 뜨지 않도록.
+                # testpartner@daemu.kr 데모 계정 — 강제 비밀번호 변경 면제 +
+                # 운영 cutover lockdown. ENV=prod + DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true
+                # 면 자동 비활성화 (status='비활성'). 데모/테스트 시연 중에는
+                # must_change_password 만 면제.
                 try:
                     from sqlalchemy import select as _sa_select
                     from models import Partner
                     test_partner = (await session.execute(
                         _sa_select(Partner).where(Partner.email == "testpartner@daemu.kr")
                     )).scalar_one_or_none()
-                    if test_partner and test_partner.must_change_password:
-                        test_partner.must_change_password = False
-                        await session.commit()
-                        print("[seed] testpartner@daemu.kr — must_change_password 면제")
+                    if test_partner:
+                        is_prod = (os.environ.get("ENV", "").lower() in {"prod", "production"})
+                        lockdown = (os.environ.get("DAEMU_LOCKDOWN_DEMO_ACCOUNTS", "").strip().lower()
+                                    in {"1", "true", "yes"})
+                        if is_prod and lockdown:
+                            if test_partner.status != "비활성":
+                                test_partner.status = "비활성"
+                                await session.commit()
+                                print("[seed] ⚠⚠ DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true — "
+                                      "testpartner@daemu.kr 자동 비활성화 (status='비활성')")
+                        else:
+                            if test_partner.must_change_password:
+                                test_partner.must_change_password = False
+                                await session.commit()
+                                print("[seed] testpartner@daemu.kr — must_change_password 면제")
+                            if is_prod:
+                                print("[seed] ℹ ENV=prod + testpartner@daemu.kr active. 진짜 "
+                                      "운영 cutover 시점에는 DAEMU_LOCKDOWN_DEMO_ACCOUNTS=true 박기.")
                 except Exception as _e:  # noqa: BLE001
-                    print(f"[seed] testpartner must_change_password normalisation skipped: {_e!r}")
+                    print(f"[seed] testpartner normalisation skipped: {_e!r}")
 
                 # ※ DAEMU_RESET_TOTP_EMAIL env 기반 2FA 리셋은 제거됨 (2026-05-01).
                 # 사유: 호스트별로 env 등록/삭제 절차가 달라(Render Dashboard
@@ -663,6 +731,32 @@ async def attach_request_id(request: Request, call_next):
     request.state.request_id = rid
     response = await call_next(request)
     response.headers["X-Request-ID"] = rid
+    return response
+
+
+from fastapi.exceptions import RequestValidationError
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(req: Request, exc: RequestValidationError):
+    """pentest F-8: production 에서 422 응답이 field name + type + 입력값을 그대로
+    echo 하면 endpoint schema 가 무료로 노출 + `totp-reset-request` 같은 unauth
+    endpoint 에서 attacker 가 schema 까지 학습. ENV=prod 면 generic 메시지만,
+    dev 에선 기존 detail 유지해 개발자 피드백 보존.
+
+    CORS 헤더 부착 — Starlette CORSMiddleware 가 exception handler 응답에
+    자동 추가하지 않는 조합 대응 (unhandled_exception_handler 와 동일 패턴).
+    """
+    is_prod = (os.environ.get("ENV", "").lower() in {"prod", "production"})
+    if is_prod:
+        body: Any = {"ok": False, "error": "invalid input"}
+    else:
+        body = {"ok": False, "error": "invalid input", "detail": exc.errors()}
+    response = JSONResponse(body, status_code=422)
+    origin = req.headers.get("origin", "")
+    if origin and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
     return response
 
 

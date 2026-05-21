@@ -112,6 +112,21 @@ export default function Contact() {
       alert('개인정보 수집·이용에 동의해 주세요.');
       return;
     }
+    // 길이·형식 1차 검증 — backend 에 abusive payload (수 MB textarea 등)
+    // 전송 전 frontend 가 거부. backend pydantic 모델도 검증하지만 UX 개선.
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email || '');
+    if (!emailOk) {
+      alert('올바른 이메일 형식이 아닙니다.');
+      return;
+    }
+    if ((form.name || '').length > 120) {
+      alert('이름은 120자 이내로 입력해 주세요.');
+      return;
+    }
+    if ((form.msg || '').length > 4000) {
+      alert('문의 내용은 4000자 이내로 입력해 주세요.');
+      return;
+    }
     setSubmitting(true);
 
     const inquiry = isEtc ? {
@@ -212,11 +227,11 @@ export default function Contact() {
 
               {isEtc ? (
                 <div className="form-grid">
-                  <div className="field full"><input type="text" placeholder="이름" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
+                  <div className="field full"><input type="text" placeholder="이름" autoComplete="name" maxLength={120} value={form.name} onChange={update('name')} required /></div>
                   <div className="field"><input type="tel" inputMode="numeric" placeholder="연락처 (예: 010-1234-5678)" autoComplete="tel" maxLength={13} value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
-                  <div className="field full"><input type="text" placeholder="문의 제목" value={form.topic} onChange={update('topic')} required /></div>
-                  <div className="field full"><textarea placeholder="자유롭게 문의 내용을 적어주세요" value={form.msg} onChange={update('msg')} required></textarea></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" maxLength={190} value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
+                  <div className="field full"><input type="text" placeholder="문의 제목" maxLength={120} value={form.topic} onChange={update('topic')} required /></div>
+                  <div className="field full"><textarea placeholder="자유롭게 문의 내용을 적어주세요" maxLength={4000} value={form.msg} onChange={update('msg')} required></textarea></div>
                   <ConsentRow consent={consent} setConsent={setConsent} />
                   <div className="field full center">
                     <button className="btn" type="submit" disabled={submitting || !consent}>{submitting ? '전송 중…' : '문의 보내기'}</button>
@@ -227,10 +242,10 @@ export default function Contact() {
                 </div>
               ) : (
                 <div className="form-grid">
-                  <div className="field full"><input type="text" placeholder="이름(회사명)" autoComplete="name" value={form.name} onChange={update('name')} required /></div>
+                  <div className="field full"><input type="text" placeholder="이름(회사명)" autoComplete="name" maxLength={120} value={form.name} onChange={update('name')} required /></div>
                   <div className="field"><input type="tel" inputMode="numeric" placeholder="연락처 (예: 010-1234-5678)" autoComplete="tel" maxLength={13} value={form.phone} onChange={update('phone')} /></div>
-                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
-                  <div className="field full"><input type="text" placeholder="브랜드명(또는 사업분야)" autoComplete="organization" value={form.brand} onChange={update('brand')} /></div>
+                  <div className="field"><input type="email" inputMode="email" placeholder="E-mail" autoComplete="email" maxLength={190} value={form.email} onChange={update('email')} onBlur={onEmailBlur} required /></div>
+                  <div className="field full"><input type="text" placeholder="브랜드명(또는 사업분야)" autoComplete="organization" maxLength={190} value={form.brand} onChange={update('brand')} /></div>
                   <div className="field">
                     <select required value={form.region} onChange={update('region')}>
                       <option value="" disabled>매장 위치(예정 지역)</option>
@@ -246,7 +261,7 @@ export default function Contact() {
                       <option>1년 이내</option><option>미정</option>
                     </select>
                   </div>
-                  <div className="field full"><textarea placeholder="문의내용" value={form.msg} onChange={update('msg')}></textarea></div>
+                  <div className="field full"><textarea placeholder="문의내용" maxLength={4000} value={form.msg} onChange={update('msg')}></textarea></div>
                   <ConsentRow consent={consent} setConsent={setConsent} />
                   <div className="field full center">
                     <button className="btn" type="submit" disabled={submitting || !consent}>{submitting ? '전송 중…' : '상담 신청하기'}</button>

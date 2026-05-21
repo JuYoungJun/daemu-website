@@ -35,7 +35,8 @@ import jwt as _jwt
 from auth import (
     JWT_ALG, JWT_SECRET, JWT_TTL_HOURS,
     hash_password, verify_password,
-    _LoginThrottle, _client_ip,
+    validate_password_strength,
+    _LoginThrottle, _client_ip, _DUMMY_BCRYPT_HASH,
 )
 from db import get_session
 from models import Partner
@@ -148,12 +149,16 @@ async def partner_login(
     res = await session.execute(select(Partner).where(Partner.email == email))
     partner = res.scalar_one_or_none()
 
-    # 모든 실패 케이스를 같은 401 한국어 메시지로 — 사용자 존재 여부 leak 방지.
+    # pentest F-2 timing 평탄화 — partner 부재 / inactive / 비번 불일치 케이스가
+    # 동일한 bcrypt cost 를 부담. 옛 코드는 partner 미존재 시 ~1.5s, 존재 시
+    # ~3.0s 로 갈려 user enumeration 가능했음.
     if not partner or not partner.password_hash:
+        verify_password(payload.password, _DUMMY_BCRYPT_HASH)  # timing 평탄화
         _partner_login_throttle.record_failure(ip)
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
     if partner.status not in {"승인", "active", "approved"}:
         # 옛 시드는 status='active' / 새 schema 는 '승인'. 둘 다 허용.
+        verify_password(payload.password, _DUMMY_BCRYPT_HASH)  # timing 평탄화
         _partner_login_throttle.record_failure(ip)
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
     if not verify_password(payload.password, partner.password_hash):
@@ -210,6 +215,12 @@ async def partner_change_password(
         raise HTTPException(401, detail="현재 비밀번호가 일치하지 않습니다.")
     if payload.new_password == payload.current_password:
         raise HTTPException(400, detail="새 비밀번호는 기존 비밀번호와 달라야 합니다.")
+    # admin 측 set_partner_password 가 이미 validate_password_strength 를
+    # 호출하지만 partner 본인의 change-password 는 길이만 (min=8) 검증되어
+    # 약한 비밀번호 (예: 12345678) 가능. admin 정책과 동일하게 강도 검증 적용.
+    weak = validate_password_strength(payload.new_password)
+    if weak:
+        raise HTTPException(400, detail=weak)
     partner.password_hash = hash_password(payload.new_password)
     partner.must_change_password = False
     partner.password_changed_at = datetime.now(timezone.utc)

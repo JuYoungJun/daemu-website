@@ -582,8 +582,42 @@ async def _partner_post_update(session, obj, payload, request, _u, prev_values):
             _tb.print_exc()
 
 
+# Partner.status 표준값 정규화 — 다양한 표기 (pending/대기/review 등) 가 DB 에
+# 섞이지 않도록 PATCH 시점에 표준 set 으로 강제 변환. 미허용 값은 400.
+_PARTNER_STATUS_NORMALIZE = {
+    "대기": "대기", "pending": "대기", "review": "대기", "검토중": "대기", "": "대기",
+    "승인": "승인", "approved": "승인", "active": "승인", "활성": "승인",
+    "비활성": "비활성", "inactive": "비활성", "rejected": "비활성", "거절": "비활성", "정지": "비활성",
+}
+
+
+async def _partner_pre_update(session, obj, payload, request, _u):
+    if "status" in payload and payload["status"] is not None:
+        s = str(payload["status"]).strip().lower()
+        normalized = _PARTNER_STATUS_NORMALIZE.get(s)
+        if normalized is None:
+            raise HTTPException(400, detail=f"허용되지 않은 status 값: {payload['status']!r}")
+        payload["status"] = normalized
+
+
+async def _partner_pre_create(session, payload, request, _u):
+    if "status" in payload and payload["status"] is not None:
+        s = str(payload["status"]).strip().lower()
+        normalized = _PARTNER_STATUS_NORMALIZE.get(s)
+        if normalized is None:
+            raise HTTPException(400, detail=f"허용되지 않은 status 값: {payload['status']!r}")
+        payload["status"] = normalized
+
+
+# email 은 update 시 제거 — admin 이 PATCH 로 partner 이메일을 변경하면 partner 가
+# 로그인 불가능해지는 계정 탈취 시나리오. 이메일 변경이 필요하면 별도 endpoint
+# (current password 검증 + 본인 알림) 로 분리. 단 생성 시점에는 필요하므로
+# create_fields 에만 포함.
 _crud(Partner, "partners",
-      allowed_fields={"company_name", "contact_name", "email", "phone", "category", "intro", "status"},
+      allowed_fields={"company_name", "contact_name", "phone", "category", "intro", "status"},
+      create_fields={"company_name", "contact_name", "email", "phone", "category", "intro", "status"},
+      pre_create=_partner_pre_create,
+      pre_update=_partner_pre_update,
       post_update=_partner_post_update)
 
 
@@ -942,8 +976,13 @@ async def consume_promotion(
     }
 
 
+# partner_id 는 update 시 제거 — admin 이 PATCH 로 Order 의 partner_id 를 변경하면
+# cross-tenant leak (A 파트너 발주가 B 로 reassign → B 가 자기 발주가 아닌 것을
+# 봄). 발주 소유권 변경이 필요하면 별도 명시적 endpoint (감사 강화) 로. 단
+# 생성 시점에는 필요하므로 create_fields 에만 포함.
 _crud(Order, "orders",
-      allowed_fields={"partner_id", "title", "status", "amount", "items", "due_date", "note"},
+      allowed_fields={"title", "status", "amount", "items", "due_date", "note"},
+      create_fields={"partner_id", "title", "status", "amount", "items", "due_date", "note"},
       pre_create=_order_pre_create, post_create=_order_post_create,
       pre_update=_order_pre_update, post_update=_order_post_update)
 

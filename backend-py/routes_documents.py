@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -420,6 +420,11 @@ async def send_document_doc(
 
     if payload.sign_required and not d.sign_token:
         d.sign_token = secrets.token_urlsafe(32)
+        # 토큰에 만료 시각을 부여해 영구 유효를 차단. 기본 30일 — env 로 조정.
+        # 서명 완료 또는 만료 시 token 자체를 빈 문자열로 무효화 (재사용 차단).
+        import os as _os_doc
+        sign_ttl_days = int(_os_doc.environ.get("DOCUMENT_SIGN_TOKEN_TTL_DAYS", "30"))
+        d.sign_token_expires_at = datetime.now(timezone.utc) + timedelta(days=sign_ttl_days)
 
     # Build the public sign URL — frontend SPA 가 sub-path 에 배포 (GitHub
     # Pages /daemu-website/) 되는 경우 origin (= "https://juyoungjun.github.io")
@@ -535,6 +540,11 @@ async def public_get_signdoc(
         raise HTTPException(404, detail="document not found")
     if d.status == "canceled":
         raise HTTPException(410, detail="이 문서는 취소되었습니다.")
+    # 토큰 만료 검증. 만료 시 410 — 운영자가 새 토큰을 재발급해야 함.
+    # expires_at 이 None 인 옛 row (이전 발급) 는 영구 유효로 간주하지 않고
+    # 일단 통과시켜 호환성 유지 — retention cron 이 다음 sweep 에 정리.
+    if d.sign_token_expires_at and d.sign_token_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, detail="서명 링크가 만료되었습니다. 운영자에게 재발급을 요청해 주세요.")
     if not d.first_viewed_at:
         d.first_viewed_at = datetime.now(timezone.utc)
         if d.status == "sent":
@@ -577,6 +587,8 @@ async def public_post_signdoc(
         raise HTTPException(410, detail="취소된 문서에는 서명할 수 없습니다.")
     if d.status == "signed":
         raise HTTPException(409, detail="이미 서명이 완료된 문서입니다.")
+    if d.sign_token_expires_at and d.sign_token_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, detail="서명 링크가 만료되었습니다. 운영자에게 재발급을 요청해 주세요.")
 
     # signer_email 이 문서의 recipients 안에 등록된 'signer' 인지 검증.
     # 토큰만 알면 임의 이메일로 서명 가능했던 P0 결함 차단.
@@ -611,6 +623,11 @@ async def public_post_signdoc(
 
     d.status = "signed"
     d.signed_at = datetime.now(timezone.utc)
+    # 서명 완료 시 token 즉시 무효화. 재사용·재서명·외부 유출 시 악용 차단.
+    # sign_token 컬럼은 unique 인데 빈 문자열로 두면 다른 signed 문서와
+    # 충돌 가능 — random suffix 로 우회 (검색에는 사용 안 함, 단순 unique 충족).
+    d.sign_token = f"used:{d.id}:{secrets.token_urlsafe(8)}"
+    d.sign_token_expires_at = None
     push_history(d, "signed", by=sig.signer_email,
                  detail={"signer_name": sig.signer_name, "ip": sig.ip})
     await session.flush()

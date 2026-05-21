@@ -238,7 +238,12 @@ class SitePopup(Base):
 
 
 class CrmCustomer(Base):
-    """CRM customer/lead."""
+    """CRM customer/lead.
+
+    lead → qualified → converted 흐름에서 converted 시 Partner 로 승격되는
+    경우가 있어 partner_id 로 추적. Partner 삭제 시 CRM row 는 보존 (영업
+    history 가치) 하고 link 만 NULL.
+    """
     __tablename__ = "crm_customers"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -251,6 +256,8 @@ class CrmCustomer(Base):
     tags: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # converted 시점에 Partner 로 승격된 CRM lead. 옛 row 는 NULL.
+    partner_id: Mapped[int | None] = mapped_column(ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -333,7 +340,7 @@ class DocumentTemplate(Base):
     body: Mapped[str] = mapped_column(Text, default="")
     variables: Mapped[list | dict | None] = mapped_column(JSON, default=list)  # ["clientName","amount",...]
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -365,6 +372,10 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     # status: draft | sent | viewed | signed | canceled
     sign_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, default="")
+    # 서명 토큰 만료 시각 — 보안 정책으로 영구 유효 차단. 토큰 발급 시점
+    # (status='sent') 에 DOCUMENT_SIGN_TOKEN_TTL_DAYS (기본 30일) 가산.
+    # 서명 완료 또는 만료 후엔 sign_token 자체를 NULL 로 둬서 재사용 차단.
+    sign_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     first_viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
@@ -491,7 +502,11 @@ class MailTemplateLib(Base):
     body: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"), default="")
     variables: Mapped[list | dict | None] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[str] = mapped_column(String(190), default="")
+    # 작성자 이메일 (String) — DocumentTemplate.created_by 는 admin_users.id Int FK 를
+    # 쓰지만, MailTemplateLib 는 옛 string 유지 + index. FK 변경은 별도 migration
+    # 으로 분리 (기존 row 의 이메일 → admin_users.id lookup + NULL fallback).
+    # P2 (안정화 후 sweep).
+    created_by: Mapped[str] = mapped_column(String(190), default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -527,7 +542,7 @@ class ShortLink(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_reason: Mapped[str] = mapped_column(String(255), default="")
     label: Mapped[str] = mapped_column(String(120), default="")
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
@@ -535,12 +550,13 @@ class ShortLinkClick(Base):
     """ShortLink 클릭 이벤트 — PII 최소화 형태로만 기록.
 
     IP 와 UA 는 hash 로만 보관 (개인정보보호법 익명화 원칙).
-    referer 는 host 부분만 저장.
+    referer 는 host 부분만 저장. ShortLink 삭제 시 click 이력도 함께 정리 —
+    부모 캠페인이 사라지면 click 통계 자체가 무의미.
     """
     __tablename__ = "short_link_clicks"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    short_link_id: Mapped[int] = mapped_column(ForeignKey("short_links.id"), index=True)
+    short_link_id: Mapped[int] = mapped_column(ForeignKey("short_links.id", ondelete="CASCADE"), index=True)
     clicked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     ip_hash: Mapped[str] = mapped_column(String(64), default="")
     ua_family: Mapped[str] = mapped_column(String(40), default="")  # "chrome" / "safari" / "mobile-chrome" 등
@@ -607,11 +623,15 @@ class Product(Base):
 
 
 class StockLot(Base):
-    """LOT 단위 재고 — 식품 안전 / 리콜 추적용. expires_at 가장 이른 LOT 부터 FIFO 차감."""
+    """LOT 단위 재고 — 식품 안전 / 리콜 추적용. expires_at 가장 이른 LOT 부터 FIFO 차감.
+
+    sku 는 Product.sku 의 자연키 참조. Product 삭제 시 LOT 도 함께 정리 —
+    LOT 만 남아도 발주 대상 SKU 가 사라지면 의미가 없어 CASCADE.
+    """
     __tablename__ = "stock_lots"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    sku: Mapped[str] = mapped_column(String(40), index=True)
+    sku: Mapped[str] = mapped_column(ForeignKey("products.sku", ondelete="CASCADE"), index=True)
     lot_number: Mapped[str] = mapped_column(String(40), index=True)
     quantity: Mapped[int] = mapped_column(Integer, default=0)
     produced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
@@ -626,12 +646,15 @@ class StockLot(Base):
 
 
 class StockHistory(Base):
-    """재고 변동 이력 — 발주/재입고/조정/폐기 audit trail."""
+    """재고 변동 이력 — 발주/재입고/조정/폐기 audit trail.
+
+    LOT 삭제 시 history 는 보존 (감사 증빙). lot_id 만 NULL 로 SET.
+    """
     __tablename__ = "stock_history"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     sku: Mapped[str] = mapped_column(String(40), index=True)
-    lot_id: Mapped[int | None] = mapped_column(ForeignKey("stock_lots.id"), nullable=True)
+    lot_id: Mapped[int | None] = mapped_column(ForeignKey("stock_lots.id", ondelete="SET NULL"), nullable=True, index=True)
     delta: Mapped[int] = mapped_column(Integer)  # 음수=출고, 양수=입고
     reason: Mapped[str] = mapped_column(String(40), default="")  # order / restock / adjust / discard / quarantine
     ref_type: Mapped[str] = mapped_column(String(40), default="")  # order / lot / manual
@@ -702,6 +725,6 @@ class MediaAsset(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
     alt: Mapped[str] = mapped_column(String(255), default="")  # 접근성 alt
     tags: Mapped[list | dict | None] = mapped_column(JSON, default=list)
-    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

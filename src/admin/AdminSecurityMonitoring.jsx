@@ -284,6 +284,12 @@ export default function AdminSecurityMonitoring() {
 
           <SecurityToolsStatus />
 
+          <SecurityHeadersAuditor />
+
+          <AttackSurfaceProbe />
+
+          <JwtDecoder />
+
           <EventStreamPanel
             defaultKindFilter="suspicious"
             height={420}
@@ -430,6 +436,382 @@ function SecurityToolsStatus() {
   );
 }
 const cellStyle = { padding: '8px 12px', textAlign: 'left', verticalAlign: 'top', fontSize: 12 };
+
+
+// ───────────────────────────────────────────────────────────────────────
+// 보안 도구 #1 — 응답 헤더 점검기
+//
+// 운영자가 입력한 URL 또는 default (현재 backend `/api/health`) 에 fetch 보내
+// 응답 헤더의 보안 관련 항목 (HSTS / CSP / X-Frame-Options / X-Content-Type-Options
+// / Referrer-Policy / Permissions-Policy 등) 을 grade 표로 표시.
+// CORS 제약: 동일 origin 또는 backend 가 `Access-Control-Expose-Headers` 로
+// 헤더를 노출해야 readable. 그 외엔 "(브라우저 비공개)" 표시.
+const SECURITY_HEADER_TARGETS = [
+  { key: 'strict-transport-security', label: 'HSTS', good: (v) => /max-age=\d{7,}/i.test(v), hint: 'max-age ≥ 6개월 권장 (15768000+)' },
+  { key: 'content-security-policy', label: 'CSP', good: (v) => v && !/unsafe-inline/i.test(v), hint: 'unsafe-inline 제거 권장' },
+  { key: 'x-frame-options', label: 'X-Frame-Options', good: (v) => /DENY|SAMEORIGIN/i.test(v), hint: 'DENY 또는 SAMEORIGIN' },
+  { key: 'x-content-type-options', label: 'X-Content-Type-Options', good: (v) => /nosniff/i.test(v), hint: 'nosniff' },
+  { key: 'referrer-policy', label: 'Referrer-Policy', good: (v) => /no-referrer|same-origin|strict-origin/i.test(v), hint: 'strict-origin-when-cross-origin 권장' },
+  { key: 'permissions-policy', label: 'Permissions-Policy', good: (v) => Boolean(v), hint: 'camera=(), microphone=() 등 명시' },
+  { key: 'cross-origin-opener-policy', label: 'COOP', good: (v) => /same-origin/i.test(v), hint: 'same-origin' },
+  { key: 'cross-origin-resource-policy', label: 'CORP', good: (v) => /same-origin|same-site/i.test(v), hint: 'same-origin 또는 same-site' },
+];
+
+function SecurityHeadersAuditor() {
+  const [target, setTarget] = useState(() => {
+    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+    return base ? `${base}/api/health` : '';
+  });
+  const [headers, setHeaders] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState('');
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    setRunning(true); setError(''); setHeaders(null); setStatus(null);
+    try {
+      const url = String(target || '').trim();
+      if (!/^https?:\/\//.test(url)) {
+        setError('http(s):// 로 시작하는 URL 만 허용');
+        setRunning(false);
+        return;
+      }
+      const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+      const out = {};
+      for (const k of SECURITY_HEADER_TARGETS) {
+        out[k.key] = res.headers.get(k.key);
+      }
+      setHeaders(out); setStatus(res.status);
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally { setRunning(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <h3 className="admin-section-title">응답 헤더 보안 점검</h3>
+      <p style={{ fontSize: 12, color: '#8c867d', marginTop: 4, lineHeight: 1.6 }}>
+        backend 또는 정적 자산 URL 의 응답 헤더에서 HSTS / CSP / X-Frame-Options / Referrer-Policy 등 8개 보안 헤더를 확인.
+        cross-origin 응답은 브라우저가 일부 헤더를 숨길 수 있으며 (CORS 제약), 그 경우 backend 가
+        <code> Access-Control-Expose-Headers</code> 로 명시 노출해야 readable.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        <input type="url" value={target} onChange={(e) => setTarget(e.target.value)}
+          placeholder="https://your-backend.example.com/api/health" maxLength={500}
+          style={{ flex: '1 1 320px', padding: '8px 12px', border: '1px solid #d7d4cf', background: '#fff', fontSize: 12.5, fontFamily: 'SF Mono, Menlo, monospace' }} />
+        <button type="button" className="adm-btn-sm" onClick={run} disabled={running}
+          style={{ background: '#1f5e7c', color: '#fff', borderColor: '#1f5e7c', minWidth: 96 }}>
+          {running ? '확인 중…' : '헤더 확인'}
+        </button>
+      </div>
+      {error && (
+        <div style={{ background: '#fdf2f0', color: '#c0392b', border: '1px solid #f0c5c0', padding: '8px 12px', fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+      {headers && (
+        <div style={{ background: '#fff', border: '1px solid #e6e3dd' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#f4f1ea' }}>
+                <th style={cellStyle}>헤더</th>
+                <th style={cellStyle}>응답 값</th>
+                <th style={cellStyle}>판정</th>
+                <th style={cellStyle}>권장</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderTop: '1px solid #f0ede7', background: '#fafaf6' }}>
+                <td style={cellStyle} colSpan={4}><strong>HTTP {status}</strong></td>
+              </tr>
+              {SECURITY_HEADER_TARGETS.map((h) => {
+                const v = headers[h.key];
+                const ok = v ? h.good(v) : false;
+                return (
+                  <tr key={h.key} style={{ borderTop: '1px solid #f0ede7' }}>
+                    <td style={cellStyle}><code>{h.label}</code></td>
+                    <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace', color: v ? '#231815' : '#8c867d', wordBreak: 'break-all' }}>
+                      {v || <em>(없음 또는 브라우저 비공개)</em>}
+                    </td>
+                    <td style={cellStyle}>
+                      <span style={{ color: ok ? '#2e7d32' : '#c0392b', fontWeight: 600 }}>
+                        {ok ? '✓ 양호' : '⚠ 미흡'}
+                      </span>
+                    </td>
+                    <td style={{ ...cellStyle, color: '#5a534b' }}>{h.hint}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ───────────────────────────────────────────────────────────────────────
+// 보안 도구 #2 — 공격 표면 빠른 점검
+//
+// 자기 사이트의 공개 자산을 외부 attacker 시점에서 확인. robots.txt /
+// sitemap.xml / security.txt 는 200 (의도), .env / .git/HEAD / phpinfo.php
+// /wp-admin 등은 404 (의도). 200 이 뜨면 의심.
+const PROBE_TARGETS = [
+  { path: '/robots.txt', expect: '200', label: 'robots.txt' },
+  { path: '/sitemap.xml', expect: '200', label: 'sitemap.xml' },
+  { path: '/.well-known/security.txt', expect: '200', label: 'security.txt' },
+  { path: '/llms.txt', expect: '200', label: 'llms.txt' },
+  { path: '/.env', expect: '404', label: '.env (노출 X)' },
+  { path: '/.env.local', expect: '404', label: '.env.local (노출 X)' },
+  { path: '/.git/HEAD', expect: '404', label: '.git/HEAD (노출 X)' },
+  { path: '/.git/config', expect: '404', label: '.git/config (노출 X)' },
+  { path: '/phpinfo.php', expect: '404', label: 'phpinfo.php (노출 X)' },
+  { path: '/wp-admin', expect: '404', label: 'wp-admin (노출 X)' },
+  { path: '/.DS_Store', expect: '404', label: '.DS_Store (노출 X)' },
+  { path: '/backup.zip', expect: '404', label: 'backup.zip (노출 X)' },
+];
+
+function AttackSurfaceProbe() {
+  const [origin, setOrigin] = useState(() => {
+    if (typeof window !== 'undefined') {
+      // SPA 가 sub-path 에 deploy 될 수 있어 origin + base 분리.
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      return window.location.origin + (baseUrl === '/' ? '' : baseUrl.replace(/\/$/, ''));
+    }
+    return '';
+  });
+  const [results, setResults] = useState([]);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    setRunning(true); setResults([]);
+    const items = [];
+    for (const t of PROBE_TARGETS) {
+      const url = origin.replace(/\/$/, '') + t.path;
+      try {
+        const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', redirect: 'manual' });
+        const matched = String(res.status) === t.expect || (t.expect === '404' && res.status >= 400);
+        items.push({ ...t, status: res.status, ok: matched });
+      } catch (e) {
+        // network error 는 CORS / DNS 실패. 노출 X 케이스로 간주.
+        items.push({ ...t, status: 'ERR', ok: t.expect === '404', error: String(e?.message || e) });
+      }
+      setResults([...items]);
+    }
+    setRunning(false);
+  };
+
+  const issues = results.filter((r) => !r.ok);
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <h3 className="admin-section-title">공격 표면 빠른 점검</h3>
+      <p style={{ fontSize: 12, color: '#8c867d', marginTop: 4, lineHeight: 1.6 }}>
+        외부 attacker 시점에서 시도 가능한 공개 경로 12종을 일괄 점검.
+        robots/sitemap/security.txt 는 200 이 정상이고, .env / .git/HEAD / phpinfo.php / wp-admin 등은 404 가
+        정상. 200 이 뜨는 항목은 즉시 확인 필요.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+        <input type="url" value={origin} onChange={(e) => setOrigin(e.target.value)}
+          placeholder="https://your-domain.example.com" maxLength={300}
+          style={{ flex: '1 1 280px', padding: '8px 12px', border: '1px solid #d7d4cf', background: '#fff', fontSize: 12.5, fontFamily: 'SF Mono, Menlo, monospace' }} />
+        <button type="button" className="adm-btn-sm" onClick={run} disabled={running}
+          style={{ background: '#1f5e7c', color: '#fff', borderColor: '#1f5e7c', minWidth: 96 }}>
+          {running ? `확인 중… (${results.length}/${PROBE_TARGETS.length})` : '전체 점검'}
+        </button>
+      </div>
+      {!!results.length && (
+        <>
+          <div style={{
+            background: issues.length ? '#fdf2f0' : '#eef6ee',
+            border: '1px solid ' + (issues.length ? '#f0c5c0' : '#cfe5cf'),
+            padding: '10px 14px', marginBottom: 10, fontSize: 12.5,
+            color: issues.length ? '#7a1a14' : '#2a4a2c',
+          }}>
+            {issues.length
+              ? `⚠ 점검 항목 ${issues.length}개 비정상 — 아래 빨간 행 확인.`
+              : `✓ 12개 점검 항목 모두 정상.`}
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e6e3dd' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#f4f1ea' }}>
+                  <th style={cellStyle}>경로</th>
+                  <th style={cellStyle}>기대</th>
+                  <th style={cellStyle}>실제</th>
+                  <th style={cellStyle}>판정</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => (
+                  <tr key={r.path} style={{ borderTop: '1px solid #f0ede7', background: r.ok ? 'transparent' : '#fdf6f4' }}>
+                    <td style={cellStyle}><code>{r.path}</code></td>
+                    <td style={cellStyle}>{r.expect}</td>
+                    <td style={cellStyle}><code>{r.status}</code></td>
+                    <td style={cellStyle}>
+                      <span style={{ color: r.ok ? '#2e7d32' : '#c0392b', fontWeight: 600 }}>
+                        {r.ok ? '✓ 정상' : '⚠ 확인 필요'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// ───────────────────────────────────────────────────────────────────────
+// 보안 도구 #3 — JWT 디코더
+//
+// 운영자가 paste 한 토큰의 claims 표시. signature 검증은 server-side 필요라
+// 본 도구는 decode 만 (HMAC 키 없이 payload base64url 직접 파싱).
+// 의심 토큰 분석, 디버깅 (exp 시각, role, scope 클레임), 운영자 본인 토큰
+// 확인 등에 유용. 토큰은 localStorage 에 절대 저장하지 않음.
+function _b64UrlDecode(s) {
+  // base64url → base64 (pad)
+  let pad = s.length % 4;
+  if (pad) s = s + '='.repeat(4 - pad);
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  try { return decodeURIComponent(escape(atob(s))); }
+  catch { return atob(s); }
+}
+
+function _parseJwt(token) {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('JWT 가 아닙니다 (3 segments 가 아님)');
+  try {
+    const header = JSON.parse(_b64UrlDecode(parts[0]));
+    const payload = JSON.parse(_b64UrlDecode(parts[1]));
+    return { header, payload, signature: parts[2] };
+  } catch (e) {
+    throw new Error('JWT 파싱 실패: ' + String(e?.message || e));
+  }
+}
+
+function JwtDecoder() {
+  const [token, setToken] = useState('');
+  const [parsed, setParsed] = useState(null);
+  const [error, setError] = useState('');
+
+  const decode = () => {
+    setError(''); setParsed(null);
+    const t = String(token || '').trim();
+    if (!t) { setError('token 입력 필요'); return; }
+    try {
+      const r = _parseJwt(t);
+      setParsed(r);
+    } catch (e) {
+      setError(String(e?.message || e));
+    }
+  };
+
+  const useMyToken = () => {
+    try {
+      const t = localStorage.getItem('daemu_admin_token') || '';
+      if (t) setToken(t);
+      else setError('현재 admin token 없음 — 로그인 후 사용');
+    } catch { setError('localStorage 접근 실패'); }
+  };
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = parsed?.payload?.exp;
+  const iat = parsed?.payload?.iat;
+  const expired = exp && exp < now;
+  const ttlRemainSec = exp ? Math.max(0, exp - now) : null;
+
+  return (
+    <div style={{ marginTop: 32, marginBottom: 32 }}>
+      <h3 className="admin-section-title">JWT 디코더</h3>
+      <p style={{ fontSize: 12, color: '#8c867d', marginTop: 4, lineHeight: 1.6 }}>
+        토큰 paste 시 header / payload / exp / scope / role 등 표시. <strong>signature 검증은 안 함</strong>
+        (server-side JWT_SECRET 필요) — 디버깅·의심 토큰 분석용. 입력 토큰은 화면 표시만 하고 storage 에 저장하지 않음.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 10 }}>
+        <textarea value={token} onChange={(e) => setToken(e.target.value)}
+          placeholder="eyJhbGciOi..." rows={3}
+          style={{ flex: '1 1 320px', padding: '8px 12px', border: '1px solid #d7d4cf', background: '#fff', fontSize: 12, fontFamily: 'SF Mono, Menlo, monospace', resize: 'vertical' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button type="button" className="adm-btn-sm" onClick={decode}
+            style={{ background: '#1f5e7c', color: '#fff', borderColor: '#1f5e7c', minWidth: 110 }}>디코드</button>
+          <button type="button" className="adm-btn-sm" onClick={useMyToken}>내 토큰 사용</button>
+          <button type="button" className="adm-btn-sm" onClick={() => { setToken(''); setParsed(null); setError(''); }}>지우기</button>
+        </div>
+      </div>
+      {error && (
+        <div style={{ background: '#fdf2f0', color: '#c0392b', border: '1px solid #f0c5c0', padding: '8px 12px', fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+      {parsed && (
+        <div style={{ background: '#fff', border: '1px solid #e6e3dd' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <tbody>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={{ ...cellStyle, width: 140 }}><strong>alg</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>{parsed.header.alg || '—'}</td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={cellStyle}><strong>typ</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>{parsed.header.typ || '—'}</td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={cellStyle}><strong>sub</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>{String(parsed.payload.sub || '—')}</td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={cellStyle}><strong>scope</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>
+                  <span style={{ color: parsed.payload.scope === 'admin' ? '#1f5e7c' : '#b87333', fontWeight: 600 }}>
+                    {parsed.payload.scope || '(없음 — 옛 token)'}
+                  </span>
+                </td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={cellStyle}><strong>role</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>{parsed.payload.role || '—'}</td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                <td style={cellStyle}><strong>email</strong></td>
+                <td style={{ ...cellStyle, fontFamily: 'SF Mono, Menlo, monospace' }}>{parsed.payload.email || '—'}</td>
+              </tr>
+              {iat && (
+                <tr style={{ borderTop: '1px solid #f0ede7' }}>
+                  <td style={cellStyle}><strong>iat</strong></td>
+                  <td style={cellStyle}>{new Date(iat * 1000).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</td>
+                </tr>
+              )}
+              {exp && (
+                <tr style={{ borderTop: '1px solid #f0ede7', background: expired ? '#fdf2f0' : 'transparent' }}>
+                  <td style={cellStyle}><strong>exp</strong></td>
+                  <td style={cellStyle}>
+                    {new Date(exp * 1000).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
+                    <span style={{ marginLeft: 12, color: expired ? '#c0392b' : '#2e7d32', fontWeight: 600 }}>
+                      {expired
+                        ? '⚠ 만료됨'
+                        : `✓ ${Math.floor(ttlRemainSec / 3600)}h ${Math.floor((ttlRemainSec % 3600) / 60)}m 남음`}
+                    </span>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <details style={{ padding: '8px 12px', background: '#fafaf6', borderTop: '1px solid #e6e3dd' }}>
+            <summary style={{ cursor: 'pointer', fontSize: 11, color: '#5a534b' }}>전체 payload (JSON)</summary>
+            <pre style={{ margin: '8px 0 0', padding: 8, background: '#231815', color: '#f0ede7', fontSize: 11, fontFamily: 'SF Mono, Menlo, monospace', overflow: 'auto', maxHeight: 240 }}>
+              {JSON.stringify(parsed.payload, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SecurityGuide({ onClose }) {
   return (

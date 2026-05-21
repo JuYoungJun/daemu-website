@@ -272,31 +272,33 @@ export default function App() {
         <Route path="/unsubscribe" element={<Unsubscribe />} />
 
         <Route path="/admin" element={wrap(<AdminGate />)} />
-        <Route path="/admin/works" element={wrap(<RequireAuth><AdminWorks /></RequireAuth>)} />
-        <Route path="/admin/inquiries" element={wrap(<RequireAuth><AdminInquiries /></RequireAuth>)} />
-        <Route path="/admin/partners" element={wrap(<RequireAuth><AdminPartners /></RequireAuth>)} />
-        <Route path="/admin/orders" element={wrap(<RequireAuth><AdminOrders /></RequireAuth>)} />
-        <Route path="/admin/content" element={wrap(<RequireAuth><AdminContent /></RequireAuth>)} />
-        <Route path="/admin/stats" element={wrap(<RequireAuth><AdminStats /></RequireAuth>)} />
-        <Route path="/admin/media" element={wrap(<RequireAuth><AdminMedia /></RequireAuth>)} />
-        <Route path="/admin/mail" element={wrap(<RequireAuth><AdminMail /></RequireAuth>)} />
-        <Route path="/admin/crm" element={wrap(<RequireAuth><AdminCRM /></RequireAuth>)} />
-        <Route path="/admin/campaign" element={wrap(<RequireAuth><AdminCampaign /></RequireAuth>)} />
-        <Route path="/admin/promotion" element={wrap(<RequireAuth><AdminPromotion /></RequireAuth>)} />
-        <Route path="/admin/popup" element={wrap(<RequireAuth><AdminPopup /></RequireAuth>)} />
-        <Route path="/admin/outbox" element={wrap(<RequireAuth><AdminOutbox /></RequireAuth>)} />
-        <Route path="/admin/monitoring" element={wrap(<RequireAuth><AdminMonitoring /></RequireAuth>)} />
-        <Route path="/admin/contracts" element={wrap(<RequireAuth><AdminContracts /></RequireAuth>)} />
-        <Route path="/admin/products" element={wrap(<RequireAuth><AdminProducts /></RequireAuth>)} />
-        <Route path="/admin/analytics" element={wrap(<RequireAuth><AdminAnalytics /></RequireAuth>)} />
-        <Route path="/admin/users" element={wrap(<RequireAuth><AdminUsers /></RequireAuth>)} />
-        <Route path="/admin/partner-brands" element={wrap(<RequireAuth><AdminPartnerBrands /></RequireAuth>)} />
-        <Route path="/admin/mail-templates" element={wrap(<RequireAuth><AdminMailTemplates /></RequireAuth>)} />
-        <Route path="/admin/utm-builder" element={wrap(<RequireAuth><AdminUtmBuilder /></RequireAuth>)} />
+        {/* perm prop — backend require_perm 과 같은 PERMISSION_MATRIX 적용.
+            tester 가 URL 직접 입력해 권한 없는 페이지 UI 진입하는 회귀 차단. */}
+        <Route path="/admin/works" element={wrap(<RequireAuth perm={{resource:'works',action:'read'}}><AdminWorks /></RequireAuth>)} />
+        <Route path="/admin/inquiries" element={wrap(<RequireAuth perm={{resource:'inquiries',action:'read'}}><AdminInquiries /></RequireAuth>)} />
+        <Route path="/admin/partners" element={wrap(<RequireAuth perm={{resource:'partners',action:'read'}}><AdminPartners /></RequireAuth>)} />
+        <Route path="/admin/orders" element={wrap(<RequireAuth perm={{resource:'orders',action:'read'}}><AdminOrders /></RequireAuth>)} />
+        <Route path="/admin/content" element={wrap(<RequireAuth perm={{resource:'content',action:'read'}}><AdminContent /></RequireAuth>)} />
+        <Route path="/admin/stats" element={wrap(<RequireAuth perm={{resource:'analytics',action:'read'}}><AdminStats /></RequireAuth>)} />
+        <Route path="/admin/media" element={wrap(<RequireAuth perm={{resource:'media',action:'read'}}><AdminMedia /></RequireAuth>)} />
+        <Route path="/admin/mail" element={wrap(<RequireAuth perm={{resource:'mail-template',action:'read'}}><AdminMail /></RequireAuth>)} />
+        <Route path="/admin/crm" element={wrap(<RequireAuth perm={{resource:'crm',action:'read'}}><AdminCRM /></RequireAuth>)} />
+        <Route path="/admin/campaign" element={wrap(<RequireAuth perm={{resource:'campaigns',action:'read'}}><AdminCampaign /></RequireAuth>)} />
+        <Route path="/admin/promotion" element={wrap(<RequireAuth perm={{resource:'promotions',action:'read'}}><AdminPromotion /></RequireAuth>)} />
+        <Route path="/admin/popup" element={wrap(<RequireAuth perm={{resource:'popups',action:'read'}}><AdminPopup /></RequireAuth>)} />
+        <Route path="/admin/outbox" element={wrap(<RequireAuth perm={{resource:'outbox',action:'read'}}><AdminOutbox /></RequireAuth>)} />
+        <Route path="/admin/monitoring" element={wrap(<RequireAuth perm={{resource:'monitoring',action:'read'}}><AdminMonitoring /></RequireAuth>)} />
+        <Route path="/admin/contracts" element={wrap(<RequireAuth perm={{resource:'contracts',action:'read'}}><AdminContracts /></RequireAuth>)} />
+        <Route path="/admin/products" element={wrap(<RequireAuth perm={{resource:'products',action:'read'}}><AdminProducts /></RequireAuth>)} />
+        <Route path="/admin/analytics" element={wrap(<RequireAuth perm={{resource:'analytics',action:'read'}}><AdminAnalytics /></RequireAuth>)} />
+        <Route path="/admin/users" element={wrap(<RequireAuth perm={{resource:'users',action:'read'}}><AdminUsers /></RequireAuth>)} />
+        <Route path="/admin/partner-brands" element={wrap(<RequireAuth perm={{resource:'partner-brands',action:'read'}}><AdminPartnerBrands /></RequireAuth>)} />
+        <Route path="/admin/mail-templates" element={wrap(<RequireAuth perm={{resource:'mail-templates',action:'read'}}><AdminMailTemplates /></RequireAuth>)} />
+        <Route path="/admin/utm-builder" element={wrap(<RequireAuth perm={{resource:'analytics',action:'read'}}><AdminUtmBuilder /></RequireAuth>)} />
         <Route path="/admin/api-docs" element={wrap(<RequireAuth><AdminApiDocs /></RequireAuth>)} />
-        <Route path="/admin/security" element={wrap(<RequireAuth><AdminSecurityMonitoring /></RequireAuth>)} />
-        <Route path="/admin/announcements" element={wrap(<RequireAuth><AdminAnnouncements /></RequireAuth>)} />
-        <Route path="/admin/inventory" element={wrap(<RequireAuth><AdminInventory /></RequireAuth>)} />
+        <Route path="/admin/security" element={wrap(<RequireAuth perm={{resource:'monitoring',action:'read'}}><AdminSecurityMonitoring /></RequireAuth>)} />
+        <Route path="/admin/announcements" element={wrap(<RequireAuth perm={{resource:'announcements',action:'read'}}><AdminAnnouncements /></RequireAuth>)} />
+        <Route path="/admin/inventory" element={wrap(<RequireAuth perm={{resource:'inventory',action:'read'}}><AdminInventory /></RequireAuth>)} />
         {/* 2FA 분실 복구 — auth 불필요 (token 자체가 인증). */}
         <Route path="/admin/totp-reset" element={wrap(<TotpResetConfirm />)} />
 

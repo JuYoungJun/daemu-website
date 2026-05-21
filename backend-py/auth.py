@@ -25,9 +25,12 @@ your own values before opening to anyone outside your team.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -107,7 +110,18 @@ def _client_ip(request: Request) -> str:
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALG = "HS256"
-JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", "12"))
+# pentest F-5: default 12h → 4h. 토큰 탈취 / 분실 노트북 노출 시 윈도우 단축.
+# 운영자가 작업 흐름상 12h 가 필요하면 env JWT_TTL_HOURS=12 로 override.
+# 분 단위 더 짧게 (15-30분) 가려면 refresh token 도입 후. 현재는 짧아진 TTL
+# 만으로도 의미 있음 — admin 이 자주 재로그인.
+JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", "4"))
+
+# pentest F-2: login timing oracle 차단용 dummy bcrypt hash.
+# user-not-found / inactive 분기에서도 verify_password 를 동일하게 호출해
+# bcrypt cost (cost=12 기준 ~250-400ms) 를 일관 부담. 두 분기의 응답 시간이
+# 같아져 "존재 계정 vs 미존재 계정" timing 구분 불가.
+# 이 hash 는 어떤 평문과도 매칭되지 않음 (실 검증 결과는 항상 False).
+_DUMMY_BCRYPT_HASH = "$2b$12$Cn7m0eS5sYQp3qOGtFRMOudW3JvW.qC6yPb7QOpAvJk4Cu5DH/eFi"
 
 # 기본 시드 계정 — DEV/데모 전용 default. ENV=prod 일 때는 아래 fail-closed
 # 블록이 약한 default 값을 차단함 (코드 리뷰 F-3.2, High).
@@ -348,7 +362,11 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return pwd_ctx.verify(plain, hashed)
-    except Exception:
+    except Exception as e:
+        # 손상된 해시 / passlib backend 부재 / bcrypt 라이브러리 버그 등은 silent
+        # 거부하면 "갑자기 로그인 불가" 원인 추적이 불가능하다. 평문은 절대
+        # 노출하지 않고 예외 타입과 메시지만 warning 으로 기록.
+        logger.warning("password verify error: %s: %s", type(e).__name__, e)
         return False
 
 
@@ -633,21 +651,24 @@ async def login(payload: LoginIn, request: Request, session: AsyncSession = Depe
 
     res = await session.execute(select(AdminUser).where(AdminUser.email == payload.email))
     user = res.scalar_one_or_none()
+    # pentest F-2 timing 평탄화 — 모든 분기에서 bcrypt verify 를 정확히 1회 호출.
+    # 옛 코드는 user 가 없으면 verify 자체를 호출하지 않아 응답이 1.8s vs 5.0s
+    # 로 갈렸음. 이제 user/inactive 케이스도 _DUMMY_BCRYPT_HASH 로 동일한 cost
+    # 부담 → user enumeration 차단.
     if not user:
-        # 사용자 자체가 DB 에 없음 — 진단용 logs (이메일 자체는 logs 에 OK,
-        # 비밀번호는 절대 X). PII 라 production logs aggregator 에 들어갈 때
-        # masking 정책 필요 — 현재는 raw stdout 로만 가니 운영자가 직접 검토.
-        # PII 마스킹 — production logs aggregator 노출 시 정찰 단서 제거.
-        # forensic 추적용 prefix 1자만 보존 (mask_email).
         from security_utils import mask_email as _me
         print(f"[auth] login: no such user → email={_me(payload.email)} (미등록 계정)")
+        password_ok = verify_password(payload.password, _DUMMY_BCRYPT_HASH)
     elif not user.active:
         from security_utils import mask_email as _me
         print(f"[auth] login: inactive user → email={_me(payload.email)}")
-    elif not verify_password(payload.password, user.password_hash):
-        from security_utils import mask_email as _me
-        print(f"[auth] login: password mismatch → email={_me(payload.email)}")
-    if not user or not user.active or not verify_password(payload.password, user.password_hash):
+        password_ok = verify_password(payload.password, _DUMMY_BCRYPT_HASH)
+    else:
+        password_ok = verify_password(payload.password, user.password_hash)
+        if not password_ok:
+            from security_utils import mask_email as _me
+            print(f"[auth] login: password mismatch → email={_me(payload.email)}")
+    if not user or not user.active or not password_ok:
         _login_throttle.record_failure(ip)
         await log_event(session, request, action="login.failure",
                         actor_email=payload.email,
@@ -910,7 +931,11 @@ async def totp_reset_request(
     user = res.scalar_one_or_none()
 
     from audit import log_event
+    # pentest F-2 timing 평탄화 — user 부재 / inactive 분기도 verify_password
+    # 를 dummy hash 로 동일하게 호출. 옛 코드는 user 미존재 시 ~1.0s, 존재 시
+    # ~2.5s 로 갈렸음. 이제 두 경우 모두 bcrypt cost 부담 동일.
     if not user or not user.active:
+        verify_password(payload.password, _DUMMY_BCRYPT_HASH)  # timing 평탄화
         await log_event(session, request, action="totp.reset.requested.no_such_user",
                         actor_email=email_norm)
         return {"ok": True}

@@ -138,6 +138,12 @@ export default function AdminUsers() {
   async function onCreate(e) {
     e.preventDefault();
     if (!isAdmin) return;
+    // 길이·형식 1차 검증 — backend pydantic 도 검증하지만 frontend feedback 우선.
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email || '');
+    if (!emailOk) { setError('올바른 이메일 형식이 아닙니다.'); return; }
+    if ((form.password || '').length < 8) { setError('비밀번호는 최소 8자 이상이어야 합니다.'); return; }
+    if ((form.name || '').length > 120) { setError('이름은 120자 이내로 입력해 주세요.'); return; }
+    if ((form.email || '').length > 190) { setError('이메일은 190자 이내로 입력해 주세요.'); return; }
     setSubmitting(true);
     const r = await api.post('/api/users', form);
     setSubmitting(false);
@@ -327,15 +333,15 @@ export default function AdminUsers() {
             <div style={{ background: '#faf8f5', border: '1px solid #d7d4cf', padding: 16, marginBottom: 24 }}>
               <h3 className="admin-section-title" style={{ marginTop: 0, fontSize: 14 }}>신규 계정 추가</h3>
               <form onSubmit={onCreate} className="adm-user-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                <input type="email" required placeholder="이메일" autoComplete="off"
+                <input type="email" required placeholder="이메일" autoComplete="off" maxLength={190}
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value.replace(/\s/g, '') })}
                   onBlur={(e) => setForm({ ...form, email: normalizeEmail(e.target.value) })}
                   style={inputStyle} />
-                <input type="text" placeholder="이름" autoComplete="off"
+                <input type="text" placeholder="이름" autoComplete="off" maxLength={120}
                   value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   style={inputStyle} />
-                <input type="password" required placeholder="임시 비밀번호 (8자 이상)" autoComplete="new-password" minLength={8}
+                <input type="password" required placeholder="임시 비밀번호 (8자 이상)" autoComplete="new-password" minLength={8} maxLength={128}
                   value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
                   style={inputStyle} />
                 <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle}>
