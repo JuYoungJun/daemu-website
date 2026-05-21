@@ -15,6 +15,7 @@ User-agent: *
 Disallow: /
 
 # 추가 명시 — AI / LLM 크롤러도 모두 차단 (학습 데이터 미수집).
+# --- OpenAI ---
 User-agent: GPTBot
 Disallow: /
 
@@ -24,24 +25,84 @@ Disallow: /
 User-agent: OAI-SearchBot
 Disallow: /
 
+# --- Anthropic ---
 User-agent: ClaudeBot
 Disallow: /
 
 User-agent: Claude-Web
 Disallow: /
 
+User-agent: anthropic-ai
+Disallow: /
+
+# --- Perplexity ---
 User-agent: PerplexityBot
 Disallow: /
 
+User-agent: Perplexity-User
+Disallow: /
+
+# --- Google / Apple AI training opt-out ---
 User-agent: Google-Extended
 Disallow: /
 
 User-agent: Applebot-Extended
 Disallow: /
 
+# --- Common Crawl (대부분 공개 LLM 데이터셋의 원천) ---
+User-agent: CCBot
+Disallow: /
+
+# --- 그 외 LLM / 데이터 수집 봇 ---
 User-agent: cohere-ai
 Disallow: /
 
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: Meta-ExternalAgent
+Disallow: /
+
+User-agent: Meta-ExternalFetcher
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: Diffbot
+Disallow: /
+
+User-agent: ImagesiftBot
+Disallow: /
+
+User-agent: omgili
+Disallow: /
+
+User-agent: omgilibot
+Disallow: /
+
+User-agent: magpie-crawler
+Disallow: /
+
+User-agent: AwarioRssBot
+Disallow: /
+
+User-agent: AwarioSmartBot
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /
+
+User-agent: Timpibot
+Disallow: /
+
+User-agent: TurnitinBot
+Disallow: /
+
+# --- Korean portal crawlers ---
 User-agent: Yeti
 Disallow: /
 
@@ -49,3 +110,4 @@ User-agent: Daumoa
 Disallow: /
 
 # Sitemap 노출 X — 색인 차단 정책과 일관성 유지.
+# 도메인 발급 + 색인 허용 시점에 본 파일을 다시 작성하고 Sitemap: 한 줄 추가.

@@ -7,10 +7,15 @@
        실제 도메인(daemu.kr 등) 발급 후 일괄 치환:
          sed -i '' 's|https://juyoungjun.github.io/daemu-website|https://daemu.kr|g' \
            public/sitemap.xml
-       이후 Naver Search Advisor / Google Search Console 에 새 사이트맵 URL 재제출. -->
+       이후 Naver Search Advisor / Google Search Console 에 새 사이트맵 URL 재제출.
+
+       lastmod 갱신 정책: 콘텐츠가 실제로 변한 페이지만 갱신. 단순 layout
+       변경은 lastmod 변경 X. 현재 도메인 발급 전 robots.txt 가 전체 차단
+       중이라 크롤러에 노출되지 않지만, cutover 직후 즉시 색인 가능한
+       정확한 상태를 유지. -->
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <xhtml:link rel="alternate" hreflang="ko" href="https://juyoungjun.github.io/daemu-website/"/>
@@ -18,49 +23,49 @@
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/about</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/service</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/process</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/team</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/work</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/work/beclassy-naju</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/contact</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyoungjun.github.io/daemu-website/partners</loc>
-    <lastmod>2026-04-28</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
