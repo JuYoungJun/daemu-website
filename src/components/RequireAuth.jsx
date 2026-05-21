@@ -30,13 +30,19 @@ export default function RequireAuth({ children, roles, perm }) {
     return <Navigate to="/admin" replace state={{ from: loc.pathname }} />;
   }
   const me = Auth.user();
+  // B-1 race fix: 로그인 직후 user fetch 가 아직 도착 안 한 짧은 윈도우 (1-2초)
+  // 에서 me 가 null 일 수 있음. 이 경우 forbidden 으로 오판정하면 운영자가
+  // URL 직접 입력 시 잠깐 forbidden → 새로고침 → 정상 보이는 회귀 발생.
+  // 권한 체크는 me 가 확정된 후만 수행. me 없으면 일단 통과 (Auth.isLoggedIn
+  // 가 true 인 상태) — backend 가 require_perm 으로 최종 차단 보장.
+  if (!me) return children;
   if (roles && roles.length) {
-    if (!me || !roles.includes(me.role)) {
+    if (!roles.includes(me.role)) {
       return <Navigate to="/admin" replace state={{ forbidden: loc.pathname }} />;
     }
   }
   if (perm && perm.resource) {
-    if (!me || !_canAccess(me.role, perm.resource, perm.action || 'read')) {
+    if (!_canAccess(me.role, perm.resource, perm.action || 'read')) {
       return <Navigate to="/admin" replace state={{ forbidden: loc.pathname }} />;
     }
   }

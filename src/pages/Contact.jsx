@@ -112,19 +112,31 @@ export default function Contact() {
       alert('개인정보 수집·이용에 동의해 주세요.');
       return;
     }
-    // 길이·형식 1차 검증 — backend 에 abusive payload (수 MB textarea 등)
-    // 전송 전 frontend 가 거부. backend pydantic 모델도 검증하지만 UX 개선.
+    // B-6: backend Inquiry 컬럼은 MySQL VARCHAR(N) — N 은 byte 한도. 한글
+    // 1자 = UTF-8 3 bytes 이라 frontend maxLength(char 기준) 와 backend
+    // VARCHAR 한도 사이에 불일치가 발생하면 한글 사용자가 30~40자 입력 후
+    // backend 거부. byte 단위로 검증해 backend 와 일치.
+    const utf8Len = (s) => new TextEncoder().encode(String(s || '')).length;
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email || '');
     if (!emailOk) {
       alert('올바른 이메일 형식이 아닙니다.');
       return;
     }
-    if ((form.name || '').length > 120) {
-      alert('이름은 120자 이내로 입력해 주세요.');
-      return;
+    const checks = [
+      { val: form.name, max: 120, label: '이름', hangulHint: '약 40자' },
+      { val: form.email, max: 190, label: '이메일', hangulHint: '약 63자' },
+      { val: form.brand, max: 190, label: '브랜드명', hangulHint: '약 63자' },
+      { val: form.region, max: 120, label: '지역', hangulHint: '약 40자' },
+      { val: form.topic, max: 120, label: '문의 제목', hangulHint: '약 40자' },
+    ];
+    for (const c of checks) {
+      if (utf8Len(c.val) > c.max) {
+        alert(`${c.label}은(는) 영문 ${c.max}자 / 한글 ${c.hangulHint} 이내로 입력해 주세요.`);
+        return;
+      }
     }
-    if ((form.msg || '').length > 4000) {
-      alert('문의 내용은 4000자 이내로 입력해 주세요.');
+    if (utf8Len(form.msg) > 4000) {
+      alert('문의 내용은 영문 4000자 / 한글 약 1333자 이내로 입력해 주세요.');
       return;
     }
     setSubmitting(true);

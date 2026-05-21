@@ -682,7 +682,15 @@ function _b64UrlDecode(s) {
   catch { return atob(s); }
 }
 
+// B-10: token 자체 크기 cap — 64KB. 정상 JWT 는 길어야 4KB 수준. attacker /
+// 운영자 실수로 매우 큰 base64 paste 시 React state + JSON.parse 가 메모리
+// 폭증 / 브라우저 freeze. 호출자 (decode) 에서 우선 검증.
+const JWT_TOKEN_MAX_BYTES = 64 * 1024;
+
 function _parseJwt(token) {
+  if (token.length > JWT_TOKEN_MAX_BYTES) {
+    throw new Error(`token 길이가 너무 큽니다 (${token.length}B > ${JWT_TOKEN_MAX_BYTES}B 한도)`);
+  }
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('JWT 가 아닙니다 (3 segments 가 아님)');
   try {
@@ -690,7 +698,11 @@ function _parseJwt(token) {
     const payload = JSON.parse(_b64UrlDecode(parts[1]));
     return { header, payload, signature: parts[2] };
   } catch (e) {
-    throw new Error('JWT 파싱 실패: ' + String(e?.message || e));
+    // B-4: token 원문이 error 메시지에 포함되지 않게 generic 메시지만.
+    // 진단용 정보는 console (개발자 도구) 에만 — UI 화면 노출 X.
+    // eslint-disable-next-line no-console
+    console.warn('[JwtDecoder] parse error:', e && e.message);
+    throw new Error('JWT 파싱 실패 — base64 decode 또는 JSON 형식 오류');
   }
 }
 
@@ -734,7 +746,7 @@ function JwtDecoder() {
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 10 }}>
         <textarea value={token} onChange={(e) => setToken(e.target.value)}
-          placeholder="eyJhbGciOi..." rows={3}
+          placeholder="eyJhbGciOi..." rows={3} maxLength={JWT_TOKEN_MAX_BYTES}
           style={{ flex: '1 1 320px', padding: '8px 12px', border: '1px solid #d7d4cf', background: '#fff', fontSize: 12, fontFamily: 'SF Mono, Menlo, monospace', resize: 'vertical' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <button type="button" className="adm-btn-sm" onClick={decode}

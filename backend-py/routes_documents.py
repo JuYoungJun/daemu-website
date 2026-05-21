@@ -609,6 +609,28 @@ async def public_post_signdoc(
     if not signer_allowed:
         raise HTTPException(403, detail="서명 권한이 없는 이메일입니다.")
 
+    # B-3 race-safe: 동일 token 으로 동시 2 요청이 위 status 검증을 모두 통과한
+    # 경우 (이중 제출 / 빠른 새로고침) UNIQUE constraint 충돌로 500. WHERE
+    # status != 'signed' 의 atomic UPDATE 로 한 쪽만 성공 보장. 실패 쪽은 409.
+    from sqlalchemy import update as _sa_update
+    now_ts = datetime.now(timezone.utc)
+    new_token = f"used:{d.id}:{secrets.token_urlsafe(8)}"
+    upd = await session.execute(
+        _sa_update(Document)
+        .where(Document.id == d.id)
+        .where(Document.status != "signed")
+        .values(
+            status="signed",
+            signed_at=now_ts,
+            sign_token=new_token,
+            sign_token_expires_at=None,
+        )
+    )
+    if (getattr(upd, "rowcount", 0) or 0) == 0:
+        # race — 다른 요청이 먼저 서명 완료. signature 도 commit 안 됨.
+        await session.rollback()
+        raise HTTPException(409, detail="이미 서명이 완료된 문서입니다.")
+
     sig = DocumentSignature(
         document_id=d.id,
         signer_name=payload.signer_name.strip(),
@@ -621,12 +643,10 @@ async def public_post_signdoc(
     )
     session.add(sig)
 
+    # in-memory d 도 후속 push_history / 응답 직렬화를 위해 동기화.
     d.status = "signed"
-    d.signed_at = datetime.now(timezone.utc)
-    # 서명 완료 시 token 즉시 무효화. 재사용·재서명·외부 유출 시 악용 차단.
-    # sign_token 컬럼은 unique 인데 빈 문자열로 두면 다른 signed 문서와
-    # 충돌 가능 — random suffix 로 우회 (검색에는 사용 안 함, 단순 unique 충족).
-    d.sign_token = f"used:{d.id}:{secrets.token_urlsafe(8)}"
+    d.signed_at = now_ts
+    d.sign_token = new_token
     d.sign_token_expires_at = None
     push_history(d, "signed", by=sig.signer_email,
                  detail={"signer_name": sig.signer_name, "ip": sig.ip})

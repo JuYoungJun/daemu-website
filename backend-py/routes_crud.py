@@ -616,7 +616,10 @@ _PARTNER_STATUS_NORMALIZE = {
 
 
 async def _partner_pre_update(session, obj, payload, request, _u):
-    if "status" in payload and payload["status"] is not None:
+    # B-2: status 가 None 외 빈 문자열도 skip — admin 이 다른 필드만 PATCH 했는데
+    # form 이 status="" 를 함께 전송하는 케이스에서 _PARTNER_STATUS_NORMALIZE[""]
+    # 가 "대기" 로 강제 변경하던 회귀 차단. 명시적 status 변경만 처리.
+    if "status" in payload and payload["status"] is not None and str(payload["status"]).strip() != "":
         s = str(payload["status"]).strip().lower()
         normalized = _PARTNER_STATUS_NORMALIZE.get(s)
         if normalized is None:
@@ -625,7 +628,10 @@ async def _partner_pre_update(session, obj, payload, request, _u):
 
 
 async def _partner_pre_create(session, payload, request, _u):
-    if "status" in payload and payload["status"] is not None:
+    # B-2: status 가 None 외 빈 문자열도 skip — admin 이 다른 필드만 PATCH 했는데
+    # form 이 status="" 를 함께 전송하는 케이스에서 _PARTNER_STATUS_NORMALIZE[""]
+    # 가 "대기" 로 강제 변경하던 회귀 차단. 명시적 status 변경만 처리.
+    if "status" in payload and payload["status"] is not None and str(payload["status"]).strip() != "":
         s = str(payload["status"]).strip().lower()
         normalized = _PARTNER_STATUS_NORMALIZE.get(s)
         if normalized is None:
