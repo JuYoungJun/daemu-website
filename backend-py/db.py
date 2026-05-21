@@ -127,17 +127,28 @@ elif DATABASE_URL.startswith("mysql"):
 
 # SQLite (dev) 는 StaticPool 만 지원해 pool_size/max_overflow/pool_recycle 인자
 # 자체를 거부 (SQLAlchemy 2.x 의 strict mode). MySQL 만 본 옵션을 받도록 분기.
+#
+# pool_pre_ping: SQLAlchemy 2.0.x + aiomysql 0.3.0+ 호환성 회귀 — async
+# dialect 의 AsyncAdapt_aiomysql_connection.ping() 가 reconnect 를 required
+# positional 로 정의했는데, SQLAlchemy pool 의 pre-ping 코드가 인자 없이
+# 호출 → TypeError ("missing 1 required positional argument: 'reconnect'") →
+# /api/suspicious-events 같은 endpoint 가 500 unhandled exception. Render
+# logs 에서 실측 7회 발생 확인 (2026-05-21). pool_pre_ping=False 로 회피 +
+# pool_recycle 을 600s (Aiven wait_timeout 보다 짧게) 로 단축해 stale 연결
+# 자동 재발급. SQLAlchemy 차후 fix 또는 aiomysql pinning 후 다시 활성 가능.
 _engine_kwargs: dict = {
     "echo": False,
-    "pool_pre_ping": True,
     "connect_args": connect_args,
 }
 if not DATABASE_URL.startswith("sqlite"):
-    # MySQL — pool 명시. wait_timeout 보다 짧게 (stale 연결 회피).
-    # pool_size+max_overflow=30 (Aiven free max_connections=200 안에서 안전).
-    _engine_kwargs["pool_recycle"] = 1800
+    _engine_kwargs["pool_pre_ping"] = False  # ↑ 호환성 회귀 회피
+    _engine_kwargs["pool_recycle"] = 600     # 10분 — Aiven idle timeout 보다 짧게
     _engine_kwargs["pool_size"] = 10
     _engine_kwargs["max_overflow"] = 20
+else:
+    # SQLite dev — pre_ping 안전 (sqlite3 driver 가 ping(reconnect) 시그니처
+    # 영향 받지 않음). 단 StaticPool 이라 pre_ping 자체 의미 작음.
+    _engine_kwargs["pool_pre_ping"] = True
 engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 
 
