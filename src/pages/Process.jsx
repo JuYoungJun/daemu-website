@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import RawPage from '../components/RawPage.jsx';
 import html, { bodyClass } from './raw/process.html.js';
 import { useSeo } from '../hooks/useSeo.js';
+import { usePreloadImage } from '../hooks/usePreloadImage.js';
 import { breadcrumbLd, howToLd } from '../lib/seo.js';
 
 const PROCESS_STEPS = [
@@ -18,6 +19,8 @@ const PROCESS_STEPS = [
 ];
 
 export default function Process() {
+  // LCP 이미지 — .visual-stage 의 background-image (process-bg-real.webp).
+  usePreloadImage('assets/process-bg-real.webp');
   useSeo({
     title: '프로세스 — 초기 상담부터 운영까지 10단계',
     description: '대무의 10단계 카페 컨설팅 프로세스. 일반 컨설팅의 사진 미팅 → 인테리어 시공 → 장비 납품 한계를 넘어, 전략·메뉴·브랜드·공간·운영을 하나의 통합 구조로 연결합니다.',

@@ -194,7 +194,7 @@ button,input,select,textarea{font:inherit}
 .team-card h3{font-size:34px;margin:0 0 8px;font-weight:700}
 .team-card p{font-size:13px;line-height:1.8;margin:0}
 
-.visual-stage{position:relative;color:#fff;background:url('assets/process-bg.jpg') center/cover no-repeat;padding:56px 0 58px;overflow:hidden}
+.visual-stage{position:relative;color:#fff;background:url('assets/process-bg-real.webp') center/cover no-repeat;padding:56px 0 58px;overflow:hidden}
 .visual-stage::before{content:'';position:absolute;inset:0;background:rgba(53,50,45,.58)}
 .visual-stage::after{content:'';position:absolute;left:-10%;top:160px;width:120%;height:530px;background:radial-gradient(ellipse at center, rgba(255,255,255,.03) 0%, rgba(255,255,255,.03) 36%, rgba(255,255,255,.20) 37%, rgba(255,255,255,.03) 55%, rgba(255,255,255,0) 58%);transform:rotate(10deg);pointer-events:none}
 .stage-inner{position:relative;z-index:1}
