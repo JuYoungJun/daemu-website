@@ -576,7 +576,9 @@ function Shop({ partner, onSubmitted }) {
   }, [catalog, search]);
 
   return (
-    <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:32,alignItems:'flex-start'}}>
+    // alignItems: 'start' (grid canonical) — 옛 'flex-start' 는 grid 컨텍스트에서
+    // sticky 동작이 일부 브라우저에서 불안정. 'start' 가 표준.
+    <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:32,alignItems:'start'}}>
       <div>
         {/* 검색바 */}
         <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:22}}>
@@ -673,7 +675,11 @@ function Shop({ partner, onSubmitted }) {
         ))}
       </div>
 
-      <aside style={{position:'sticky',top:24,padding:'24px',background:'#f6f4f0',border:'1px solid #d7d4cf'}}>
+      {/* 장바구니 sticky.
+          · top:24 — 페이지 스크롤 시 viewport 상단 24px 에 고정.
+          · alignSelf:'start' — grid 셀이 stretch 되지 않게 + sticky 가 셀
+            안에서 정상 동작하도록 defensive 가드. */}
+      <aside style={{position:'sticky',top:24,alignSelf:'start',padding:'24px',background:'#f6f4f0',border:'1px solid #d7d4cf'}}>
         <h3 style={{fontSize:11,letterSpacing:'.18em',textTransform:'uppercase',color:'#8c867d',margin:'0 0 14px',fontWeight:500}}>장바구니</h3>
         {!items.length ? (
           <p style={{fontSize:13,color:'#8c867d',margin:'24px 0',textAlign:'center'}}>담긴 상품이 없습니다.</p>

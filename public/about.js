@@ -81,7 +81,12 @@
     document.querySelectorAll('.dmabout-visual-item img').forEach(img => {
       if (!window.ScrollTrigger) return;
       gsap.set(img, { scale: 1.15 });
-      gsap.to(img, { yPercent: 10, ease: 'none', scrollTrigger: { trigger: img.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } });
+      // 회색 여백 fix — 옛 0→10 단방향은 컨테이너 위로 이미지가 10% 빠져나가
+      // 위쪽 회색 노출. scale(1.15) 가 주는 ±7.5% overflow 마진 안에서 안전한
+      // -5 → +5 대칭 이동.
+      gsap.fromTo(img,
+        { yPercent: -5 },
+        { yPercent: 5, ease: 'none', scrollTrigger: { trigger: img.parentElement, start: 'top bottom', end: 'bottom top', scrub: true } });
     });
 
     if (window.ScrollTrigger) { const r = () => window.ScrollTrigger.refresh(); if (document.readyState === 'complete') r(); else window.addEventListener('load', r); }
