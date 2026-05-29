@@ -31,9 +31,17 @@
    GLOBAL OVERFLOW GUARD — applies at every viewport.
    Prevents stray wide elements (marquees, hero text, off-canvas
    decorations) from causing horizontal scroll on mobile.
+
+   IMPORTANT: 'overflow-x: hidden' 대신 'overflow-x: clip' 사용 —
+   · hidden 은 html/body 를 scroll container 로 만들어 position:sticky
+     descendant 가 동작 안 함 (장바구니 sticky 회귀 원인).
+   · clip 은 scroll container 를 만들지 않고 가로 overflow 만 clip 처리.
+   · 지원: Chrome 90+, Firefox 102+, Safari 16+. fallback hidden 도 함께
+     선언해 옛 브라우저는 기존 동작 유지.
    ============================================================ */
 html, body {
-  overflow-x: hidden;
+  overflow-x: hidden;     /* fallback */
+  overflow-x: clip;       /* sticky-friendly */
   max-width: 100vw;
 }
 body { width: 100%; }

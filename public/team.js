@@ -102,31 +102,37 @@
     if (visualTag) tl.to(visualTag, { opacity: 1, y: 0, duration: .7 }, 1.6);
     if (scrollCue) tl.to(scrollCue, { opacity: 1, duration: .8 }, 1.4);
 
-    // Ghost number subtle parallax on scroll
+    // Ghost number subtle parallax — decorative number 라 pointer-events:none.
+    // 옛 0→15 단방향은 ghost 위쪽이 모자라 잘려보이는 회귀. -7 → +7 대칭.
     if (window.ScrollTrigger && ghost) {
-      gsap.to(ghost, {
-        yPercent: 15,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: '.dmteam-hero',
-          start: 'top top',
-          end: 'bottom top',
-          scrub: true,
-        },
-      });
+      gsap.fromTo(ghost,
+        { yPercent: -7 },
+        {
+          yPercent: 7,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: '.dmteam-hero',
+            start: 'top top',
+            end: 'bottom top',
+            scrub: true,
+          },
+        });
     }
-    // Visual image parallax — noticeable movement
+    // Visual image parallax — scale(1.15) 컨테이너 안에서 안전한 -7 → +7 대칭.
+    // 옛 0→15 단방향은 이미지 위로 빠져나가 회색 컨테이너 배경 노출.
     if (window.ScrollTrigger && visualImg) {
-      gsap.to(visualImg, {
-        yPercent: 15,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: visualFrame,
-          start: 'top bottom',
-          end: 'bottom top',
-          scrub: true,
-        },
-      });
+      gsap.fromTo(visualImg,
+        { yPercent: -7 },
+        {
+          yPercent: 7,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: visualFrame,
+            start: 'top bottom',
+            end: 'bottom top',
+            scrub: true,
+          },
+        });
     }
   }
 

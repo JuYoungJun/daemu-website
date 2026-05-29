@@ -122,6 +122,11 @@
 
   /* ------------------------------------------------------------------
      3. Hero image parallax on scroll
+     · 옛 동작: yPercent 0 → 18 단방향 → 이미지가 컨테이너 위로 18% 빠져나가
+       위쪽에 회색(컨테이너 배경) 여백이 누적되는 문제.
+     · 신 동작: fromTo 로 -8% → +8% 대칭 이동. .hero-visual-img 의 scale(1.2)
+       이 ±10% overflow 마진을 주므로 이 범위 안에서 안전하게 움직여 어느
+       방향으로도 컨테이너 배경이 노출되지 않음.
      ------------------------------------------------------------------ */
   function initHeroParallax() {
     if (prefersReducedMotion || !window.ScrollTrigger) return;
@@ -129,16 +134,18 @@
     const frame = document.querySelector('.hero-visual-frame');
     if (!img || !frame) return;
 
-    gsap.to(img, {
-      yPercent: 18,
-      ease: 'none',
-      scrollTrigger: {
-        trigger: frame,
-        start: 'top bottom',
-        end: 'bottom top',
-        scrub: true,
-      },
-    });
+    gsap.fromTo(img,
+      { yPercent: -8 },
+      {
+        yPercent: 8,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: frame,
+          start: 'top bottom',
+          end: 'bottom top',
+          scrub: true,
+        },
+      });
   }
 
   /* ------------------------------------------------------------------
@@ -311,20 +318,12 @@
       );
     }
 
-    // subtle image parallax for the large card
-    const bigCard = document.querySelector('.work-card--lg .work-card-media img');
-    if (bigCard) {
-      gsap.to(bigCard, {
-        yPercent: 8,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: '.work-card--lg',
-          start: 'top bottom',
-          end: 'bottom top',
-          scrub: true,
-        },
-      });
-    }
+    // subtle image parallax for the large card — DISABLED.
+    // 옛 동작 (yPercent: 0 → 8) 은 카드 컨테이너 위로 이미지가 8% 빠져나가
+    // PDF p.5 "체크된 부분 스크롤 시 비어진다" 회색 여백 발생. 카드 컨테이너에
+    // 자체 overflow 마진이 없어 대칭 이동(-N → +N)도 안전 범위 없음 → 완전 비활성화.
+    // const bigCard = document.querySelector('.work-card--lg .work-card-media img');
+    // if (bigCard) { /* disabled */ }
   }
 
   /* ------------------------------------------------------------------
